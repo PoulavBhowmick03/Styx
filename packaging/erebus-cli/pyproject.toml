@@ -1,0 +1,16 @@
+# Metadata-only stand-in added for ETHGlobal Mumbai; the real package was not imported.
+# sdk/py declares erebus-cli as a workspace dependency, so the workspace needs this member to
+# resolve. It ships no binary. erebus-sdk finds the binary on PATH, or through an explicit path.
+[project]
+name = "erebus-cli"
+version = "0.3.0"
+description = "Metadata-only stand-in so the uv workspace resolves. Ships no binary."
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
