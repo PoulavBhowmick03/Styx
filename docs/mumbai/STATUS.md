@@ -84,6 +84,40 @@ The code hash the reviewer read from Arc, `0x6da4...3ebd`, also came back the sa
 
 **Caveat:** this is a second Mac with its own key and RPC, but it also holds the repo and some unfunded local test keys. None of the real owner, agent or issuer keys has been on it. Poulav decided this counts as the second machine.
 
+## Live v2 run on Arc testnet
+
+The organization vault, deployed from Arc Studio, in the same workspace as v1. **Whether v2 ships is decided at 05:30 IST. v1 stays live as the fallback.**
+
+| | |
+| --- | --- |
+| **Vault** | `0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8` |
+| **Code hash** | `0x4ed8c17d810632423c99decd2c130a16b4c3ff3bea5c4717d1b36fd0ea8512d5` |
+| **Owner** | `0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0` |
+| **Approver** | `0x0882E47Df80aE3c04F10Db331Dc88A34CCCF6e07`, a separate phone wallet holding no USDC |
+| **Agents** | `0x4ac8B7C1B6950a852786f490af57b0725bc4B2AF` (1 USDC per payment, 20 a day), `0x577e32542b6B7045Effd0cf2f1e9d3A79B7C6a97` (0.5 per payment, 5 a day) |
+| **Build** | Source byte-identical to `0d296be`, runtime matches the solc 0.8.24, optimizer 200, cancun build apart from immutables and metadata |
+
+Codex also deployed the same source with Forge at `0x8b1D755B5e6957a7384d676baFED4274181e4BC9`. That vault is unused.
+
+| Step | Result | Transaction |
+| --- | --- | --- |
+| Agent 1 routine, 0.1 USDC | Settled | `0x42222fd9ea1b03750e125bd1b5779488c018998dc93431bb5be2a0fc57a75847` |
+| Agent 2 routine, 0.2 USDC | Settled | `0x82d53b98d08004cef834f2535b57815a850a228908beadd2927d950dd48d9324` |
+| Agent 2 asks for 0.6 USDC, over its own limit | Tool answers `exception_required`, not sent | |
+| Agent 1 exception, 2 USDC: Telegram alert, approver signs in MetaMask on a phone, agent collects and submits | Settled | `0xbcc4bd5447ba95a517e3ad95ee0613e4011955a816b730856dcc51f40bb464cd` |
+| A1: agent pays over its limit directly | Reverted | `0x280c5d0a4bf151411fd87a054c650ff348edd132961b1235632781c4d7529a84` |
+| A2: agent signs the exception itself | Reverted | `0xbf831e28edb3ac10ff69a41c7f6de424d53fe9f356f8e6cf93ec4acad297dea7` |
+| A3: approver's signature on a payment to another vendor | Reverted | `0xacf2271c693669e261b6c79b8b2c7d054a7049dd0c89e10218c25b8d6d55b47e` |
+| A4: settled exception resubmitted | Reverted | `0x8b23684f72a0096494df6de5e6703a47d83add957664165e8502874949eb0aab` |
+
+Balance after the attacks: 37.70 USDC in the vault, unchanged by them, and 0 at vendor B. The revert reasons were not read from these receipts.
+
+**Reviewer on this Mac:** all checks verified, a wrong key and a wrong issuer refused. Not yet run on a second machine for v2.
+
+**Arkiv:** entity `0x820414b5f660a6b6df5c56c84f69d4a15c03203b1c3dcaa4c971e3bc06f9ba0a`, transaction `0xbb21cfcc2b4d0c5323b123793d92404de79d3ba039d1cba56de6d0a734d1f0f9`, lookup tag `32d6d9b6f1b63d3e8856ed1bc23eee2b`. Bytes matched, verified against Arc, another writer returned nothing, tampered copy refused, on this Mac. The no-key endpoint stalled on several attempts before answering, while a fetch with an access key took a second.
+
+**Not shown:** a Safe or other contract-wallet approver, because the page and relay support plain wallets only. Removing an approver or switching off an agent on Arc, which has only run on a local chain. On the phone, the page failed once with "could not be read" before working on retry, and the cause was not established. Reads now run one at a time with retries and a fallback. The page does not check daily caps or spent nonces, so a request it accepts can still revert. Poulav's review of `StyxVault.sol` is owed before this counts as reviewed. None of this is audited.
+
 ## Under the Styx name
 
 After the rename and the removal of unused code, on Arc through the `styx_*` tools and `styx-vault`, with the hosted relay and `styxco.xyz`:

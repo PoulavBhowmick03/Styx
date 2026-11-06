@@ -30,7 +30,7 @@ cd arkiv && npm install --legacy-peer-deps
 npm run fetch-grant -- 2da3058148c284654bd85b1a670a3ce9 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
 ```
 
-It is sealed to one reviewer, so only that reviewer's key can open it.
+It is sealed to one reviewer, so only that reviewer's key can open it. Arkiv's public endpoint is rate limited and can stall, in which case the command exits 4 after 45 seconds. Retry, or set `ARKIV_ACCESS_KEY` to a free key from the Arkiv Hub.
 
 ## World
 
