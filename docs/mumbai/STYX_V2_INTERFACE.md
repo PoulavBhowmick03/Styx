@@ -253,3 +253,51 @@ No approval UI, relay, Python adapter, or setup change is included in this branc
 
 Poulav controls the final human review and deployment decision.
 No Arc deployment or transaction is authorized by this handoff.
+
+## Deployment
+
+**Deployed with Forge, not Arc Studio.** Studio compiled the unchanged source, but its deployment tool could not set the required fee caps.
+The authorized fallback submitted one creation transaction with zero value. No funding or configuration followed.
+
+| Field | Verified value |
+| --- | --- |
+| Network | Arc testnet, chain ID `5042002` |
+| Contract | [`0x8b1D755B5e6957a7384d676baFED4274181e4BC9`](https://explorer.testnet.arc.io/address/0x8b1D755B5e6957a7384d676baFED4274181e4BC9) |
+| Deployment transaction | [`0x9d8d291dd2c98a52359a84e49e686839609442e70190f17990e35ecf89888a92`](https://explorer.testnet.arc.io/tx/0x9d8d291dd2c98a52359a84e49e686839609442e70190f17990e35ecf89888a92) |
+| Block | `71091654` |
+| Receipt status | Success |
+| Deployer | `0x2a1397fAB3e8b8d763c95B78B6EbED5b77Ec9ad1` |
+| `owner()` | `0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0` |
+| `token()` | `0x3600000000000000000000000000000000000000` |
+| `contractVersion()` | `2` |
+| `paused()` | `false` |
+| `vaultDailyLimit()` | `0` |
+| Native / ERC-20 USDC balance | `0` / `0` |
+| Runtime code keccak256 | `0x7f5592d4cd5c185cd0cec65474c879fc8aa90e001f672fc36cfec246c4da1336` |
+| Runtime size | `8106` bytes |
+| Build | solc `0.8.24+commit.e11b9ed9`, optimizer enabled, `200` runs, Cancun |
+| Max fee / priority fee | `40000000000` / `1000000000` wei |
+| Gas used / effective gas price | `1828730` / `21000000000` wei |
+| Source commit | `0d296be` |
+| Source SHA256 | `306462b7f968cf79441112cb1537aeeaacf4aeb5e2863651066f3602f96c33c4` |
+
+```sh
+STYX_VAULT_ADDRESS=0x8b1D755B5e6957a7384d676baFED4274181e4BC9
+STYX_VAULT_CODE_HASH=0x7f5592d4cd5c185cd0cec65474c879fc8aa90e001f672fc36cfec246c4da1336
+```
+
+[Arc Studio source and compilation workspace](https://studio.arc.io/app/f4f4c197-06ec-46ff-b3d1-ea18259cd358).
+This URL shows the unchanged contract and its build. It is not evidence of a Studio deployment.
+Studio's downloaded source matched `0d296be` byte-for-byte before the fallback deployment.
+
+Both `https://rpc.testnet.arc.io` and `https://rpc.drpc.testnet.arc.io` returned the same receipt block and runtime code hash.
+The getter and balance reads above used blocks `71091808` and `71091810`, respectively.
+The receipt block was canonical on both providers.
+
+The runtime matches the local optimized build after masking immutable address slots and removing the Solidity metadata trailer.
+All immutable patches contain the expected owner or token address. The creation input also matches the local bytecode and constructor arguments exactly.
+The deployer's nonce advanced from `0` to `1`. No second deployment was attempted.
+
+Poulav's contract review remains outstanding. The vault is empty and unconfigured.
+Only its immutable owner can configure agents, approvers, recipients, or the aggregate daily cap.
+The v1 vault was not used or changed.
