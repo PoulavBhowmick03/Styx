@@ -7,10 +7,13 @@ an exception is possible only with a signature the owner produced elsewhere.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import stat
-from dataclasses import dataclass
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,13 +24,20 @@ from erebus_mcp.config import ConfigError
 
 _INVALID = "INVALID_REQUEST"
 # A key in the agent's environment would let a compromised agent act as someone else.
-_FORBIDDEN_VARIABLES = ("EREBUS_VAULT_OWNER_KEY", "EREBUS_VAULT_OWNER_KEY_FILE", "EREBUS_DISCLOSURE_KEY_FILE")
+_FORBIDDEN_VARIABLES = (
+    "EREBUS_VAULT_OWNER_KEY", "EREBUS_VAULT_OWNER_KEY_FILE", "EREBUS_DISCLOSURE_KEY_FILE", "TELEGRAM_BOT_TOKEN",
+)
+_RELAY_UNAVAILABLE = "RELAY_UNAVAILABLE"
+_RELAY_TIMEOUT_SECONDS = 15
+_MAX_RELAY_RESPONSE_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
 class VaultSettings:
     artifacts: Path
     binary: str | None = None
+    relay_url: str | None = None
+    relay_token: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> VaultSettings:
@@ -44,7 +54,14 @@ class VaultSettings:
         for name in _FORBIDDEN_VARIABLES:
             if os.environ.get(name):
                 raise ConfigError(f"{name} must not be set in the agent's environment")
-        return cls(artifacts=root.resolve(), binary=os.environ.get("EREBUS_VAULT_CLI"))
+        relay_url = os.environ.get("EREBUS_VAULT_RELAY_URL")
+        relay_token = os.environ.get("EREBUS_VAULT_RELAY_TOKEN")
+        if bool(relay_url) != bool(relay_token):
+            raise ConfigError("set both EREBUS_VAULT_RELAY_URL and EREBUS_VAULT_RELAY_TOKEN, or neither")
+        if relay_url and not relay_url.startswith(("https://", "http://")):
+            raise ConfigError("EREBUS_VAULT_RELAY_URL must be an http or https URL")
+        return cls(artifacts=root.resolve(), binary=os.environ.get("EREBUS_VAULT_CLI"),
+                   relay_url=relay_url.rstrip("/") if relay_url else None, relay_token=relay_token)
 
     def artifact(self, name: str) -> str:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", name, flags=re.ASCII):
@@ -81,6 +98,50 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     def invalid(error: VaultError) -> dict[str, Any]:
         return {"ok": False, "error": {"code": error.code, "message": error.message}}
 
+    def relay_call(path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"{settings.relay_url}{path}", data=json.dumps(body).encode() if body is not None else None,
+            headers={"content-type": "application/json", "authorization": f"Bearer {settings.relay_token}"},
+        )
+        with urllib.request.urlopen(request, timeout=_RELAY_TIMEOUT_SECONDS) as reply:  # noqa: S310 (scheme checked)
+            result = json.loads(reply.read(_MAX_RELAY_RESPONSE_BYTES))
+        if not isinstance(result, dict):
+            raise ValueError("unexpected relay response")
+        return result
+
+    def send_to_relay(pending_file: str, stem: str) -> dict[str, Any]:
+        """A failed alert leaves the approval valid, so it reports the failure and does not raise."""
+        try:
+            sent = relay_call("/requests", {"pending": json.loads(Path(pending_file).read_text())})
+            request_id = sent["requestId"]
+            if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", request_id):
+                raise ValueError("unexpected relay response")
+            Path(settings.artifact(f"relay-{stem}.txt")).write_text(request_id)
+            return {"owner_alerted": sent.get("alerted") is True}
+        except (OSError, ValueError, KeyError):
+            return {"owner_alerted": False}
+
+    def fetch_signature(payment_id: str) -> dict[str, Any]:
+        stem = payment_id.removeprefix("0x")[:12]
+        record = Path(settings.artifact(f"relay-{stem}.txt"))
+        if not record.exists():
+            return {"ok": False, "error": {"code": _INVALID, "message": "request the owner's approval first"}}
+        try:
+            result = relay_call(f"/requests/{record.read_text()}/signature")
+        except urllib.error.HTTPError as error:
+            if error.code == 410:
+                return {"ok": True, "result": {"status": "expired"}}
+            return {"ok": False, "error": {"code": _RELAY_UNAVAILABLE, "message": "the relay refused this check"}}
+        except (OSError, ValueError):
+            return {"ok": False, "error": {"code": _RELAY_UNAVAILABLE, "message": "the relay could not be reached"}}
+        if result.get("status") != "signed":
+            return {"ok": True, "result": {"status": "pending"}}
+        name = f"signature-{stem}.json"
+        descriptor = os.open(settings.artifact(name), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w") as output:
+            json.dump(result.get("signature"), output)
+        return {"ok": True, "result": {"status": "signed", "signature_name": name}}
+
     @server.tool()
     async def erebus_propose_payment(
         recipient: str, amount: str, invoice_name: str, invoice_reference: str, valid_until: int,
@@ -96,15 +157,22 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     @server.tool()
     async def erebus_request_owner_approval(payment_id: str, authorization_expiry: int) -> dict[str, Any]:
         """Write the approval request the owner opens on their signing page. Moves no funds."""
-        name = f"pending-{payment_id.removeprefix('0x')[:12]}.json"
+        stem = payment_id.removeprefix("0x")[:12]
+        name = f"pending-{stem}.json"
         try:
             pending = settings.artifact(name)
         except VaultError as error:
             return invalid(error)
-        response = await call("request_approval", payment_id=payment_id,
-                              authorization_expiry=authorization_expiry, pending_file=pending)
+        # With a relay, asking again re-sends the existing request, which retries a failed alert.
+        if settings.relay_url and Path(pending).exists():
+            response: dict[str, Any] = {"ok": True, "result": {"status": "ok"}}
+        else:
+            response = await call("request_approval", payment_id=payment_id,
+                                  authorization_expiry=authorization_expiry, pending_file=pending)
         if response["ok"]:
             response["result"]["pending_file"] = name
+            if settings.relay_url:
+                response["result"].update(await asyncio.to_thread(send_to_relay, pending, stem))
         return response
 
     @server.tool()
@@ -123,5 +191,17 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     async def erebus_payment_status(payment_id: str) -> dict[str, Any]:
         """Read a payment's state from the chain: settled, not_settled, or unavailable."""
         return await call("status", payment_id=payment_id)
+
+    if settings.relay_url:
+        @server.tool()
+        async def erebus_check_owner_approval(payment_id: str) -> dict[str, Any]:
+            """Check whether the owner has signed. When signed, pass signature_name to erebus_submit_payment.
+
+            Pending means wait. Asking the owner again does not make approval arrive sooner.
+            """
+            try:
+                return await asyncio.to_thread(fetch_signature, payment_id)
+            except VaultError as error:
+                return invalid(error)
 
     return server
