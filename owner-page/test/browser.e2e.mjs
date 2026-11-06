@@ -321,6 +321,7 @@ try {
     });
     await page.goto(crafted.toString());
     await page.locator("#sign").waitFor({ state: "visible" });
+    await waitFor(async () => /would stay here as a file/.test(await status(page)), "warning before signing");
     await page.click("#sign");
     await waitFor(async () => /not sent/.test(await status(page)), "refusal to post");
     assert.equal(posted.length, 0);
