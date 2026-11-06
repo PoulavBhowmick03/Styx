@@ -769,6 +769,13 @@ async fn status(
     payment_id: &str,
 ) -> Result<Value, VaultError> {
     let payment_id = parse_payment_id(payment_id)?;
+    let journal = Journal::open(&config.state_root)?;
+    let reference = PaymentRef::new(&payment_id);
+    let _held = journal.lock(&reference)?;
+    let mut retained = journal.read(&reference)?;
+    if let Some(record) = retained.as_mut() {
+        check_binding(config, &journal, record)?;
+    }
     let unavailable = |_| json!({"status": "ok", "state": "unavailable"});
     if let Err(error) = rpc.check_chain().await {
         return Ok(unavailable(error));
@@ -783,10 +790,9 @@ async fn status(
     if !consumed {
         return Ok(json!({"status": "ok", "state": "not_settled"}));
     }
-    let journal = Journal::open(&config.state_root)?;
-    let _held = journal.lock(&PaymentRef::new(&payment_id))?;
-    let (_, mut record) = load_record(&journal, &payment_id)?;
-    check_binding(config, &journal, &mut record)?;
+    let Some(record) = retained else {
+        return Ok(json!({"status":"ok", "state":"unknown"}));
+    };
     let hash = rpc
         .view_word(&config.vault, &abi::encode_payment_hash_by_id(&payment_id))
         .await?;
@@ -943,6 +949,43 @@ mod settlement_tests {
             authorization: None,
             owner_signature: None,
             attempts: vec![],
+        }
+    }
+
+    #[test]
+    fn v1_journal_binding_checks_all_four_context_fields_before_network_access() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = Journal::open(directory.path()).unwrap();
+        let config = VaultConfig {
+            chain_id: 31337,
+            rpc_urls: vec![],
+            vault: [1; 20],
+            token: [2; 20],
+            state_root: directory.path().to_path_buf(),
+            receipt_timeout: Duration::ZERO,
+            rpc_timeout: Duration::ZERO,
+        };
+        let mut record = retained_record();
+        record.binding = Some(Binding {
+            chain_id: config.chain_id,
+            vault: config.vault,
+            token: config.token,
+            agent: record.payment.agent,
+        });
+        assert!(check_binding(&config, &journal, &mut record.clone()).is_ok());
+        for field in 0..4 {
+            let mut changed = record.clone();
+            let binding = changed.binding.as_mut().unwrap();
+            match field {
+                0 => binding.chain_id += 1,
+                1 => binding.vault[0] ^= 1,
+                2 => binding.token[0] ^= 1,
+                _ => binding.agent[0] ^= 1,
+            }
+            assert!(
+                check_binding(&config, &journal, &mut changed).is_err(),
+                "context field {field}"
+            );
         }
     }
 

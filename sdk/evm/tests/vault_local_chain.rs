@@ -977,6 +977,17 @@ async fn journal_rejects_changed_deployment_and_preserves_legacy_signed_records(
     );
     assert_eq!(wrong["status"], "error", "{wrong}");
     assert!(wrong.to_string().contains("binding"), "{wrong}");
+    let wrong_status = chain.cli_for(
+        json!({"method":"status","payment_id":id}),
+        0,
+        &second,
+        &chain.token,
+        &chain.dir.join("agent.key"),
+    );
+    assert_eq!(
+        wrong_status["status"], "error",
+        "status must validate the retained context first: {wrong_status}"
+    );
     let wrong = chain.cli_for(
         request.clone(),
         0,
