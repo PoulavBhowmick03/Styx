@@ -111,7 +111,11 @@ The first verify attempt read unavailable because the RPC did not answer, so it 
 
 Owners no longer need a config file to approve from an alert. The page confirms the vault once per browser, then reads the owner, token, limits and allowlist from the vault through the wallet. Tested on a local chain in headless Chrome (26 scenarios), where Anvil stands in for the wallet.
 
-**Not yet shown:** an approval through the hosted pages and relay, any phone, and the MetaMask deep link. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
+**On a phone:** a real alert opened the hosted page in a phone wallet's browser. It read the owner from Arc, showed the first-use check, and refused a wallet that is not the owner.
+
+**A limit this exposed:** the approver must hold the owner key. Someone at an institution cannot approve from their own wallet. Approver roles and multisig owners need a contract change and are not built.
+
+**Not yet shown:** a signature by the owner on a phone. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
 
 ## Gates
 
