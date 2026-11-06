@@ -84,6 +84,23 @@ The code hash the reviewer read from Arc, `0x6da4...3ebd`, also came back the sa
 
 **Caveat:** this is a second Mac with its own key and RPC, but it also holds the repo and some unfunded local test keys. None of the real owner, agent or issuer keys has been on it. Poulav decided this counts as the second machine.
 
+## Arkiv
+
+Run with `scripts/arkiv_gate.sh` on Rabdi, chain ID 7794095.
+
+| | |
+| --- | --- |
+| **Writer** | `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258` |
+| **Entity** | `0xc4169c3f52bd75373fbe868933ed1a49f650813ec0d5722d95cfe021c17b2fba` |
+| **Transaction** | `0x4bce932d04a11fae91e5b5e73175277fbf582419789dc2d885277b6ed25454c4` |
+| **Lookup tag** | `ffa18dd008d8a0e8ebc14d2d1424a861` |
+
+With no project process running locally and no access key, the fetch returned 1,762 bytes identical to the local grant. The verifier then reported record integrity, authorization, settlement and policy at execution as verified against Arc. Another writer's address returned nothing, and a copy with one changed bit was refused.
+
+The first verify attempt read unavailable because the RPC did not answer, so it is retried, and it passed on the next attempt. The grant expires on 12 November 2026, and the entity about two days later.
+
+**Not shown:** this fetch ran on the issuer's Mac with a reviewer key made there, so it was not a separate reviewer's machine. Nobody outside the team has used it.
+
 ## Hosting
 
 | | |
@@ -104,7 +121,7 @@ Owners no longer need a config file to approve from an alert. The page confirms 
 | G1 | **Passed on Arc testnet** | See "Live run" below |
 | G2 | **Passed on Arc testnet** | Signed in MetaMask. See "Live run" below |
 | G3 | **Passed on a second Mac, with a caveat** | See "Reviewer on a second machine" below |
-| G4 | Not run | Access key set. Publisher `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258` reads a balance of 0 on Rabdi, so it cannot publish yet. `scripts/arkiv_gate.sh` is ready |
+| G4 | **Passed, on one machine** | See "Arkiv" below |
 | G5 | Not run | Needs a World client |
 
 **Review:** the team reported reviewing an earlier local version of the contract and signing code. On 6 November, after the live run, Poulav reported reviewing the work, including the contract and signing code this run depends on. This is the team's own review, not an audit.
