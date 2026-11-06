@@ -322,7 +322,7 @@ async function sendToRelay(link: RelayLink, file: string): Promise<"accepted" | 
 }
 async function openFromLink(link: RelayLink): Promise<void> {
   element("pending-label").hidden = true;
-  element<HTMLDetailsElement>("config-details").open = false;
+  element("config-details").hidden = true;
   showStatus("Loading the approval request.");
   try {
     const response = await fetch(`${link.relay}/requests/${encodeURIComponent(link.request)}`);
@@ -418,6 +418,7 @@ function hideHelpers(): void {
   element("first-use").hidden = true;
   element("wallet-help").hidden = true;
   element("switch-chain").hidden = true;
+  element("connect-wallet").hidden = true;
 }
 
 /**
@@ -453,13 +454,37 @@ async function prepareReview(link: RelayLink): Promise<void> {
     showStatus("This vault could not be read through your wallet, so there is nothing to check this request against.", true);
     return;
   }
-  const trust = loadTrust(pending.chainId, pending.vault);
+  let trust = loadTrust(pending.chainId, pending.vault);
   if (!trust) {
-    askToConfirmVault(link, facts);
-    return;
+    // A build with its own relay needs no question. A signature is bound to one vault, so one made for a
+    // fake vault cannot move this owner's funds, and a link cannot choose the relay. A question is only
+    // left for a browser that knows a different vault, or a build that would take the relay from the link.
+    if (!BUILT_IN_RELAY || otherKnownVault(pending.vault)) {
+      askToConfirmVault(link, facts);
+      return;
+    }
+    let isOwner: boolean;
+    try {
+      isOwner = await connectedAsOwner(wallet, facts);
+    } catch {
+      element("connect-wallet").hidden = false;
+      showStatus("Connect the owner wallet to review this request.", true);
+      return;
+    }
+    if (!isOwner) {
+      showStatus(`This wallet is not the vault's owner. Connect ${facts.owner}, then try again.`, true);
+      return;
+    }
+    trust = { chainId: pending.chainId, vault: pending.vault, relay: relayForFirstUse(link, BUILT_IN_RELAY) };
+    saveTrust(trust);
   }
   config = configFromChain(pending, facts, trust, savedLabels(pending.chainId, pending.vault));
   render();
+}
+
+async function connectedAsOwner(wallet: Eip1193, facts: ChainFacts): Promise<boolean> {
+  const accounts = (await wallet.request({ method: "eth_requestAccounts" })) as string[];
+  return Boolean(accounts[0]) && getAddress(accounts[0]!) === facts.owner;
 }
 
 let confirmVault: (() => Promise<void>) | undefined;
@@ -480,8 +505,7 @@ function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
   confirmVault = async () => {
     const wallet = window.ethereum;
     if (!wallet) return;
-    const accounts = (await wallet.request({ method: "eth_requestAccounts" })) as string[];
-    if (!accounts[0] || getAddress(accounts[0]) !== facts.owner) {
+    if (!(await connectedAsOwner(wallet, facts))) {
       showStatus(`This wallet is not the vault's owner. Connect ${facts.owner}, then try again.`, true);
       return;
     }
@@ -492,6 +516,10 @@ function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
 
 element("trust-vault").addEventListener("click", () => {
   confirmVault?.().catch(() => showStatus("The wallet did not connect.", true));
+});
+
+element("connect-wallet").addEventListener("click", () => {
+  if (relayLink) void prepareReview(relayLink);
 });
 
 element("switch-chain").addEventListener("click", () => {
