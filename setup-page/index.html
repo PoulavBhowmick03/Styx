@@ -109,6 +109,9 @@
         <input id="vendor-address" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
         <label for="vendor-label">Your label for it (kept in this browser, used for the approval page's config)</label>
         <input id="vendor-label" maxlength="60" />
+        <label for="relay-url">Relay address, only if you run the alert relay (optional)</label>
+        <input id="relay-url" class="mono" placeholder="https://relay.example" autocomplete="off" spellcheck="false" />
+        <p class="note">The approval page sends your signature only to the relay named in your config, so a crafted link cannot redirect it. Leave this empty to carry signature files by hand.</p>
         <button id="add-vendor">Allow vendor</button>
         <button id="check-vendor" class="secondary">Check address</button>
         <button id="export-config" class="secondary">Download approval-page config</button>

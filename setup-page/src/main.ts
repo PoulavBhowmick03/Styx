@@ -460,7 +460,18 @@ async function exportConfig(): Promise<void> {
     const address = item.textContent?.split(": ").pop() ?? "";
     if (isAddress(address, { strict: false })) vendors[getAddress(address)] = names[address.toLowerCase()] ?? "Unlabelled vendor";
   }
-  const config = { chainId: String(chainId), vault, owner: account, token, vendors };
+  const relayText = $<HTMLInputElement>("relay-url").value.trim();
+  let relay: string | undefined;
+  if (relayText) {
+    try {
+      const url = new URL(relayText);
+      if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("scheme");
+      relay = url.origin;
+    } catch {
+      return status("The relay address must be an http or https URL, like https://relay.example.", true);
+    }
+  }
+  const config = { chainId: String(chainId), vault, owner: account, token, ...(relay ? { relay } : {}), vendors };
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2)], { type: "application/json" }));
   link.download = "owner-config.json";

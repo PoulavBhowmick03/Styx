@@ -2,3 +2,4 @@ node_modules/
 dist/
 # Generated from `forge build` by scripts/prepare-artifact.mjs. Never edit or commit it.
 public/vault-artifact.json
+.build/

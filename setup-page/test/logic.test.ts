@@ -94,6 +94,16 @@ describe("code check", () => {
     expect(matchesBuild("0xaabb" + "11223344" + "ccde", artifact)).toBe(false);
     expect(matchesBuild("0xaabc" + "11223344" + "ccdd", artifact)).toBe(false);
   });
+  it("ignores the metadata trailer, which changes with tooling, but not the code before it", () => {
+    // Two bytes of code, a 5-byte CBOR trailer starting with a map byte (0xa2), then its length (0x0005).
+    const artifact: Artifact = { abi: [], bytecode: "0x", deployedBytecode: "0x6001a2aabbccdd0005", immutableReferences: {} };
+    expect(matchesBuild("0x6001a2112233440005", artifact)).toBe(true); // different trailer content
+    expect(matchesBuild("0x6002a2aabbccdd0005", artifact)).toBe(false); // different code
+  });
+  it("does not strip a trailer that does not look like one", () => {
+    const artifact: Artifact = { abi: [], bytecode: "0x", deployedBytecode: "0x60016002600360040005", immutableReferences: {} };
+    expect(matchesBuild("0x60016002600360050005", artifact)).toBe(false); // last bytes are code, not a trailer
+  });
   it("rejects an address with no code", () => {
     expect(matchesBuild("0x", artifact)).toBe(false);
   });
