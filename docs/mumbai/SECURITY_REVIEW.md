@@ -95,3 +95,18 @@ disclosure key generation and MCP entry point checks. `uv lock --check` and work
 `uv.lock` did not change. See `packaging/README.md` for build and install commands.
 Human: distribute reviewed artifacts or publish packages. No PyPI release, Linux runtime,
 Windows support or clean second-machine install was verified.
+
+### Task 3: CI
+
+Added `.github/workflows/ci.yml` with the handoff's Rust, Foundry, owner-page/browser,
+Arkiv, Python and local-demo commands, watcher tests and platform wheel builds.
+Actions are pinned to fetched commit SHAs; checkout credentials are not persisted and token
+permissions are read-only. Gitleaks is checksum-pinned and scans PR/push commits; manual runs
+scan history. No repository secrets, model account, Telegram account or live deployment needed.
+The known missing-source Python test still runs and is retained in the JUnit artifact and warning;
+only that exact failure is tolerated while `sdk/shielded/src` is absent.
+
+Local evidence so far: EVM full suite passed; seven Anvil vault tests passed; core and transport
+passed; Foundry 84 passed; owner-page typecheck/tests passed and 13 browser scenarios passed;
+Arkiv typecheck/tests passed; local demo passed. Python raw run: 430 passed, 35 skipped,
+one documented failure. No hosted Actions run has been verified; a human must enable/run it.
