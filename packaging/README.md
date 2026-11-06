@@ -34,8 +34,15 @@ Editable workspace installs deliberately do not bundle binaries: use built binar
 or explicit CLI configuration during development. `uv lock --check` and `uv sync --all-packages`
 continue to work without a Rust compiler.
 
-Locally verified: macOS arm64 release wheel, isolated installation with Cargo and rustc absent
-from PATH, real `styx-vault` version request, disclosure key generation, MCP entry point.
+Locally verified on 7 November, from the tree after the unused code was removed: the three wheels
+build (38 seconds on macOS arm64), install in isolation with Cargo and rustc absent from PATH, and
+`styx-vault` answers a real version request and `styx-disclosure` generates a key.
+
+**`smoke-install.py` currently fails on its last step.** `styx-mcp-server` now refuses to start
+without `STYX_BACKEND` set to `vault` or `disclosure`, even for `--help`, which exits 2 with
+"STYX_BACKEND must be vault or disclosure". The smoke test expects `--help` to succeed. The installed
+entry point does start and reaches its own configuration checks once a backend is set, so the install
+works; the test's expectation is out of date. It is not fixed here.
 Linux x86_64 builds are defined in CI but have not been run locally. macOS x86_64 is an untested build target.
 Linux wheels use the native `linux_x86_64` tag, not an unverified manylinux tag; build-host
 libc compatibility applies. Windows is not supported by this build configuration.
