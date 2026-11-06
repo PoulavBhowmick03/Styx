@@ -256,6 +256,24 @@ No Arc deployment or transaction is authorized by this handoff.
 
 ## Deployment
 
+### Official Arc Studio deployment
+
+Poulav selected the Studio deployment below as the official v2 vault.
+These two values came from Poulav's deployment handoff. This branch did not query Arc or send a transaction.
+
+```sh
+STYX_VAULT_ADDRESS=0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8
+STYX_VAULT_CODE_HASH=0x4ed8c17d810632423c99decd2c130a16b4c3ff3bea5c4717d1b36fd0ea8512d5
+```
+
+[Official vault on the Arc explorer](https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8).
+Poulav's contract review and shipping decision remain required.
+
+### Unused Forge deployment
+
+The Forge deployment below goes unused. Its historical reads do not describe the official Studio vault.
+Do not use this address or its code hash in deployment pins.
+
 **Deployed with Forge, not Arc Studio.** Studio compiled the unchanged source, but its deployment tool could not set the required fee caps.
 The authorized fallback submitted one creation transaction with zero value. No funding or configuration followed.
 
@@ -281,10 +299,6 @@ The authorized fallback submitted one creation transaction with zero value. No f
 | Source commit | `0d296be` |
 | Source SHA256 | `306462b7f968cf79441112cb1537aeeaacf4aeb5e2863651066f3602f96c33c4` |
 
-```sh
-STYX_VAULT_ADDRESS=0x8b1D755B5e6957a7384d676baFED4274181e4BC9
-STYX_VAULT_CODE_HASH=0x7f5592d4cd5c185cd0cec65474c879fc8aa90e001f672fc36cfec246c4da1336
-```
 
 [Arc Studio source and compilation workspace](https://studio.arc.io/app/f4f4c197-06ec-46ff-b3d1-ea18259cd358).
 This URL shows the unchanged contract and its build. It is not evidence of a Studio deployment.

@@ -53,6 +53,22 @@ pub struct Attempt {
     pub tx_hash: [u8; 32],
 }
 
+/// Deployment and identity retained with a v1 payment. Optional only for legacy reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Binding {
+    /// EIP-155 chain.
+    pub chain_id: u64,
+    /// Vault that owns this payment.
+    #[serde(with = "hex_fixed")]
+    pub vault: [u8; 20],
+    /// Token this vault pays.
+    #[serde(with = "hex_fixed")]
+    pub token: [u8; 20],
+    /// Agent that may submit it.
+    #[serde(with = "hex_fixed")]
+    pub agent: [u8; 20],
+}
+
 /// Everything the agent side remembers about one payment.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PaymentRecord {
@@ -60,6 +76,9 @@ pub struct PaymentRecord {
     pub version: u32,
     /// The record's file name.
     pub id: PaymentRef,
+    /// Absent in legacy records. Never infer it from current configuration alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<Binding>,
     /// The exact payment.
     pub payment: Payment,
     /// Its EIP-712 struct hash.

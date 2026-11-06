@@ -16,18 +16,20 @@ use super::config::VaultConfig;
 use super::digest::{approval_digest, evidence_commitment, payment_hash};
 use super::error::{VaultCode, VaultError};
 use super::events::find_in_receipt;
-use super::journal::{Journal, PaymentRecord, PaymentRef};
+use super::journal::{Binding, Journal, PaymentRecord, PaymentRef};
 use super::record::{
     EvidenceOpening, ExceptionEvidence, PolicySnapshot, SettlementPointer, VaultPaymentRecord,
     RECORD_SCHEMA,
 };
-use super::rpc::{receipt_block, receipt_succeeded, CallOutcome, VaultRpc};
+use super::rpc::{receipt_block, receipt_succeeded, receipt_tx_hash, CallOutcome, VaultRpc};
 use super::types::{
     parse_hex, ExceptionAuthorization, OwnerSignature, Payment, PendingApproval, PENDING_SCHEMA,
     SIGNATURE_SCHEMA,
 };
 use super::verify::recover_signer;
-use crate::chain::{build_signed_call, Eip1559Fees, TransactionKey, TransactionParams};
+use crate::chain::{
+    build_signed_call, Eip1559Fees, SignedTransaction, TransactionKey, TransactionParams,
+};
 
 const MAX_INVOICE_BYTES: u64 = 1024 * 1024;
 const MAX_SIGNATURE_FILE_BYTES: u64 = 4 * 1024;
@@ -342,6 +344,12 @@ async fn propose(
     journal.write(&PaymentRecord {
         version: 1,
         id,
+        binding: Some(Binding {
+            chain_id: config.chain_id,
+            vault: config.vault,
+            token: config.token,
+            agent: agent_address,
+        }),
         payment: payment.clone(),
         payment_hash: hash,
         invoice_hex: format!("0x{}", hex::encode(&invoice)),
@@ -372,6 +380,83 @@ fn load_record(
     Ok((id, record))
 }
 
+/// Validates retained context before signing, reconciling or exporting. An old signed
+/// transaction provides authenticated context; an unsigned legacy record does not.
+fn check_binding(
+    config: &VaultConfig,
+    journal: &Journal,
+    record: &mut PaymentRecord,
+) -> Result<(), VaultError> {
+    let expected = Binding {
+        chain_id: config.chain_id,
+        vault: config.vault,
+        token: config.token,
+        agent: record.payment.agent,
+    };
+    if record.id != PaymentRef::new(&record.payment.payment_id)
+        || record.payment_hash != payment_hash(&record.payment)
+        || record.payment.token != config.token
+        || record
+            .binding
+            .as_ref()
+            .is_some_and(|binding| binding != &expected)
+    {
+        return Err(VaultError::invalid(
+            "journal binding does not match this deployment and payment",
+        ));
+    }
+    // Check every retained transaction before any resend or new attempt. Old versions
+    // stored the same blobs, so this also validates legacy records without rewriting them.
+    for (index, attempt) in record.attempts.iter().enumerate() {
+        let raw = journal.read_attempt(&record.id, index)?;
+        let signed = SignedTransaction::from_raw(&raw)
+            .map_err(|_| VaultError::invalid("journal binding: invalid retained transaction"))?;
+        if signed.hash() != attempt.tx_hash
+            || signed.chain_id() != config.chain_id
+            || signed.to() != config.vault
+            || signed.sender() != record.payment.agent
+            || signed.params().value != 0
+        {
+            return Err(VaultError::invalid(
+                "journal binding: retained transaction belongs to another context",
+            ));
+        }
+        // The fixed payment tuple is the first eight ABI words in either call.
+        let ordinary = abi::encode_pay(&record.payment);
+        let input = signed.input();
+        let exception_selector = record
+            .authorization
+            .as_ref()
+            .map(|a| abi::encode_pay_with_exception(&record.payment, a, &[0; 65]));
+        let selector_ok = input.get(..4) == ordinary.get(..4)
+            || exception_selector
+                .as_ref()
+                .is_some_and(|encoded| input.get(..4) == encoded.get(..4));
+        if !selector_ok || input.get(4..260) != ordinary.get(4..260) {
+            return Err(VaultError::invalid(
+                "journal binding: retained transaction names a different payment",
+            ));
+        }
+    }
+    if record.binding.is_none() {
+        if record.attempts.is_empty() {
+            return Err(VaultError::invalid("legacy journal binding is unknown: no signed attempt proves its original vault; leave this record unchanged for operator review"));
+        }
+        record.binding = Some(expected);
+        journal.write(record)?;
+    }
+    Ok(())
+}
+
+fn check_agent(record: &PaymentRecord) -> Result<(), VaultError> {
+    if load_agent_key()?.address() != record.payment.agent {
+        return Err(VaultError::invalid(
+            "journal binding does not match the configured agent",
+        ));
+    }
+    Ok(())
+}
+
 async fn request_approval(
     config: &VaultConfig,
     rpc: &VaultRpc,
@@ -383,6 +468,8 @@ async fn request_approval(
     let journal = Journal::open(&config.state_root)?;
     let _held = journal.lock(&PaymentRef::new(&payment_id))?;
     let (_, mut record) = load_record(&journal, &payment_id)?;
+    check_binding(config, &journal, &mut record)?;
+    check_agent(&record)?;
     if !record.exception_required {
         return Err(VaultError::invalid(
             "this payment is within the limit and needs no owner approval",
@@ -482,27 +569,91 @@ pub(super) fn revert_error(data: &[u8]) -> VaultError {
     }
 }
 
-fn tx_hex(hash: &[u8; 32]) -> String {
+fn tx_hex(hash: &[u8]) -> String {
     format!("0x{}", hex::encode(hash))
 }
 
-/// Waits for a receipt, returning the state to report. Running out of time is `unknown`.
-async fn await_outcome(config: &VaultConfig, rpc: &VaultRpc, tx_hash: &[u8; 32]) -> Value {
+/// Confirms the exact payment in a canonical receipt from this vault and agent.
+async fn matching_receipt(
+    config: &VaultConfig,
+    rpc: &VaultRpc,
+    record: &PaymentRecord,
+    tx_hash: &[u8; 32],
+    receipt: &Value,
+) -> bool {
+    if receipt_succeeded(receipt) != Some(true)
+        || receipt_tx_hash(receipt) != Some(*tx_hash)
+        || receipt["to"].as_str().and_then(|s| parse_hex::<20>(s).ok()) != Some(config.vault)
+        || receipt["from"]
+            .as_str()
+            .and_then(|s| parse_hex::<20>(s).ok())
+            != Some(record.payment.agent)
+    {
+        return false;
+    }
+    let Some(found) = find_in_receipt(receipt, &config.vault, &record.payment.payment_id) else {
+        return false;
+    };
+    let p = &record.payment;
+    let e = found.event;
+    if e.recipient != p.recipient
+        || e.amount != p.amount
+        || e.payment_hash != record.payment_hash
+        || e.evidence_commitment != p.evidence_commitment
+        || e.policy_version != p.policy_version
+    {
+        return false;
+    }
+    if e.exception {
+        if record
+            .authorization
+            .as_ref()
+            .map(|a| approval_digest(config.chain_id, &config.vault, a))
+            != Some(e.approval_digest)
+        {
+            return false;
+        }
+    } else if e.approval_digest != [0; 32] {
+        return false;
+    }
+    let Some(block) = receipt_block(receipt) else {
+        return false;
+    };
+    match rpc.canonical_block_hash(block).await {
+        Ok(hash) => {
+            receipt["blockHash"]
+                .as_str()
+                .and_then(|s| parse_hex::<32>(s).ok())
+                == Some(hash)
+        }
+        Err(_) => false,
+    }
+}
+
+/// A receipt without the exact canonical event leaves the outcome unknown.
+async fn await_outcome(
+    config: &VaultConfig,
+    rpc: &VaultRpc,
+    record: &PaymentRecord,
+    tx_hash: &[u8; 32],
+) -> Value {
     let started = Instant::now();
     loop {
         if let Ok(Some(receipt)) = rpc.receipt(tx_hash).await {
-            return match receipt_succeeded(&receipt) {
-                Some(true) => {
-                    json!({"status": "ok", "state": "settled", "tx_hash": tx_hex(tx_hash)})
-                }
-                Some(false) => {
-                    json!({"status": "ok", "state": "reverted", "tx_hash": tx_hex(tx_hash)})
-                }
-                None => json!({"status": "ok", "state": "unknown", "tx_hash": tx_hex(tx_hash)}),
+            let state = if matching_receipt(config, rpc, record, tx_hash, &receipt).await {
+                "settled"
+            } else if receipt_succeeded(&receipt) == Some(false)
+                && receipt_tx_hash(&receipt) == Some(*tx_hash)
+                && receipt_block(&receipt).is_some()
+            {
+                "reverted"
+            } else {
+                "unknown"
             };
+            return json!({"status":"ok", "state":state, "tx_hash":tx_hex(tx_hash)});
         }
         if started.elapsed() >= config.receipt_timeout {
-            return json!({"status": "ok", "state": "unknown", "tx_hash": tx_hex(tx_hash)});
+            return json!({"status":"ok", "state":"unknown", "tx_hash":tx_hex(tx_hash)});
         }
         tokio::time::sleep(RECEIPT_POLL).await;
     }
@@ -519,16 +670,25 @@ async fn submit(
     let id = PaymentRef::new(&payment_id);
     let _held = journal.lock(&id)?;
     let (_, mut record) = load_record(&journal, &payment_id)?;
+    check_binding(config, &journal, &mut record)?;
+    check_agent(&record)?;
     rpc.check_chain().await?;
 
     let consumed = rpc
         .view_bool(&config.vault, &abi::encode_consumed_payment(&payment_id))
         .await?;
     if consumed {
+        if rpc
+            .view_word(&config.vault, &abi::encode_payment_hash_by_id(&payment_id))
+            .await?
+            != record.payment_hash
+        {
+            return Err(VaultError::invalid(
+                "payment ID was consumed by a different payment",
+            ));
+        }
         return match record.attempts.last() {
-            Some(attempt) => {
-                Ok(json!({"status": "ok", "state": "settled", "tx_hash": tx_hex(&attempt.tx_hash)}))
-            }
+            Some(attempt) => Ok(await_outcome(config, rpc, &record, &attempt.tx_hash).await),
             None => Err(VaultError::new(
                 VaultCode::PaymentAlreadySettled,
                 "the vault already consumed this payment ID",
@@ -541,7 +701,10 @@ async fn submit(
     if let Some(attempt) = record.attempts.last() {
         let tx_hash = attempt.tx_hash;
         match rpc.receipt(&tx_hash).await? {
-            Some(receipt) if receipt_succeeded(&receipt) == Some(false) => {}
+            Some(receipt)
+                if receipt_succeeded(&receipt) == Some(false)
+                    && receipt_tx_hash(&receipt) == Some(tx_hash)
+                    && receipt_block(&receipt).is_some() => {}
             Some(_) => {
                 return Ok(json!({"status": "ok", "state": "unknown", "tx_hash": tx_hex(&tx_hash)}))
             }
@@ -549,7 +712,7 @@ async fn submit(
                 let raw = journal.read_attempt(&id, record.attempts.len() - 1)?;
                 // A failed resend leaves the outcome unknown; the poll below reports it.
                 let _ = rpc.send_raw(&raw).await;
-                return Ok(await_outcome(config, rpc, &tx_hash).await);
+                return Ok(await_outcome(config, rpc, &record, &tx_hash).await);
             }
         }
     }
@@ -597,7 +760,7 @@ async fn submit(
     journal.store_attempt(&mut record, signed.raw(), tx_hash)?;
     // The bytes are durable, so a failed send leaves a state the next call can reconcile.
     let _ = rpc.send_raw(signed.raw()).await;
-    Ok(await_outcome(config, rpc, &tx_hash).await)
+    Ok(await_outcome(config, rpc, &record, &tx_hash).await)
 }
 
 async fn status(
@@ -606,6 +769,13 @@ async fn status(
     payment_id: &str,
 ) -> Result<Value, VaultError> {
     let payment_id = parse_payment_id(payment_id)?;
+    let journal = Journal::open(&config.state_root)?;
+    let reference = PaymentRef::new(&payment_id);
+    let _held = journal.lock(&reference)?;
+    let mut retained = journal.read(&reference)?;
+    if let Some(record) = retained.as_mut() {
+        check_binding(config, &journal, record)?;
+    }
     let unavailable = |_| json!({"status": "ok", "state": "unavailable"});
     if let Err(error) = rpc.check_chain().await {
         return Ok(unavailable(error));
@@ -620,17 +790,25 @@ async fn status(
     if !consumed {
         return Ok(json!({"status": "ok", "state": "not_settled"}));
     }
-    match rpc
+    let Some(record) = retained else {
+        return Ok(json!({"status":"ok", "state":"unknown"}));
+    };
+    let hash = rpc
         .view_word(&config.vault, &abi::encode_payment_hash_by_id(&payment_id))
-        .await
-    {
-        Ok(hash) => Ok(json!({
-            "status": "ok",
-            "state": "settled",
-            "payment_hash": format!("0x{}", hex::encode(hash)),
-        })),
-        Err(error) => Ok(unavailable(error)),
+        .await?;
+    if hash != record.payment_hash {
+        return Err(VaultError::invalid(
+            "payment ID was consumed by a different payment",
+        ));
     }
+    if let Some(attempt) = record.attempts.last() {
+        if let Ok(Some(receipt)) = rpc.receipt(&attempt.tx_hash).await {
+            if matching_receipt(config, rpc, &record, &attempt.tx_hash, &receipt).await {
+                return Ok(json!({"status":"ok", "state":"settled", "payment_hash":tx_hex(&hash)}));
+            }
+        }
+    }
+    Ok(json!({"status":"ok", "state":"unknown", "payment_hash":tx_hex(&hash)}))
 }
 
 async fn export_record(
@@ -643,7 +821,8 @@ async fn export_record(
     let journal = Journal::open(&config.state_root)?;
     let id = PaymentRef::new(&payment_id);
     let _held = journal.lock(&id)?;
-    let (_, record) = load_record(&journal, &payment_id)?;
+    let (_, mut record) = load_record(&journal, &payment_id)?;
+    check_binding(config, &journal, &mut record)?;
     let attempt = record
         .attempts
         .last()
@@ -653,6 +832,11 @@ async fn export_record(
         .receipt(&attempt.tx_hash)
         .await?
         .ok_or_else(|| VaultError::unavailable("no receipt is visible for this payment yet"))?;
+    if !matching_receipt(config, rpc, &record, &attempt.tx_hash, &receipt).await {
+        return Err(VaultError::unavailable(
+            "the receipt does not prove this exact payment",
+        ));
+    }
     let found = find_in_receipt(&receipt, &config.vault, &payment_id)
         .ok_or_else(|| VaultError::invalid("the receipt has no matching vault event"))?;
     let block_number = receipt_block(&receipt)
@@ -712,4 +896,177 @@ async fn export_record(
     );
     write_new_private(record_file, &encoded)?;
     Ok(json!({"status": "ok", "record_file": record_file}))
+}
+
+#[cfg(test)]
+mod settlement_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn successful_receipt_without_payment_event_is_unknown() {
+        let url = super::super::security_tests::server(|method| match method {
+            "eth_chainId" => json!("0x7a69"),
+            "eth_getTransactionReceipt" => json!({"status":"0x1", "blockNumber":"0x1", "logs":[],
+                "transactionHash":tx_hex(&[3;32]), "to":tx_hex(&[1;20]), "from":tx_hex(&[4;20]), "blockHash":tx_hex(&[7;32])}),
+            _ => json!(null),
+        });
+        let config = VaultConfig {
+            chain_id: 31337,
+            rpc_urls: vec![url.clone()],
+            vault: [1; 20],
+            token: [2; 20],
+            state_root: PathBuf::new(),
+            receipt_timeout: Duration::ZERO,
+            rpc_timeout: Duration::from_secs(1),
+        };
+        let rpc = VaultRpc::new(&[url], Duration::from_secs(1), 31337).unwrap();
+        let record = retained_record();
+        let response = await_outcome(&config, &rpc, &record, &[3; 32]).await;
+        assert_eq!(response["state"], "unknown");
+    }
+    fn retained_record() -> PaymentRecord {
+        let payment = Payment {
+            payment_id: [3; 32],
+            agent: [4; 20],
+            token: [2; 20],
+            recipient: [5; 20],
+            amount: 1,
+            evidence_commitment: [6; 32],
+            policy_version: 1,
+            valid_until: u64::MAX,
+        };
+        PaymentRecord {
+            version: 1,
+            id: PaymentRef::new(&payment.payment_id),
+            binding: None,
+            payment_hash: payment_hash(&payment),
+            payment,
+            invoice_hex: String::new(),
+            salt: [0; 32],
+            invoice_reference: String::new(),
+            per_payment_limit: 1,
+            exception_required: false,
+            authorization: None,
+            owner_signature: None,
+            attempts: vec![],
+        }
+    }
+
+    #[test]
+    fn v1_journal_binding_checks_all_four_context_fields_before_network_access() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = Journal::open(directory.path()).unwrap();
+        let config = VaultConfig {
+            chain_id: 31337,
+            rpc_urls: vec![],
+            vault: [1; 20],
+            token: [2; 20],
+            state_root: directory.path().to_path_buf(),
+            receipt_timeout: Duration::ZERO,
+            rpc_timeout: Duration::ZERO,
+        };
+        let mut record = retained_record();
+        record.binding = Some(Binding {
+            chain_id: config.chain_id,
+            vault: config.vault,
+            token: config.token,
+            agent: record.payment.agent,
+        });
+        assert!(check_binding(&config, &journal, &mut record.clone()).is_ok());
+        for field in 0..4 {
+            let mut changed = record.clone();
+            let binding = changed.binding.as_mut().unwrap();
+            match field {
+                0 => binding.chain_id += 1,
+                1 => binding.vault[0] ^= 1,
+                2 => binding.token[0] ^= 1,
+                _ => binding.agent[0] ^= 1,
+            }
+            assert!(
+                check_binding(&config, &journal, &mut changed).is_err(),
+                "context field {field}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn settlement_requires_the_exact_event_and_canonical_receipt() {
+        let url = super::super::security_tests::server(|method| match method {
+            "eth_chainId" => json!("0x7a69"),
+            "eth_getBlockByNumber" => json!({"hash":tx_hex(&[7;32])}),
+            _ => json!(null),
+        });
+        let config = VaultConfig {
+            chain_id: 31337,
+            rpc_urls: vec![url.clone()],
+            vault: [1; 20],
+            token: [2; 20],
+            state_root: PathBuf::new(),
+            receipt_timeout: Duration::ZERO,
+            rpc_timeout: Duration::from_secs(1),
+        };
+        let rpc = VaultRpc::new(&[url], Duration::from_secs(1), 31337).unwrap();
+        let record = retained_record();
+        let mut recipient = [0; 32];
+        recipient[12..].copy_from_slice(&record.payment.recipient);
+        let uint = |value: u128| {
+            let mut word = [0; 32];
+            word[16..].copy_from_slice(&value.to_be_bytes());
+            word
+        };
+        let words = [
+            uint(1),
+            record.payment_hash,
+            record.payment.evidence_commitment,
+            uint(1),
+            uint(1),
+            uint(10),
+            uint(0),
+            uint(1),
+            uint(0),
+            [0; 32],
+        ];
+        let data: Vec<u8> = words.into_iter().flatten().collect();
+        let receipt = json!({"status":"0x1", "blockNumber":"0x1", "blockHash":tx_hex(&[7;32]),
+            "transactionHash":tx_hex(&[3;32]), "to":tx_hex(&config.vault), "from":tx_hex(&record.payment.agent),
+            "logs":[{"address":tx_hex(&config.vault), "logIndex":"0x0",
+                "topics":[tx_hex(&super::super::events::payment_executed_topic()),tx_hex(&record.payment.payment_id),tx_hex(&recipient)],"data":tx_hex(&data)}]});
+        assert!(matching_receipt(&config, &rpc, &record, &[3; 32], &receipt).await);
+        for field in [
+            "transactionHash",
+            "to",
+            "from",
+            "blockHash",
+            "blockNumber",
+            "status",
+        ] {
+            let mut changed = receipt.clone();
+            changed[field] = json!(null);
+            assert!(
+                !matching_receipt(&config, &rpc, &record, &[3; 32], &changed).await,
+                "{field}"
+            );
+        }
+        for word in [0, 1, 2, 3, 8, 9] {
+            let mut changed = receipt.clone();
+            let mut bad = data.clone();
+            bad[word * 32 + 31] ^= 1;
+            changed["logs"][0]["data"] = json!(tx_hex(&bad));
+            assert!(
+                !matching_receipt(&config, &rpc, &record, &[3; 32], &changed).await,
+                "event word {word}"
+            );
+        }
+        for field in ["address", "topics"] {
+            let mut changed = receipt.clone();
+            changed["logs"][0][field] = json!(null);
+            assert!(
+                !matching_receipt(&config, &rpc, &record, &[3; 32], &changed).await,
+                "log {field}"
+            );
+        }
+        let mut missing = receipt.clone();
+        missing["logs"] = json!([]);
+        assert!(!matching_receipt(&config, &rpc, &record, &[3; 32], &missing).await);
+    }
 }
