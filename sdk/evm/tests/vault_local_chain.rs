@@ -862,3 +862,70 @@ async fn reviewer_opens_only_their_own_grant_and_checks_it_with_their_own_rpc() 
     assert_eq!(report["settlement"], "unavailable");
     assert_eq!(report["policy_at_execution"], "unavailable");
 }
+
+/// A stand-in endpoint that answers every request with a JSON-RPC rate-limit error.
+fn busy_endpoint() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let mut buffer = [0u8; 8192];
+            let _ = std::io::Read::read(&mut stream, &mut buffer);
+            let body =
+                r#"{"jsonrpc":"2.0","id":0,"error":{"code":-32005,"message":"limit exceeded"}}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    url
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires anvil and forge from a Foundry install"]
+async fn rpc_fails_over_past_dead_and_rate_limited_endpoints() {
+    let chain = Chain::start().await;
+    let urls = [
+        "http://127.0.0.1:1".to_owned(),
+        busy_endpoint(),
+        chain.rpc_url.clone(),
+    ];
+    let rpc = VaultRpc::new(&urls, Duration::from_secs(2), CHAIN_ID).unwrap();
+    rpc.check_chain()
+        .await
+        .expect("reaches the working endpoint");
+    assert!(rpc.latest_timestamp().await.unwrap() > 0);
+
+    // Only busy or dead endpoints: unavailable, never a claim about the chain.
+    let urls = ["http://127.0.0.1:1".to_owned(), busy_endpoint()];
+    let rpc = VaultRpc::new(&urls, Duration::from_secs(2), CHAIN_ID).unwrap();
+    let error = rpc.check_chain().await.unwrap_err();
+    assert_eq!(error.code.as_str(), "VERIFICATION_UNAVAILABLE");
+
+    // A real revert from a working endpoint must not trigger failover or be hidden.
+    let urls = [chain.rpc_url.clone()];
+    let rpc = VaultRpc::new(&urls, Duration::from_secs(2), CHAIN_ID).unwrap();
+    let vault = chain.vault_bytes();
+    let oversized = attack_payment(
+        &chain,
+        0xa2,
+        VENDOR_A,
+        6 * ONE_USDC,
+        chain.now().await + 3_600,
+    );
+    let agent = agent_bytes(&chain);
+    match rpc
+        .call(Some(&agent), &vault, &encode_pay(&oversized))
+        .await
+        .unwrap()
+    {
+        CallOutcome::Reverted(data) => assert_eq!(
+            classify_revert(&data),
+            RevertMeaning::Approval("PerPaymentLimitExceeded")
+        ),
+        CallOutcome::Returned(_) => panic!("the oversized payment did not revert"),
+    }
+}
