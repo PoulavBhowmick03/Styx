@@ -2,7 +2,7 @@
 
 Claude 2 is a Claude Code session working for Ishita (see `docs/mumbai/ai-usage.md`). This file keeps what it was asked, as the plan requires.
 
-- **Briefs 1 to 3 are verbatim.** They were pasted into the session as written.
+- **Briefs 1 to 4, including 3b, are verbatim.** They were pasted into the session as written.
 - **The chat requests are paraphrased.** They are shorter messages typed or spoken by Ishita. They are summarised from the session, not quoted, and the wording is Claude 2's.
 - The project's `CLAUDE.md` was also loaded as standing instructions. It is in the repository.
 
@@ -74,6 +74,47 @@ Build only the reviewer tool: (cd sdk/evm && cargo build --bin erebus-disclosure
 5. Report exactly what you ran and what it printed, plus the machine (not this repo's owner's Mac) and your RPC. Do not send any transaction. Do not claim G3 passed if any step differed.
 ```
 
+## Brief 3b (verbatim): Poulav's decision about the second machine
+
+Pasted by Ishita after the G3 brief, from Poulav.
+
+```
+Does her Mac count? I think yes. G3 asks for a second machine or clean profile, and the "never held any Styx key" line was stricter wording from my prompt, not the plan's. G3 needs to show three things:
+- The reviewer has their own key.
+- They use their own RPC.
+- They have no access to the issuer's machine or the real vault's keys.
+
+Her Mac meets all three, since none of the real owner, agent or issuer keys have been on it. The throwaway Anvil keys were never funded on Arc and don't affect what this test proves.
+
+I'd record the caveat in STATUS.md instead of redoing the setup: "second Mac with its own key and RPC, but it also holds the repo and some unfunded local test keys." If you want it stricter, she can create a new macOS user and redo the key there, and I'd reissue the first grant for the new key.
+
+Add this to the message you send her:
+
+Poulav's decision: this Mac counts as the second machine. Do not redo step 1. Your report's caveat will be recorded as written, so keep it in your final report. Pull main first: STATUS.md now has the code hash and issuer. Run steps 2 and 4 with the grants attached.
+```
+
+## Brief 4 (verbatim): the v1 finish and the v2 plan, 7 November, about 01:05 IST
+
+```
+Pull main and read docs/mumbai/REMAINING_WORK.md ("V2 for organizations"). It is about 01:05 IST; submissions close at 09:00, with a go or no-go on the v2 contract at 05:30. v1 stays live and is the fallback.
+
+Now:
+1. Rebase and push claude2/submission-prep to main if tests pass, including g3_review.sh and your ai-usage.md. Poulav has not decided on claude2/restore-provenance, so keep holding that branch.
+2. G3 is recorded in STATUS.md at 80c59c9 or later. Check the hash and the four results match what you saw, and report any difference.
+3. Bring the docs up to the current state, v1 only, describing what exists:
+   - docs/mumbai/ARCHITECTURE.md: hosted pages on Vercel, relay on Fly, watcher, Arkiv. The page domain is moving to styxco.xyz, so check with Claude 1's push before writing it.
+   - docs/mumbai/DEMO_SCRIPT.md: the alert to approval flow with no file, plus the reviewer checks, Studio, and the Arkiv query. Video comes later, so make it ready to follow.
+   - SUBMISSION_README_SECTIONS.md: every claim cites a transaction from STATUS.md or says "not yet". Add the hosted approval and G4. Leave the entry type as a decision for Poulav and do not state it.
+4. Have the setup page guide owners through the new no-file approval: connect as owner here, then alerts go straight to review. Claude 1 is changing the approval page, so read its push first.
+5. Fill what you can in the TO FILL parts of ai-usage.md. The rest is for humans.
+6. Test the Cursor, Claude Desktop and Codex configs only if a real app is available. Otherwise label them not loaded.
+
+Then, once Codex's docs/mumbai/V2_REVIEW.md is on main with the interface, and only if Poulav has not chosen to stop:
+7. On branch claude2/v2, build the setup page for organizations: add, limit and switch off agents one at a time; add and remove approvers. Say clearly what each change does. Test on Anvil. Do not merge to main until Poulav says v2 ships. v1's setup flow must keep working.
+
+Rules: no transactions on Arc, no one's keys, nothing in owner-page/, relay/ or contracts/. Run gitleaks before each commit. Claim only what a test shows. Do not state the entry type or when the code was written. Report what ran and what didn't.
+```
+
 ## Ishita's chat requests (paraphrased, in order)
 
 1. Write the report so far into `STATUS.md` so Poulav's agent can read it. Never add Claude as a co-author in commits or pushes: the author should be `ishitab02` only. Include the next steps in `STATUS.md`.
@@ -83,6 +124,8 @@ Build only the reviewer tool: (cd sdk/evm && cargo build --bin erebus-disclosure
 5. (After the G3 brief) Report the reviewer steps.
 6. Look at what Poulav's Claude is doing, and say what else is left and what to do next.
 7. Do the things that do not need Poulav, locally only, and do not push to `main`. (This produced the reviewer helper `g3_review.sh`, the faster setup-page test, this file, and the README section drafts.)
+8. Look at what Poulav's Claude is doing (a terminal log was pasted), say what else is left and what to do next.
+9. The two grants are on the Desktop, use them (this produced the G3 reviewer run reported in `STATUS.md`), followed by Poulav's decision above and Brief 4.
 
 ## Not here
 
