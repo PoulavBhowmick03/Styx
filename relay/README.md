@@ -34,7 +34,7 @@ The link opens the owner page with the request loaded. The first time in a brows
 
 To open the link on your phone, the page and relay must be reachable from it, so set both URLs to HTTPS addresses you host or tunnel. A non-HTTPS page still works, but the alert has a text link and no button.
 
-**Not yet exercised:** a real Telegram bot. The tests use a fake Telegram server that follows the Bot API docs.
+A real Telegram bot has been used on Arc testnet. The automated tests use a fake Telegram server that follows the Bot API docs.
 
 ## API
 
