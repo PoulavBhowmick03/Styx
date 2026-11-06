@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use serde_json::{json, Value};
 use styx_evm::arc_vault::abi::{
     classify_revert, encode_pay, encode_pay_with_exception, RevertMeaning,
 };
@@ -17,7 +18,6 @@ use styx_evm::arc_vault::rpc::{receipt_succeeded, CallOutcome, VaultRpc};
 use styx_evm::arc_vault::types::{parse_hex, ExceptionAuthorization, Payment, PendingApproval};
 use styx_evm::arc_vault::verify::{verify_record, Check, ReviewerPins};
 use styx_evm::chain::{build_signed_call, Eip1559Fees, TransactionKey, TransactionParams};
-use serde_json::{json, Value};
 
 const CHAIN_ID: u64 = 31_337;
 const VENDOR_A: &str = "0x00000000000000000000000000000000000000a1";
@@ -133,10 +133,7 @@ impl Chain {
         };
         let token = create("src/MockERC20.sol:MockERC20", &["USD Coin", "USDC"]);
         let owner = address_of(&owner_key);
-        let vault = create(
-            "src/StyxPolicyVault.sol:StyxPolicyVault",
-            &[&owner, &token],
-        );
+        let vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", &[&owner, &token]);
         let chain = Self {
             _anvil: anvil,
             _dir: dir,

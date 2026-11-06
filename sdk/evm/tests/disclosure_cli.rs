@@ -30,7 +30,11 @@ fn run(root: &Path, request: Value) -> (Output, Value) {
 }
 
 fn temp() -> PathBuf {
-    let directory = std::env::temp_dir().join(format!("styx-cli-{}-{:?}", std::process::id(), std::thread::current().id()));
+    let directory = std::env::temp_dir().join(format!(
+        "styx-cli-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -44,7 +48,13 @@ fn version_lists_only_the_vault_methods() {
     assert!(output.status.success());
     assert_eq!(
         value["methods"],
-        json!(["version", "keygen", "key_info", "export_vault_payment", "verify_vault_payment"])
+        json!([
+            "version",
+            "keygen",
+            "key_info",
+            "export_vault_payment",
+            "verify_vault_payment"
+        ])
     );
 }
 
@@ -55,7 +65,10 @@ fn keygen_never_replaces_a_key_and_key_info_recovers_it() {
     let (_, created) = run(&root, json!({"method": "keygen", "key_file": key}));
     assert_eq!(created["status"], "ok");
     let (_, info) = run(&root, json!({"method": "key_info", "key_file": key}));
-    assert_eq!(info["recipient_public_key"], created["recipient_public_key"]);
+    assert_eq!(
+        info["recipient_public_key"],
+        created["recipient_public_key"]
+    );
     let (output, again) = run(&root, json!({"method": "keygen", "key_file": key}));
     assert!(!output.status.success());
     assert_eq!(again["status"], "error");

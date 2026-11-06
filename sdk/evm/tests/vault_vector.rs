@@ -1,12 +1,12 @@
 //! The Rust digests against the vector generated independently with `cast`.
 
+use k256::ecdsa::SigningKey;
+use serde_json::Value;
+use sha3::{Digest, Keccak256};
 use styx_evm::arc_vault::digest::{approval_digest, domain_separator, payment_hash};
 use styx_evm::arc_vault::types::parse_hex;
 use styx_evm::arc_vault::verify::recover_signer;
 use styx_evm::arc_vault::{ExceptionAuthorization, Payment};
-use k256::ecdsa::SigningKey;
-use serde_json::Value;
-use sha3::{Digest, Keccak256};
 
 const VECTOR: &str = include_str!("../../core/tests/fixtures/vault-eip712-vector.json");
 

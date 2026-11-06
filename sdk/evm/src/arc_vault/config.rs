@@ -61,9 +61,7 @@ impl VaultConfig {
             .filter(|url| !url.is_empty())
             .collect();
         if rpc_urls.is_empty() {
-            return Err(VaultError::invalid(
-                "STYX_VAULT_RPC_URLS names no endpoint",
-            ));
+            return Err(VaultError::invalid("STYX_VAULT_RPC_URLS names no endpoint"));
         }
         Ok(Self {
             chain_id: required("STYX_VAULT_CHAIN_ID")?
