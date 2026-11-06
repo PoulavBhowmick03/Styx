@@ -1,7 +1,7 @@
 [project]
-name = "erebus"
+name = "styx"
 version = "0.3.0"
-description = "Erebus at ETHGlobal Mumbai: payment controls with verifiable evidence on Arc testnet"
+description = "Styx: payment controls with verifiable evidence on Arc testnet"
 requires-python = ">=3.11"
 dependencies = []
 

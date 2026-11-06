@@ -1,4 +1,4 @@
-# Metadata-only stand-in added for ETHGlobal Mumbai; the real package was not imported.
+# Metadata-only stand-in that ships no binary.
 # sdk/py declares erebus-cli as a workspace dependency, so the workspace needs this member to
 # resolve. It ships no binary. erebus-sdk finds the binary on PATH, or through an explicit path.
 [project]

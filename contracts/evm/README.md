@@ -1,6 +1,6 @@
-# Erebus EVM settlement contracts
+# Styx EVM settlement contracts
 
-Public-bound settlement for one authorized Erebus agreement (Metropolis M3). The Rust
+Public-bound settlement for one authorized Styx agreement (Metropolis M3). The Rust
 adapter that drives these contracts is [sdk/evm](../../sdk/evm).
 
 ## What `ErebusSettlement` does
