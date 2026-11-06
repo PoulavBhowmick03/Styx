@@ -127,6 +127,21 @@ pub async fn verify_record(
     let mut reasons = Vec::new();
     let record_integrity = check_integrity(record, &mut reasons);
 
+    if record.chain_id != rpc.chain_id() {
+        reasons.push("the record chain differs from the reviewer's configured chain".to_owned());
+        return VerificationReport {
+            record_integrity,
+            authorization: if record.exception.is_some() {
+                Check::Failed
+            } else {
+                Check::NotApplicable
+            },
+            settlement: Check::Failed,
+            policy_at_execution: Check::Failed,
+            reasons,
+        };
+    }
+
     let owner = rpc
         .view_address(&record.vault, &super::abi::encode_getter("owner"))
         .await
@@ -177,6 +192,10 @@ async fn check_chain(
             return (Check::Unavailable, Check::Unavailable);
         }
     };
+    if receipt_succeeded(&receipt).is_none() || receipt_block(&receipt).is_none() {
+        reasons.push("the receipt is incomplete or malformed".to_owned());
+        return (Check::Unavailable, Check::Unavailable);
+    }
     if receipt_succeeded(&receipt) != Some(true)
         || receipt_block(&receipt) != Some(record.settlement.block_number)
     {
