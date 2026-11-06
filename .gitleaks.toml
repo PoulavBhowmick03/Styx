@@ -37,3 +37,10 @@ condition = "AND"
 regexTarget = "line"
 paths = ['''(?:^|/)contracts/probes/p0_2_subchannel_payload\.cairo$''']
 regexes = ['''token:\s*0x[0-9a-f]+''']
+
+[[allowlists]]
+description = "Variable names with empty values in the example environment file"
+condition = "AND"
+regexTarget = "line"
+paths = ['''(?:^|/)\.env\.example$''']
+regexes = ['''^[A-Z0-9_]+=\s*$''']
