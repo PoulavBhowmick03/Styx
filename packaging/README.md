@@ -7,7 +7,7 @@ and uv. This package does not include the old Starknet CLI.
 From a downloaded wheelhouse for your platform, run one command:
 
 ```sh
-bash packaging/install-mcp.sh /absolute/path/to/wheelhouse
+bash /absolute/path/to/wheelhouse/install-mcp.sh
 ```
 
 This installs the MCP server, SDK, and both native tools in an isolated uv tool environment.
@@ -27,7 +27,7 @@ bash packaging/build-wheels.sh
 uv run python packaging/smoke-install.py dist
 ```
 
-Outputs go into ignored `dist/`: three wheels and `SHA256SUMS`. The CLI wheel has a
+Outputs go into ignored `dist/`: three wheels, the installer, this README and `SHA256SUMS`. The CLI wheel has a
 platform tag; the two Python wheels are portable. Do not put more than one platform's CLI
 wheel in a single install directory. The build hook refuses missing or non-native binaries.
 Editable workspace installs deliberately do not bundle binaries: use built binaries on PATH
