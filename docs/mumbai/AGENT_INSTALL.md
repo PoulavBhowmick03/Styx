@@ -145,7 +145,7 @@ cd ~/styx-agent && claude
 
 ## Other agents
 
-Configs for each agent's documented format are in `mcp-server/examples/configs/`. They hold paths, never keys.
+Configs for each agent's documented format are in `mcp-server/examples/configs/`. They hold paths, never keys. What has been tested is in `mcp-server/examples/INSTALL_TEST.md`: only Claude Code's has completed a payment. Codex's keys load and it finds the four tools, but a payment has not completed there. Cursor's and Claude Desktop's have not been loaded.
 
 | Agent | File | Where it goes |
 | --- | --- | --- |
