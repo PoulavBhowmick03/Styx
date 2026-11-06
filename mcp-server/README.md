@@ -9,8 +9,8 @@ This page describes current `main`, which speaks Protocol 4 and exposes thirteen
 The published `v0.2.0` packages speak Protocol 4 and expose thirteen tools. The older
 `v0.1.0` packages speak Protocol 2 and expose ten tools.
 
-Owned by Ishita (CLAUDE.md, repo layout). Exposes the Erebus tools so an external agent
-framework can drive the whole loop without knowing Erebus exists, that is definition-of-done
+Owned by Ishita (CLAUDE.md, repo layout). Exposes the Styx tools so an external agent
+framework can drive the whole loop without knowing Styx exists, that is definition-of-done
 item 4.
 
 **Python, on the official `mcp` SDK (`mcp.server.MCPServer`).** Decided 2026-07-28. This directory used to
@@ -170,7 +170,7 @@ the RPC, so an operator who does not control those has handed over the ability t
 everything that identity does. StarkWare's Sepolia prover is not public and we were asked
 not to share it. Self-hosting is Pathfinder plus `transaction-prover`.
 
-So the honest statement is that Erebus is software an operator runs, not a service anyone
+So the honest statement is that Styx is software an operator runs, not a service anyone
 can point at. Publishing the SDK shortens the install; it does not remove the prover
 requirement, and no amount of packaging will, because the requirement is the custody
 property rather than a missing feature.
