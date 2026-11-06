@@ -32,9 +32,11 @@ Resolve before submitting, by one of:
 
 Until this is resolved, nothing should state that the whole project was built at the event. The video's closing and `README_DRAFT.md` still describe Continuity.
 
-## How the owner is alerted today
+## How the owner is alerted
 
-They are not. The agent's tool writes a pending file to a local folder, and someone carries it to the owner by hand. `REMAINING_WORK.md` covers the alert and relay work that replaces this.
+With the relay running, an over-cap request sends the owner a Telegram alert with a link to the approval page, and the signature goes back to the agent automatically. See `relay/README.md`. This is tested against a fake Telegram server and a local chain. It has not run with a real bot, because that needs a token from @BotFather.
+
+Without the relay, the tool writes a pending file and someone carries it to the owner by hand. An agent that skips the tools sends no alert: the vault still refuses the payment, and the planned watcher covers those attempts.
 
 ## How to run G2 and G3
 

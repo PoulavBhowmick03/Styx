@@ -50,6 +50,8 @@ cd owner-page && npm install --legacy-peer-deps && npm run dev
 
 Open it in the owner's own browser profile. Copy `owner-config.example.json` outside the repo and fill in the real addresses. Vendor labels come only from this file.
 
+To get a Telegram alert instead of carrying files by hand, run the relay. See `relay/README.md`.
+
 ## 4. Run G1, G2 and the attacks
 
 ```bash

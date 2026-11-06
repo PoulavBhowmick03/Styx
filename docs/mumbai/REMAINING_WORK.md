@@ -53,7 +53,7 @@ One known failure: `test_every_mapped_message_exists_where_it_is_produced`, whic
 
 **CLI and MCP:** the `erebus-vault` methods and four tools as they stand in `sdk/evm/src/arc_vault/service.rs` and `mcp-server/src/erebus_mcp/vault.py`. Additions are fine; changes go through the owner.
 
-**Relay, owned by Claude 1.** All bodies are JSON. It is being built now, so treat changes in `relay/README.md` as authoritative once that file exists.
+**Relay, owned by Claude 1.** All bodies are JSON. `relay/README.md` is authoritative.
 
 | Call | Who | Purpose |
 | --- | --- | --- |
@@ -65,12 +65,11 @@ One known failure: `test_every_mapped_message_exists_where_it_is_produced`, whic
 
 ## Tasks
 
-### Claude 1: alerts and relay (in progress)
+### Claude 1: alerts and relay (done, not yet run with a real bot)
 
-1. `relay/`: the API above with a Telegram notifier, rate limits and tests against a fake Telegram server.
-2. `owner-page/`: load a request from the relay by link and return the signature automatically, while file picking keeps working.
-3. `vault.py`: `erebus_request_owner_approval` posts to the relay when configured, and a new `erebus_check_owner_approval` fetches the signature.
-4. An end-to-end test: agent over cap, alert sent, owner signs, payment settles, with no file carried by hand.
+Built and tested against a fake Telegram server and a local chain: `relay/`, opening requests from alert links in `owner-page/`, and `erebus_check_owner_approval` plus relay alerts in `vault.py`. See `relay/README.md`.
+
+Next, once a human provides a bot token: send one real alert and open its link on a phone.
 
 ### Claude 2: setup and real agents
 
