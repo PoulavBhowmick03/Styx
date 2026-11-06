@@ -244,7 +244,7 @@ try {
   start(join(ROOT, "relay/node_modules/.bin/tsx"), ["src/main.ts"], {
     cwd: join(ROOT, "relay"),
     env: { ...process.env, RELAY_PORT: String(RELAY_PORT), RELAY_CHAIN_ID: "31337", RELAY_VAULT: vault, RELAY_OWNER: owner, RELAY_TOKEN: token,
-      RELAY_PAGE_URL: `http://127.0.0.1:${PAGE_PORT}/`, RELAY_PUBLIC_URL: RELAY, RELAY_AGENT_TOKEN: agentToken,
+      RELAY_PAGE_URL: `http://127.0.0.1:${PAGE_PORT}/`, RELAY_PUBLIC_URL: RELAY, RELAY_AGENT_TOKEN: agentToken, RELAY_MAX_ALERTS_PER_HOUR: "100",
       TELEGRAM_BOT_TOKEN: "1:fake", TELEGRAM_CHAT_ID: "42", TELEGRAM_API_BASE: `http://127.0.0.1:${TELEGRAM_PORT}` },
   });
   await waitFor(async () => (await fetch(`${RELAY}/requests/nope`)).status === 404, "relay");
@@ -265,11 +265,19 @@ try {
     assert.equal(text.includes("onerror"), false);
     const { page, context, errors } = await openPage(PAGE_PORT);
     await page.goto(link);
-    await waitFor(async () => /owner config/.test(await status(page)), "config prompt");
+    // No file anywhere: the owner confirms the vault once, and the chain supplies the rest.
+    await page.locator("#first-use").waitFor({ state: "visible" });
     assert.equal(await page.locator("#pending-label").isVisible(), false);
-    await page.setInputFiles("#config-file", ownerConfig);
+    assert.equal(await page.locator("#config-file").isVisible(), false);
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal((await page.locator("#first-use-vault").textContent()).toLowerCase(), vault);
+    assert.equal(await page.locator("#first-use-relay").textContent(), RELAY);
+    await shot(page, "first-use");
+    await page.click("#trust-vault");
     await page.locator("#sign").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#first-use").isVisible(), false);
     assert.equal(await page.locator("#amount").textContent(), "6 USDC");
+    assert.match(await page.locator("#vendor").textContent(), /Allowed by the vault/);
     await shot(page, "from-alert");
     await page.click("#sign");
     await waitFor(async () => /relay accepted it/.test(await status(page)), "relay confirmation");
@@ -280,11 +288,94 @@ try {
     const paid = cli({ method: "submit", payment_id: id, signature_file: file });
     assert.equal(paid.state, "settled", JSON.stringify(paid));
 
-    // The owner config is remembered in this browser, so the next alert goes straight to review.
+    // The vault is remembered in this browser, so the next alert goes straight to review.
     const next = await askOwner();
     await page.goto(next.link);
     await page.locator("#sign").waitFor({ state: "visible" });
     assert.equal(errors.length, 0, errors.join());
+    await context.close();
+  });
+  await scenario("with no file, a wallet that is not the vault's owner cannot confirm the vault", async () => {
+    const { link } = await askOwner();
+    const { page, prompts, context } = await openPage(PAGE_PORT, { account: stranger });
+    await page.goto(link);
+    await page.locator("#first-use").waitFor({ state: "visible" });
+    await page.click("#trust-vault");
+    await waitFor(async () => /not the vault's owner/.test(await status(page)), "owner refusal");
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal(prompts.includes("eth_signTypedData_v4"), false);
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("vault-trust/")).length), 0);
+    await context.close();
+  });
+  await scenario("with no file, a recipient the vault does not allow never shows the sign button", async () => {
+    const { link } = await askOwner();
+    send(vault, "setRecipient(address,bool)", VENDOR, "false");
+    try {
+      const { page, context } = await openPage(PAGE_PORT);
+      await page.goto(link);
+      await page.locator("#first-use").waitFor({ state: "visible" });
+      await page.click("#trust-vault");
+      await waitFor(async () => /allowlist|policy changed/.test(await status(page)), "allowlist refusal");
+      assert.equal(await page.locator("#sign").isVisible(), false);
+      await context.close();
+    } finally {
+      send(vault, "setRecipient(address,bool)", VENDOR, "true");
+    }
+  });
+  await scenario("with no file, a vault the wallet cannot read never shows the sign button", async () => {
+    const { link } = await askOwner();
+    const { page, context } = await openPage(PAGE_PORT, { chainId: "0x1" });
+    await page.goto(link);
+    await waitFor(async () => /Switch your wallet/.test(await status(page)), "chain refusal");
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal(await page.locator("#first-use").isVisible(), false);
+    await context.close();
+  });
+  await scenario("with no file, a link to a second vault warns that this browser knows another", async () => {
+    const { link } = await askOwner();
+    const { page, context } = await openPage(PAGE_PORT);
+    await page.evaluate(() => localStorage.setItem("vault-trust/31337/0x00000000000000000000000000000000000000d4",
+      JSON.stringify({ chainId: "31337", vault: "0x00000000000000000000000000000000000000d4" })));
+    await page.goto(link);
+    await page.locator("#first-use").waitFor({ state: "visible" });
+    assert.match(await page.locator("#first-use-warning").textContent(), /already knows a different vault/);
+    await context.close();
+  });
+  await scenario("with no file, a remembered vault's relay cannot be changed by a link", async () => {
+    const { link } = await askOwner();
+    const crafted = new URL(link);
+    crafted.searchParams.set("relay", "http://attacker.invalid");
+    const { page, context } = await openPage(PAGE_PORT);
+    await page.goto(link);
+    await page.locator("#first-use").waitFor({ state: "visible" });
+    await page.click("#trust-vault");
+    await page.locator("#sign").waitFor({ state: "visible" });
+    const posted = [];
+    await page.route("http://attacker.invalid/**", async (route) => {
+      if (route.request().method() === "POST") posted.push(route.request().url());
+      const original = new URL(link).searchParams.get("request");
+      const genuine = await (await fetch(`${RELAY}/requests/${original}`)).json();
+      await route.fulfill({ json: genuine, headers: { "access-control-allow-origin": "*" } });
+    });
+    await page.goto(crafted.toString());
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await waitFor(async () => /would stay here as a file/.test(await status(page)), "warning before signing");
+    await page.click("#sign");
+    await waitFor(async () => /not sent/.test(await status(page)), "refusal to post");
+    assert.equal(posted.length, 0);
+    await context.close();
+  });
+  await scenario("with no wallet in the browser, the page offers to open the request in MetaMask", async () => {
+    const { link } = await askOwner();
+    const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
+    const page = await context.newPage();
+    await page.goto(link);
+    await page.locator("#wallet-help").waitFor({ state: "visible" });
+    const href = await page.locator("#open-wallet").getAttribute("href");
+    const parsed = new URL(link);
+    assert.equal(href, `https://link.metamask.io/dapp/${parsed.host}${parsed.pathname}${parsed.search}`);
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    await shot(page, "no-wallet");
     await context.close();
   });
   await scenario("a hostile relay's altered request never shows the sign button", async () => {

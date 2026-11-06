@@ -2,7 +2,7 @@
 //
 // The pending file comes from the agent's side and is untrusted. Nothing here shows a value
 // from it without first tying that value to the digest the owner will sign, and vendor labels
-// come only from the owner's own config file.
+// come only from the owner's own config file or this browser's saved labels.
 
 import {
   getAddress,
@@ -331,6 +331,9 @@ export const POLICY_CALLS = {
   // The first four bytes of keccak256("perPaymentLimit()") and keccak256("policyVersion()").
   perPaymentLimit: toFunctionSelector("perPaymentLimit()"),
   policyVersion: toFunctionSelector("policyVersion()"),
+  owner: toFunctionSelector("owner()"),
+  token: toFunctionSelector("token()"),
+  allowedRecipient: toFunctionSelector("allowedRecipient(address)"),
 } as const;
 
 /**
@@ -353,4 +356,70 @@ export function reviewAgainstChain(pending: Pending, policy: OnChainPolicy): str
  */
 export function mayPostSignature(link: RelayLink, config: OwnerConfig): boolean {
   return config.relay === link.relay;
+}
+
+// ---- Approving with no config file ----
+
+/** What the owner confirmed once in this browser. Everything else is read from the vault. */
+export interface VaultTrust {
+  chainId: bigint;
+  vault: Address;
+  relay?: string;
+}
+
+export interface ChainFacts {
+  owner: Address;
+  token: Address;
+  recipientAllowed: boolean;
+}
+
+export const TRUST_PREFIX = "vault-trust/";
+export const trustKey = (chainId: bigint, vault: Address): string => `${TRUST_PREFIX}${chainId}/${vault.toLowerCase()}`;
+
+export function serializeTrust(trust: VaultTrust): string {
+  return JSON.stringify({ chainId: trust.chainId.toString(), vault: trust.vault, ...(trust.relay ? { relay: trust.relay } : {}) });
+}
+
+/** A damaged record reads as no record, so the owner is simply asked again. */
+export function parseTrust(stored: string): VaultTrust | undefined {
+  try {
+    const value = record(JSON.parse(stored), "saved vault");
+    return {
+      chainId: integer(value.chainId, "chainId"),
+      vault: address(value.vault, "vault"),
+      ...(value.relay === undefined ? {} : { relay: relayOrigin(value.relay) }),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** A build that names its own relay never takes one from a link. */
+export function relayForFirstUse(link: RelayLink, builtIn: string | undefined): string {
+  return builtIn ? relayOrigin(builtIn) : link.relay;
+}
+
+/**
+ * Builds the config `reviewPending` checks against, from the vault itself. The vault can only be
+ * trusted as far as the owner confirmed it, so a request for any other vault is refused here. A
+ * recipient the vault does not allow is left out, which is what makes `reviewPending` refuse it.
+ */
+export function configFromChain(
+  pending: Pending,
+  facts: ChainFacts,
+  trust: VaultTrust,
+  labels: Record<string, string>,
+): OwnerConfig {
+  if (trust.chainId !== pending.chainId || trust.vault !== pending.vault) fail("you did not confirm this vault");
+  const recipient = pending.payment.recipient;
+  const vendors = new Map<Address, string>();
+  if (facts.recipientAllowed) vendors.set(recipient, labels[recipient.toLowerCase()] ?? "Allowed by the vault, no saved name");
+  return {
+    chainId: trust.chainId,
+    vault: trust.vault,
+    owner: facts.owner,
+    token: facts.token,
+    vendors,
+    ...(trust.relay ? { relay: trust.relay } : {}),
+  };
 }

@@ -1,19 +1,27 @@
-import { getAddress, type Hex } from "viem";
+import { getAddress, pad, type Address, type Hex } from "viem";
 
 import {
   ApprovalError,
   buildSignatureFile,
+  configFromChain,
   mayPostSignature,
   parseOwnerConfig,
   parsePending,
   parseRelayLink,
+  parseTrust,
   POLICY_CALLS,
+  relayForFirstUse,
   reviewAgainstChain,
   reviewPending,
+  serializeTrust,
+  TRUST_PREFIX,
+  trustKey,
   typedDataRequest,
+  type ChainFacts,
   type OwnerConfig,
   type Pending,
   type RelayLink,
+  type VaultTrust,
 } from "./approval";
 
 interface Eip1193 {
@@ -66,6 +74,7 @@ function resetReview(): void {
 // `textContent` only: the invoice reference is agent-supplied text and must never be parsed as HTML.
 function render(): void {
   resetReview();
+  hideHelpers();
   if (!config || !pending) return;
   try {
     const view = reviewPending(pending, config, BigInt(Math.floor(Date.now() / 1000)));
@@ -86,7 +95,7 @@ function render(): void {
       signButton.hidden = false;
       showStatus(
         relayLink && !mayPostSignature(relayLink, config)
-          ? "Your owner config does not name this link's relay, so a signature would stay here as a file and not reach the agent. If this is your own relay, choose a config with its relay set first."
+          ? "This link's relay is not the one you set for this vault, so a signature would stay here as a file and not reach the agent."
           : "Check every field, then sign with the owner wallet.",
         Boolean(relayLink && !mayPostSignature(relayLink, config)),
       );
@@ -263,11 +272,11 @@ async function sign(): Promise<void> {
     signButton.hidden = true;
     worldButton.hidden = true;
     if (relayLink && !mayPostSignature(relayLink, config)) {
-      showStatus("Signed, but not sent: this link's relay is not the one in your owner config. Give the agent this file instead.", true);
+      showStatus("Signed, but not sent: this link's relay is not the one you set for this vault. Give the agent this file instead.", true);
     } else if (relayLink) {
       const sent = await sendToRelay(relayLink, file);
       if (sent === "accepted") showStatus("Signed, and the relay accepted it. The agent still has to collect and submit it.");
-      else if (sent === "refused") showStatus("Signed, but the relay refused the signature. Check the request and your owner config.", true);
+      else if (sent === "refused") showStatus("Signed, but the relay refused the signature. Check the request and your vault settings.", true);
       else showStatus("Signed, but the relay could not be reached. Give the agent this file instead.", true);
     } else {
       showStatus("Signed. Give this file to the agent's erebus_submit_payment tool.");
@@ -313,16 +322,195 @@ async function sendToRelay(link: RelayLink, file: string): Promise<"accepted" | 
 }
 async function openFromLink(link: RelayLink): Promise<void> {
   element("pending-label").hidden = true;
+  element<HTMLDetailsElement>("config-details").open = false;
   showStatus("Loading the approval request.");
   try {
     const response = await fetch(`${link.relay}/requests/${encodeURIComponent(link.request)}`);
     if (!response.ok) throw new ApprovalError(response.status === 410 ? "this approval has expired" : "this approval request was not found");
     const body = (await response.json()) as { pending?: unknown };
     pending = parsePending(body.pending);
-    if (config) render();
-    else showStatus("Choose your owner config to review this request.");
+    await prepareReview(link);
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "The relay could not be reached.", true);
+  }
+}
+
+// ---- Approving with no config file ----
+
+// Source for Arc's values: https://docs.arc.io/arc/references/connect-to-arc
+const ARC_CHAIN_ID = 5042002n;
+const ARC_CHAIN = {
+  chainId: `0x${ARC_CHAIN_ID.toString(16)}`,
+  chainName: "Arc Testnet",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: ["https://rpc.testnet.arc.io"],
+  blockExplorerUrls: ["https://explorer.testnet.arc.io"],
+};
+const BUILT_IN_RELAY: string | undefined = import.meta.env.VITE_RELAY_URL || undefined;
+
+// Kept for this page load too, so blocked storage only means the owner is asked again next time.
+const confirmedVaults = new Map<string, VaultTrust>();
+
+function loadTrust(chainId: bigint, vault: Address): VaultTrust | undefined {
+  const key = trustKey(chainId, vault);
+  const held = confirmedVaults.get(key);
+  if (held) return held;
+  try {
+    const stored = localStorage.getItem(key);
+    const trust = stored ? parseTrust(stored) : undefined;
+    return trust && trust.chainId === chainId && trust.vault === vault ? trust : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveTrust(trust: VaultTrust): void {
+  const key = trustKey(trust.chainId, trust.vault);
+  confirmedVaults.set(key, trust);
+  try {
+    localStorage.setItem(key, serializeTrust(trust));
+  } catch {
+    // Storage can be blocked. The owner just confirms again next time.
+  }
+}
+
+function otherKnownVault(vault: Address): string | undefined {
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(TRUST_PREFIX)) continue;
+      const known = parseTrust(localStorage.getItem(key) ?? "");
+      if (known && known.vault !== vault) return known.vault;
+    }
+  } catch {
+    // Without storage there is nothing to compare against.
+  }
+  return undefined;
+}
+
+/** Labels the owner typed on the setup page, on this same site. They only ever name a vendor. */
+function savedLabels(chainId: bigint, vault: Address): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(`vault-setup:labels:${chainId}:${vault.toLowerCase()}`) ?? "{}");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+  } catch {
+    return {};
+  }
+}
+
+async function readFacts(wallet: Eip1193, request: Pending): Promise<ChainFacts> {
+  const read = async (data: Hex) => {
+    const result = (await wallet.request({ method: "eth_call", params: [{ to: request.vault, data }, "latest"] })) as string;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(result)) throw new Error("no answer");
+    return result as Hex;
+  };
+  const wordToAddress = (word: Hex) => getAddress(`0x${word.slice(-40)}`);
+  const [owner, token, allowed] = await Promise.all([
+    read(POLICY_CALLS.owner),
+    read(POLICY_CALLS.token),
+    read(`${POLICY_CALLS.allowedRecipient}${pad(request.payment.recipient).slice(2)}` as Hex),
+  ]);
+  return { owner: wordToAddress(owner), token: wordToAddress(token), recipientAllowed: BigInt(allowed) === 1n };
+}
+
+function hideHelpers(): void {
+  element("first-use").hidden = true;
+  element("wallet-help").hidden = true;
+  element("switch-chain").hidden = true;
+}
+
+/**
+ * Reaches the review step from a link. A config file that names a relay keeps working as before.
+ * Otherwise the vault's own answers fill the config. If they cannot be read there is nothing to check
+ * the request against, so the sign button stays hidden.
+ */
+async function prepareReview(link: RelayLink): Promise<void> {
+  hideHelpers();
+  if (!pending) return;
+  if (config?.relay && config.vault === pending.vault) {
+    render();
+    return;
+  }
+  const wallet = window.ethereum;
+  if (!wallet) {
+    const { host, pathname, search } = window.location;
+    element<HTMLAnchorElement>("open-wallet").href = `https://link.metamask.io/dapp/${host}${pathname}${search}`;
+    element("wallet-help").hidden = false;
+    showStatus("Open this request in your wallet's browser to review and sign it.");
+    return;
+  }
+  const chainId = BigInt((await wallet.request({ method: "eth_chainId" })) as string);
+  if (chainId !== pending.chainId) {
+    element("switch-chain").hidden = pending.chainId !== ARC_CHAIN_ID;
+    showStatus(`Switch your wallet to chain ${pending.chainId}, then try again.`, true);
+    return;
+  }
+  let facts: ChainFacts;
+  try {
+    facts = await readFacts(wallet, pending);
+  } catch {
+    showStatus("This vault could not be read through your wallet, so there is nothing to check this request against.", true);
+    return;
+  }
+  const trust = loadTrust(pending.chainId, pending.vault);
+  if (!trust) {
+    askToConfirmVault(link, facts);
+    return;
+  }
+  config = configFromChain(pending, facts, trust, savedLabels(pending.chainId, pending.vault));
+  render();
+}
+
+let confirmVault: (() => Promise<void>) | undefined;
+
+function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
+  if (!pending) return;
+  const request = pending;
+  const relay = relayForFirstUse(link, BUILT_IN_RELAY);
+  const other = otherKnownVault(request.vault);
+  element("first-use-vault").textContent = request.vault;
+  element("first-use-owner").textContent = facts.owner;
+  element("first-use-relay").textContent = relay;
+  element("first-use-warning").textContent = other
+    ? `Careful: this browser already knows a different vault, ${other}. Do not continue unless you also own this one.`
+    : "";
+  element("first-use").hidden = false;
+  showStatus("First approval for this vault in this browser. Check that this is your vault.");
+  confirmVault = async () => {
+    const wallet = window.ethereum;
+    if (!wallet) return;
+    const accounts = (await wallet.request({ method: "eth_requestAccounts" })) as string[];
+    if (!accounts[0] || getAddress(accounts[0]) !== facts.owner) {
+      showStatus(`This wallet is not the vault's owner. Connect ${facts.owner}, then try again.`, true);
+      return;
+    }
+    saveTrust({ chainId: request.chainId, vault: request.vault, relay });
+    await prepareReview(link);
+  };
+}
+
+element("trust-vault").addEventListener("click", () => {
+  confirmVault?.().catch(() => showStatus("The wallet did not connect.", true));
+});
+
+element("switch-chain").addEventListener("click", () => {
+  void switchToArc();
+});
+
+async function switchToArc(): Promise<void> {
+  const wallet = window.ethereum;
+  if (!wallet || !relayLink) return;
+  try {
+    try {
+      await wallet.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_CHAIN.chainId }] });
+    } catch (error) {
+      if ((error as { code?: number }).code !== 4902) throw error;
+      await wallet.request({ method: "wallet_addEthereumChain", params: [ARC_CHAIN] });
+    }
+    await prepareReview(relayLink);
+  } catch {
+    showStatus("The wallet did not switch networks.", true);
   }
 }
 
