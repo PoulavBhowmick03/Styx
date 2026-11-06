@@ -4,6 +4,8 @@ Payment controls with verifiable evidence on Arc testnet. Work in progress.
 
 See `docs/mumbai/BUILD_PLAN.md` for the plan.
 
+Run it with `docs/mumbai/RUNBOOK.md`. `scripts/local_demo.sh` rehearses the whole flow on a local chain.
+
 ## Arkiv
 
 Reviewers can fetch an encrypted payment record from Arkiv's Rabdi testnet with no other process running. See `arkiv/schema.md`.
