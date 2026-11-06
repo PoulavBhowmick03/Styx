@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-fn server(answer: impl Fn(&str) -> Value + Send + 'static) -> String {
+pub(super) fn server(answer: impl Fn(&str) -> Value + Send + 'static) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {

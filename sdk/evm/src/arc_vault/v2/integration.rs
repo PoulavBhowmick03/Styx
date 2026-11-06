@@ -869,3 +869,176 @@ async fn cli_expired_approval_refresh_preserves_payment_and_rejects_old_signatur
         "settled"
     );
 }
+
+fn disclosure_binary(request: Value) -> (bool, Value) {
+    let vault =
+        PathBuf::from(std::env::var_os("STYX_VAULT_TEST_BINARY").expect("set vault test binary"));
+    let binary = std::env::var_os("STYX_DISCLOSURE_TEST_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| vault.with_file_name("styx-disclosure"));
+    let mut child = Command::new(binary)
+        .env_clear()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(request.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    (
+        output.status.success(),
+        serde_json::from_slice(&output.stdout).expect("disclosure must return JSON"),
+    )
+}
+fn private_file(path: &Path, bytes: &[u8]) {
+    std::fs::write(path, bytes).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires Anvil, Foundry and both real vault/disclosure binaries"]
+async fn v2_selective_disclosure_real_binaries_routine_exception_and_failure_boundaries() {
+    let c = Chain::start().await;
+    let issuer_file = c.dir.path().join("disclosure-issuer");
+    private_file(
+        &issuer_file,
+        &hex::decode(c.owner_key.trim_start_matches("0x")).unwrap(),
+    );
+    let reviewer = c.dir.path().join("reviewer");
+    let wrong_key = c.dir.path().join("wrong-reviewer");
+    let (ok, created) = disclosure_binary(json!({"method":"keygen","key_file":reviewer}));
+    assert!(ok);
+    assert!(disclosure_binary(json!({"method":"keygen","key_file":wrong_key})).0);
+    let expected_issuer = format!("0x{}", hex::encode(address(&c.owner_key)));
+    let pins = json!({"chain_id":31337,"rpc_urls":[c.url],"vault":format!("0x{}",hex::encode(c.config.vault)),"vault_code_hash":format!("0x{}",hex::encode(c.config.code_hash))});
+    for (index, amount) in ["250000", "2000000"].into_iter().enumerate() {
+        let id = c.propose(amount).await;
+        if index == 0 {
+            assert_eq!(
+                c.cli(json!({"method":"submit","payment_id":id}))["state"],
+                "settled"
+            );
+        } else {
+            let (pending, path) = c.approval(
+                &id,
+                Some(format!("0x{}", hex::encode(address(&c.approver_key)))),
+            );
+            c.signature(&pending, &path, &[&c.approver_key]);
+            assert_eq!(
+                c.cli(json!({"method":"submit","payment_id":id,"signature_file":path}))["state"],
+                "settled"
+            );
+        }
+        let record = c.export(&id);
+        let record_file = c.dir.path().join(format!("record-{}.json", &id[2..]));
+        let grant = c.dir.path().join(format!("review-{index}.grant"));
+        let (ok, exported) = disclosure_binary(
+            json!({"method":"export_vault_payment","record_file":record_file,"issuer_key_file":issuer_file,
+            "recipient_public_key":created["recipient_public_key"],"grant_file":grant,"expires_at":c.rpc.latest_timestamp().await.unwrap()+3600}),
+        );
+        assert!(ok, "v2 record must be exportable: {exported}");
+        assert_eq!(exported["payment_id"], id);
+        let request = json!({"method":"verify_vault_payment","grant_file":grant,"key_file":reviewer,"expected_issuer":expected_issuer,"deployment":pins});
+        let (ok, verified) = disclosure_binary(request.clone());
+        assert!(ok, "grant must open with reviewer-only inputs: {verified}");
+        assert_eq!(verified["record_integrity"], "verified");
+        assert_eq!(verified["settlement"], "verified");
+        assert_eq!(
+            verified["authorization"],
+            if index == 0 {
+                "not_applicable"
+            } else {
+                "verified"
+            }
+        );
+        assert_eq!(verified["policy_at_execution"], "verified");
+        assert_eq!(verified["payment_id"], id);
+        assert_eq!(
+            verified["tx_hash"],
+            format!("0x{}", hex::encode(record.settlement.tx_hash))
+        );
+        assert_eq!(verified["delivery_verified"], false);
+        let opened = c.dir.path().join(format!("reviewer-opened-{index}.json"));
+        let mut opening = request.clone();
+        opening["opened_file"] = opened.to_string_lossy().as_ref().into();
+        assert!(disclosure_binary(opening).0);
+        assert_eq!(
+            std::fs::read(&opened).unwrap(),
+            std::fs::read(&record_file).unwrap()
+        );
+        assert_eq!(
+            std::fs::metadata(&opened).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let mut wrong_code = request.clone();
+        wrong_code["deployment"]["vault_code_hash"] = format!("0x{}", "ab".repeat(32)).into();
+        let (ok, wrong_code) = disclosure_binary(wrong_code);
+        assert!(ok);
+        assert_eq!(wrong_code["policy_at_execution"], "failed");
+        assert_ne!(wrong_code["settlement"], "verified");
+        let keys = verified
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected_keys = [
+            "status",
+            "record_integrity",
+            "authorization",
+            "settlement",
+            "policy_at_execution",
+            "reasons",
+            "payment_id",
+            "tx_hash",
+            "delivery_verified",
+        ]
+        .map(String::from)
+        .into_iter()
+        .collect();
+        assert_eq!(
+            keys, expected_keys,
+            "Python's existing response allowlist must remain compatible"
+        );
+        let mut wrong = request.clone();
+        wrong["key_file"] = wrong_key.to_string_lossy().as_ref().into();
+        assert!(!disclosure_binary(wrong).0);
+        let mut wrong = request.clone();
+        wrong["expected_issuer"] = format!("0x{}", hex::encode(address(&c.approver_key))).into();
+        assert!(!disclosure_binary(wrong).0);
+        let mut unavailable = request.clone();
+        unavailable["deployment"]["rpc_urls"] = json!(["http://127.0.0.1:1"]);
+        let (ok, unavailable) = disclosure_binary(unavailable);
+        assert!(ok);
+        assert_eq!(unavailable["settlement"], "unavailable");
+        assert_eq!(unavailable["policy_at_execution"], "unavailable");
+        assert_eq!(unavailable["record_integrity"], "verified");
+        assert_eq!(
+            unavailable["authorization"],
+            if index == 0 {
+                "not_applicable"
+            } else {
+                "unavailable"
+            }
+        );
+        let damaged = c.dir.path().join(format!("damaged-{index}.grant"));
+        let mut bytes = std::fs::read(&grant).unwrap();
+        let last = bytes.len() - 1;
+        bytes[last] ^= 1;
+        private_file(&damaged, &bytes);
+        let mut wrong = request.clone();
+        wrong["grant_file"] = damaged.to_string_lossy().as_ref().into();
+        assert!(!disclosure_binary(wrong).0);
+        let mut mismatch = request.clone();
+        mismatch["deployment"]["vault"] = "0x1111111111111111111111111111111111111111".into();
+        assert!(!disclosure_binary(mismatch).0);
+        let mut mismatch = request.clone();
+        mismatch["deployment"]["chain_id"] = 1.into();
+        assert!(!disclosure_binary(mismatch).0);
+    }
+}

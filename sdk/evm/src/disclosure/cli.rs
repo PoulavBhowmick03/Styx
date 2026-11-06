@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::arc_vault::record::VaultPaymentRecord;
 use crate::arc_vault::rpc::VaultRpc;
-use crate::arc_vault::verify::{verify_record, Check, ReviewerPins};
+use crate::arc_vault::verify::{verify_record, Check, ReviewerPins, VerificationReport};
 use crate::chain::ADDRESS_BYTES;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -54,6 +54,63 @@ struct VaultPins {
     rpc_urls: Vec<String>,
     vault: String,
     vault_code_hash: String,
+}
+
+/// Dispatch on the authenticated record schema; never infer a protocol from fields or environment.
+enum VaultRecord {
+    V1(Box<VaultPaymentRecord>),
+    V2(Box<crate::arc_vault::v2::verify::PaymentRecord>),
+}
+impl VaultRecord {
+    fn parse(bytes: &[u8]) -> Result<Self, &'static str> {
+        #[derive(Deserialize)]
+        struct Schema {
+            schema: String,
+        }
+        let tag: Schema =
+            serde_json::from_slice(bytes).map_err(|_| "invalid vault payment record")?;
+        match tag.schema.as_str() {
+            crate::arc_vault::record::RECORD_SCHEMA => serde_json::from_slice(bytes)
+                .map(|record| Self::V1(Box::new(record)))
+                .map_err(|_| "invalid vault payment record"),
+            crate::arc_vault::v2::verify::RECORD_SCHEMA => serde_json::from_slice(bytes)
+                .map(|record| Self::V2(Box::new(record)))
+                .map_err(|_| "invalid vault payment record"),
+            _ => Err("invalid vault payment record"),
+        }
+    }
+    fn payment_id(&self) -> [u8; 32] {
+        match self {
+            Self::V1(r) => r.payment.payment_id,
+            Self::V2(r) => r.payment.payment_id,
+        }
+    }
+    fn tx_hash(&self) -> [u8; 32] {
+        match self {
+            Self::V1(r) => r.settlement.tx_hash,
+            Self::V2(r) => r.settlement.tx_hash,
+        }
+    }
+    fn vault(&self) -> [u8; 20] {
+        match self {
+            Self::V1(r) => r.vault,
+            Self::V2(r) => r.vault,
+        }
+    }
+    fn chain_id(&self) -> u64 {
+        match self {
+            Self::V1(r) => r.chain_id,
+            Self::V2(r) => r.chain_id,
+        }
+    }
+    async fn verify(&self, rpc: &VaultRpc, pins: &ReviewerPins) -> VerificationReport {
+        match self {
+            Self::V1(r) => verify_record(r, rpc, pins).await,
+            Self::V2(r) => {
+                crate::arc_vault::v2::verify::verify_record(r, rpc, &pins.vault_code_hash).await
+            }
+        }
+    }
 }
 
 const HELP: &str = "styx-disclosure: one request as JSON on stdin.
@@ -136,14 +193,13 @@ async fn handle(request: Request) -> Result<Value, &'static str> {
             expires_at,
         } => {
             let bytes = read_private_file(&record_file, MAX_DISCLOSURE_BYTES)?;
-            let record: VaultPaymentRecord =
-                serde_json::from_slice(&bytes).map_err(|_| "invalid vault payment record")?;
+            let record = VaultRecord::parse(&bytes)?;
             let key = read_private_file(&issuer_key_file, 32)?;
             let issuer =
                 AuthorizationIdentity::from_bytes(&key).map_err(|_| "invalid issuer key")?;
             let grant = DisclosureGrant::seal_record(
                 &bytes,
-                record_id(&record.payment.payment_id),
+                record_id(&record.payment_id()),
                 &issuer,
                 public_key(&recipient_public_key)?,
                 expires_at,
@@ -156,7 +212,7 @@ async fn handle(request: Request) -> Result<Value, &'static str> {
             Ok(json!({
                 "status": "ok",
                 "grant_saved": true,
-                "payment_id": format!("0x{}", hex::encode(record.payment.payment_id)),
+                "payment_id": format!("0x{}", hex::encode(record.payment_id())),
                 "issuer": format!("0x{}", hex::encode(&grant.issuer)),
             }))
         }
@@ -171,14 +227,13 @@ async fn handle(request: Request) -> Result<Value, &'static str> {
             let bytes = grant
                 .open_record(&recipient, &issuer, now)
                 .map_err(|_| "cannot open vault payment grant")?;
-            let record: VaultPaymentRecord =
-                serde_json::from_slice(&bytes).map_err(|_| "invalid vault payment record")?;
-            if record_id(&record.payment.payment_id) != grant.deal_id {
+            let record = VaultRecord::parse(&bytes)?;
+            if record_id(&record.payment_id()) != grant.deal_id {
                 return Err("the grant names a different payment");
             }
             let vault =
                 parse_lowercase_address(&deployment.vault).ok_or("invalid pinned vault address")?;
-            if record.vault != vault || record.chain_id != deployment.chain_id {
+            if record.vault() != vault || record.chain_id() != deployment.chain_id {
                 return Err("the record is for a different vault or chain");
             }
             let pins = ReviewerPins {
@@ -193,7 +248,7 @@ async fn handle(request: Request) -> Result<Value, &'static str> {
                 deployment.chain_id,
             )
             .map_err(|_| "invalid reviewer RPC configuration")?;
-            let report = verify_record(&record, &rpc, &pins).await;
+            let report = record.verify(&rpc, &pins).await;
             if let Some(path) = opened_file {
                 write_owner_only_new(&path, &bytes)?;
             }
@@ -205,8 +260,8 @@ async fn handle(request: Request) -> Result<Value, &'static str> {
             };
             Ok(json!({
                 "status": "ok",
-                "payment_id": format!("0x{}", hex::encode(record.payment.payment_id)),
-                "tx_hash": format!("0x{}", hex::encode(record.settlement.tx_hash)),
+                "payment_id": format!("0x{}", hex::encode(record.payment_id())),
+                "tx_hash": format!("0x{}", hex::encode(record.tx_hash())),
                 "record_integrity": label(report.record_integrity),
                 "authorization": label(report.authorization),
                 "settlement": label(report.settlement),
