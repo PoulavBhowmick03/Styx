@@ -1,0 +1,15 @@
+[project]
+name = "erebus"
+version = "0.3.0"
+description = "Erebus at ETHGlobal Mumbai: payment controls with verifiable evidence on Arc testnet"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.uv.workspace]
+members = ["sdk/py", "mcp-server", "packaging/erebus-cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["sdk/py/tests", "mcp-server/tests"]
