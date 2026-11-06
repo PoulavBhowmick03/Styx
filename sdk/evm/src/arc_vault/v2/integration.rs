@@ -963,6 +963,24 @@ async fn v2_selective_disclosure_real_binaries_routine_exception_and_failure_bou
             format!("0x{}", hex::encode(record.settlement.tx_hash))
         );
         assert_eq!(verified["delivery_verified"], false);
+        let opened = c.dir.path().join(format!("reviewer-opened-{index}.json"));
+        let mut opening = request.clone();
+        opening["opened_file"] = opened.to_string_lossy().as_ref().into();
+        assert!(disclosure_binary(opening).0);
+        assert_eq!(
+            std::fs::read(&opened).unwrap(),
+            std::fs::read(&record_file).unwrap()
+        );
+        assert_eq!(
+            std::fs::metadata(&opened).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let mut wrong_code = request.clone();
+        wrong_code["deployment"]["vault_code_hash"] = format!("0x{}", "ab".repeat(32)).into();
+        let (ok, wrong_code) = disclosure_binary(wrong_code);
+        assert!(ok);
+        assert_eq!(wrong_code["policy_at_execution"], "failed");
+        assert_ne!(wrong_code["settlement"], "verified");
         let keys = verified
             .as_object()
             .unwrap()
@@ -999,6 +1017,15 @@ async fn v2_selective_disclosure_real_binaries_routine_exception_and_failure_bou
         assert!(ok);
         assert_eq!(unavailable["settlement"], "unavailable");
         assert_eq!(unavailable["policy_at_execution"], "unavailable");
+        assert_eq!(unavailable["record_integrity"], "verified");
+        assert_eq!(
+            unavailable["authorization"],
+            if index == 0 {
+                "not_applicable"
+            } else {
+                "unavailable"
+            }
+        );
         let damaged = c.dir.path().join(format!("damaged-{index}.grant"));
         let mut bytes = std::fs::read(&grant).unwrap();
         let last = bytes.len() - 1;
