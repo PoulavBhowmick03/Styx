@@ -31,7 +31,6 @@ Never put the owner key anywhere the agent can read. The MCP server refuses to s
 git clone https://github.com/PoulavBhowmick03/Styx.git && cd Styx
 (cd sdk/evm && cargo build --bins)         # builds erebus-vault, the only thing that signs and sends
 uv sync --all-packages                      # the MCP server, as .venv/bin/erebus-mcp-server
-(cd contracts/evm && forge build)           # the vault contract; the setup page deploys this build
 (cd owner-page && npm install --legacy-peer-deps)
 export PATH="$PWD/.venv/bin:$PATH"          # lets the agent's config say just `erebus-mcp-server`
 ```
@@ -60,11 +59,13 @@ cd ~/styx-agent && claude      # approve the erebus-vault server when asked
 
 Vendor A is `0x00000000000000000000000000000000000000a1`.
 
-The agent cannot read the invoice files, and it will not guess what it was not told. Every request must carry the invoice reference and a `valid_until` time as a Unix timestamp, which the agent cannot work out because it does not know the time. Print one that is an hour away, and paste it into the prompts below:
+The agent cannot read the invoice files, and it will not guess what it was not told, so give it the invoice reference in every prompt. It does not know the time either. Since commit `1711205` the tools default `valid_until` and the approval expiry to one hour from now when the agent leaves them out. If you want a different window, print a Unix time and put it in the prompt in place of `<VALID_UNTIL>`:
 
 ```bash
 echo $(( $(date +%s) + 3600 ))
 ```
+
+The prompts below carry a time. They were tested that way, before that default existed. Leaving the times out was only re-checked with the trial harness, not by following this guide again.
 
 **First payment, allowed.** Tell the agent, with your number in place of `<VALID_UNTIL>`:
 
