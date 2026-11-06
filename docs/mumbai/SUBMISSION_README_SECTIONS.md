@@ -93,10 +93,9 @@ Each claim is here only with the evidence that exists. A claim with no evidence 
 | An unreachable chain reads "unavailable", never "unpaid" | Same run: integrity verified, the other three unavailable | Shown |
 | A sealed record can be fetched from Arkiv with no Styx process running | Arkiv entity `0xc4169c3f...`, transaction `0x4bce932d...`, writer `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258`, lookup tag `ffa18dd008d8a0e8ebc14d2d1424a861`. The verifier then reported all four results verified against Arc | Shown on one machine, the issuer's, with a reviewer key made there. The grant expires on 12 November 2026 |
 | A watcher reports reverts and daily spend | Two Telegram notices reached the owner, for daily spend at block 71059172 and a revert at block 71059279 | Shown. **It is stopped now and not pointed at the hosted relay** |
-| World gates the sign button | | **Not yet:** G5 has not run with World |
 | Several agents, approver roles, a multisig owner | | **Not in version 1** |
 
-Never claim: audited, production-ready, regulatory compliance, prompt-injection prevention, private payments, World enforced on-chain, exactly-once payment across all routes, or support for all wallets. Only MetaMask has been used.
+Never claim: audited, production-ready, regulatory compliance, prompt-injection prevention, private payments, exactly-once payment across all routes, or support for all wallets. Only MetaMask has been used.
 
 ## AI usage
 
@@ -108,7 +107,7 @@ Apache-2.0. See `LICENSE`.
 
 ## Partners
 
-**[DECISION: the partner picks.]** Select Arkiv or World only if that gate has actually passed. `STATUS.md` records G4 (Arkiv) as passed on one machine and G5 (World) as not run.
+**[DECISION: the partner picks.]** Select Arkiv only if that gate has actually passed. `STATUS.md` records G4 (Arkiv) as passed on one machine.
 
 ---
 

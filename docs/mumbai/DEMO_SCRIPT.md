@@ -85,13 +85,12 @@ If the no-file flow fails on camera (the phishing warning, the relay, Telegram),
 | --- | --- |
 | The owner signs on a phone | **Not shown.** Only an alert opened in a phone wallet's browser, as far as the first-use check |
 | The watcher sending a revert notice to Telegram | It sent two notices in an earlier run. It is stopped now and not pointed at the hosted relay |
-| World asking for a check before the sign button appears (G5) | Not run with World. Tested with a local fake only, and World's proofs at this event are mocked |
 
 ## What you may say, and what you may not
 
 You may say what the shots above show, and only what the screen shows at that moment.
 
-Do not say: audited, production-ready, regulatory compliance, prompt-injection prevention, private payments, World enforced on-chain, "exactly once across all routes", or support for all wallets (`BUILD_PLAN.md`, section 13). Only MetaMask has been used with the owner pages. Do not describe several agents, approver roles or a multisig owner as existing: they are not in version 1.
+Do not say: audited, production-ready, regulatory compliance, prompt-injection prevention, private payments, "exactly once across all routes", or support for all wallets (`BUILD_PLAN.md`, section 13). Only MetaMask has been used with the owner pages. Do not describe several agents, approver roles or a multisig owner as existing: they are not in version 1.
 
 ## If something goes wrong on camera
 
