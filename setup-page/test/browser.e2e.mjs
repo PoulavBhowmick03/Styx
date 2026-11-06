@@ -728,6 +728,166 @@ try {
     await context.close();
   });
 
+  // ---- Version 2 vaults: many agents, approvers, an aggregate cap ----
+  const AGENT_A = agent, AGENT_B = "0x00000000000000000000000000000000000000c1", APPROVER = "0x00000000000000000000000000000000000000d1";
+  const createV2 = () => /Deployed to: (0x[0-9a-fA-F]{40})/.exec(sh("forge", ["create", "src/StyxVault.sol:StyxVault", "--optimize", "--optimizer-runs", "200", "--evm-version", "cancun", "--broadcast", "--rpc-url", RPC, "--private-key", ownerKey, "--constructor-args", owner, token], contracts))[1];
+  const lines = (cmd) => sh("cast", ["call", ...cmd, "--rpc-url", RPC]).split("\n").map((l) => l.trim().split(" ")[0]);
+  const policyOf = (v, who) => lines([v, "agentPolicy(address)(uint256,uint256,uint256,uint64,bool)", who]); // version, per, daily, until, enabled
+  const confirmText = (page) => page.locator("#v2-confirm-text").textContent();
+  const v2Vault = createV2();
+  const openV2 = async (options = {}) => {
+    const opened = await openPageAt(`?vault=${v2Vault}`, options);
+    await opened.page.click("#connect");
+    await opened.page.locator("#v2").waitFor({ state: "visible", timeout: 30000 });
+    return opened;
+  };
+  const refreshed = (page, re, label) => waitFor(async () => re.test(await page.locator("#v2").textContent()), label, 300);
+
+  await scenario("a version 2 vault is detected, shows its own screens, and says plainly that the cap starts at 0", async () => {
+    const { page, context, errors } = await openV2();
+    assert.equal(await page.evaluate(() => document.body.dataset.version), "2");
+    for (const hidden of ["#s-approvals", "section.v1only"]) assert.equal(await page.locator(`${hidden}:visible`).count(), 0, hidden);
+    assert.ok((await page.locator("#vault-banner").textContent()).toLowerCase().includes(v2Vault.toLowerCase()));
+    assert.match(await page.locator("#v2-cap-section").textContent(), /starts at 0, and while it is 0 no agent can pay anything/);
+    await waitFor(async () => /vault's daily cap is 0, so no agent can pay anything/.test(await page.locator("#v2-checks").textContent()), "cap check");
+    assert.match(await page.locator("#v2-verdict").textContent(), /^Not yet/);
+    assert.match(await dd(page, "v2-code"), /^Matches this repository's version 2 build/);
+    assert.match(await page.locator("#v2-agent-list").textContent(), /No agent yet/);
+    assert.equal(errors.length, 0, errors.join());
+    await shot(page, "v2-empty");
+    await context.close();
+  });
+
+  await scenario("the cap, an agent and its switch-off reach the chain, each confirmed with the vault and the agent named", async () => {
+    const { page, prompts, context } = await openV2();
+    const before = sends(prompts);
+    await page.fill("#v2-cap-input", "5");
+    await page.click("#v2-cap-save");
+    await page.locator("#v2-confirm").waitFor({ state: "visible" });
+    let text = await confirmText(page);
+    assert.ok(text.toLowerCase().includes(v2Vault.toLowerCase()), "the confirmation names the vault");
+    assert.match(text, /daily cap to 5 USDC \(it is 0 now\)/);
+    assert.equal(sends(prompts), before, "asking is not sending");
+    await page.click("#v2-confirm-yes");
+    await statusIs(page, /Set the vault daily cap to 5 USDC on vault .*: confirmed/);
+    assert.equal(call(v2Vault, "vaultDailyLimit()(uint256)"), "5000000");
+
+    // Agent A, then agent B.
+    for (const [who, per, daily] of [[AGENT_A, "1", "3"], [AGENT_B, "0.5", "2"]]) {
+      await page.fill("#v2-agent-address", who);
+      await page.fill("#v2-agent-per", per);
+      await page.fill("#v2-agent-daily", daily);
+      await page.click("#v2-agent-save");
+      await page.locator("#v2-confirm").waitFor({ state: "visible" });
+      text = await confirmText(page);
+      assert.ok(text.toLowerCase().includes(v2Vault.toLowerCase()) && text.toLowerCase().includes(who.toLowerCase()), "the confirmation names the vault and the agent");
+      assert.match(text, /Approvals waiting for other agents stay valid/);
+      await page.click("#v2-confirm-yes");
+      await statusIs(page, /Save agent 0x\w+\.\.\.\w+ on vault .*: confirmed/);
+    }
+    const a = policyOf(v2Vault, AGENT_A), b = policyOf(v2Vault, AGENT_B);
+    assert.deepEqual([a[0], a[1], a[2], a[4]], ["1", "1000000", "3000000", "true"]);
+    assert.deepEqual([b[0], b[1], b[2], b[4]], ["1", "500000", "2000000", "true"]);
+    await refreshed(page, new RegExp(`${AGENT_B.slice(2)}[\\s\\S]*ON`, "i"), "both agents listed");
+    assert.equal(await page.locator("#v2-agent-list li").count(), 2);
+
+    // Switching A off keeps its limits and leaves B alone.
+    await page.locator("#v2-agent-list li", { hasText: new RegExp(AGENT_A, "i") }).getByRole("button", { name: "Switch off" }).click();
+    text = await confirmText(page);
+    assert.ok(text.toLowerCase().includes(AGENT_A.toLowerCase()) && text.toLowerCase().includes(v2Vault.toLowerCase()));
+    assert.match(text, /Switch it OFF/);
+    await page.click("#v2-confirm-yes");
+    await statusIs(page, /Switch off agent .* on vault .*: confirmed/);
+    const a2 = policyOf(v2Vault, AGENT_A), b2 = policyOf(v2Vault, AGENT_B);
+    assert.deepEqual([a2[0], a2[1], a2[2], a2[4]], ["2", "1000000", "3000000", "false"]); // off, limits kept, version moved on
+    assert.deepEqual(b2, b); // the other agent is untouched
+    await shot(page, "v2-agents");
+    await context.close();
+  });
+
+  await scenario("approvers are added and removed, with the contract's refusals caught before the wallet is asked", async () => {
+    const { page, prompts, context } = await openV2();
+    await page.locator("#v2-approver-list li").first().waitFor();
+    assert.match(await page.locator("#v2-approver-list").textContent(), /OWNER, ALWAYS AN APPROVER/);
+    const before = sends(prompts);
+    const refused = async (address, re) => { await page.fill("#v2-approver-address", address); await page.click("#v2-approver-add"); await statusIs(page, re); assert.equal(sends(prompts), before); };
+    await refused(owner, /owner is always an approver already/);
+    await refused(AGENT_B, /switched-on agent\. An address cannot be both/);
+    await refused("not-an-address", /must be an address/);
+    // An agent cannot be saved as an approver's twin either.
+    await page.fill("#v2-agent-address", owner); await page.click("#v2-agent-save");
+    await statusIs(page, /owner cannot be an agent/);
+    assert.equal(sends(prompts), before);
+
+    await page.fill("#v2-approver-address", APPROVER);
+    await page.click("#v2-approver-add");
+    text: {
+      const text = await confirmText(page);
+      assert.ok(text.toLowerCase().includes(v2Vault.toLowerCase()) && text.toLowerCase().includes(APPROVER.toLowerCase()));
+      assert.match(text, /any enabled agent, with no budget of its own/);
+      assert.match(text, /does not change any agent/);
+    }
+    await page.click("#v2-confirm-yes");
+    await statusIs(page, /Add approver .* on vault .*: confirmed/);
+    assert.deepEqual(lines([v2Vault, "approverState(address)(uint256,bool)", APPROVER]), ["1", "true"]);
+    await refreshed(page, new RegExp(`${APPROVER.slice(2)}[\\s\\S]*ON`, "i"), "approver listed");
+    // The agent that is now an approver's neighbour is untouched, and an approver cannot become an agent.
+    await page.fill("#v2-agent-address", APPROVER); await page.click("#v2-agent-save");
+    await statusIs(page, /That address is an approver/);
+
+    await page.locator("#v2-approver-list li", { hasText: new RegExp(APPROVER, "i") }).getByRole("button", { name: "Remove" }).click();
+    assert.match(await confirmText(page), /Adding it again later does not bring an old approval back/);
+    await page.click("#v2-confirm-yes");
+    await statusIs(page, /Remove approver .* on vault .*: confirmed/);
+    assert.deepEqual(lines([v2Vault, "approverState(address)(uint256,bool)", APPROVER]), ["2", "false"]);
+    await shot(page, "v2-approvers");
+    await context.close();
+  });
+
+  await scenario("vendors and funding work on a version 2 vault, and the checklist turns ready", async () => {
+    const { page, context } = await openV2();
+    await page.fill("#vendor-address", VENDOR);
+    await page.fill("#vendor-label", "Acme");
+    await page.click("#add-vendor");
+    await statusIs(page, /Allow vendor on vault .*: confirmed/);
+    assert.equal(call(v2Vault, "allowedRecipient(address)(bool)", VENDOR), "true");
+    await page.locator("#vendors li").first().waitFor({ timeout: 20000 });
+    assert.ok((await page.locator("#vendors li").first().textContent()).includes("Acme"));
+    await page.fill("#fund-amount", "4");
+    await page.click("#fund");
+    await page.locator("#fund-confirm").waitFor({ state: "visible" });
+    assert.ok((await page.locator("#fund-review").textContent()).toLowerCase().includes(v2Vault.toLowerCase()));
+    await page.click("#fund-confirm");
+    await statusIs(page, /Move 4 USDC into the vault on vault .*: confirmed/);
+    assert.equal(call(token, "balanceOf(address)(uint256)", v2Vault), "4000000");
+    // Agent B is on with limits, the cap is 5, a vendor is allowed and the vault is funded.
+    await waitFor(async () => /An agent can pay now/.test(await page.locator("#v2-verdict").textContent()), "ready verdict", 300);
+    // Agent B's address holds 0 of its own, so there is no warning. Pause works through the shared button.
+    await page.click("#toggle-pause");
+    await statusIs(page, /Pause on vault .*: confirmed/);
+    assert.equal(call(v2Vault, "paused()(bool)"), "true");
+    await waitFor(async () => /vault is paused/.test(await page.locator("#v2-checks").textContent()), "paused check", 300);
+    await page.click("#toggle-pause");
+    await statusIs(page, /Unpause on vault .*: confirmed/);
+    await shot(page, "v2-ready");
+    await context.close();
+  });
+
+  await scenario("a wallet that is not the owner can read a version 2 vault but change nothing, and a version 1 vault keeps its own screens", async () => {
+    const stranger_ = await openV2({ account: stranger });
+    await stranger_.page.locator("#v2-not-owner").waitFor({ state: "visible" });
+    for (const id of ["v2-cap-save", "v2-agent-save", "v2-agent-off", "v2-approver-add"]) assert.equal(await stranger_.page.locator(`#${id}`).isDisabled(), true, id);
+    assert.equal(sends(stranger_.prompts), 0);
+    await stranger_.context.close();
+    const one = await openPageAt(`?vault=${vault}`);
+    await one.page.click("#connect");
+    await one.page.locator("#dashboard").waitFor({ state: "visible", timeout: 30000 });
+    assert.equal(await one.page.evaluate(() => document.body.dataset.version), "1");
+    assert.equal(await one.page.locator("#v2:visible").count(), 0);
+    assert.match(await dd(one.page, "v-code"), /^Matches this repository/);
+    await one.context.close();
+  });
+
   await scenario("a non-owner can read the vault but every change is disabled", async () => {
     const { page, context, prompts } = await openPage({ account: stranger });
     await connect(page, token);

@@ -10,28 +10,31 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = resolve(HERE, "../../contracts/evm");
 const OUT = resolve(HERE, "../.build/out");
-const SOURCE = join(OUT, "StyxPolicyVault.sol/StyxPolicyVault.json");
+const BUILDS = [["StyxPolicyVault", "vault-artifact.json"], ["StyxVault", "vault-artifact-v2.json"]]; // version 1, version 2
 
-const build = spawnSync("forge", ["build", "src/StyxPolicyVault.sol", "--out", OUT, "--cache-path", resolve(HERE, "../.build/cache"),
+const build = spawnSync("forge", ["build", "src/StyxPolicyVault.sol", "src/StyxVault.sol", "--out", OUT, "--cache-path", resolve(HERE, "../.build/cache"),
   "--optimize", "--optimizer-runs", "200", "--evm-version", "cancun"], { cwd: CONTRACTS, encoding: "utf8" });
 if (build.status !== 0) {
   console.error(`forge build failed. Install Foundry (getfoundry.sh).\n${(build.stderr || build.stdout).slice(-600)}`);
   process.exit(1);
 }
 
-let built;
-try {
-  built = JSON.parse(readFileSync(SOURCE, "utf8"));
-} catch {
-  console.error(`Missing ${SOURCE} after the build.`);
-  process.exit(1);
-}
-const out = {
-  abi: built.abi,
-  bytecode: built.bytecode.object,
-  deployedBytecode: built.deployedBytecode.object,
-  immutableReferences: built.deployedBytecode.immutableReferences ?? {},
-};
 mkdirSync(join(HERE, "../public"), { recursive: true });
-writeFileSync(join(HERE, "../public/vault-artifact.json"), JSON.stringify(out));
-console.log("wrote public/vault-artifact.json");
+for (const [name, file] of BUILDS) {
+  const source = join(OUT, `${name}.sol/${name}.json`);
+  let built;
+  try {
+    built = JSON.parse(readFileSync(source, "utf8"));
+  } catch {
+    console.error(`Missing ${source} after the build.`);
+    process.exit(1);
+  }
+  const out = {
+    abi: built.abi,
+    bytecode: built.bytecode.object,
+    deployedBytecode: built.deployedBytecode.object,
+    immutableReferences: built.deployedBytecode.immutableReferences ?? {},
+  };
+  writeFileSync(join(HERE, "../public", file), JSON.stringify(out));
+  console.log(`wrote public/${file}`);
+}

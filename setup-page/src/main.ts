@@ -4,6 +4,7 @@ import {
   custom,
   getAddress,
   isAddress,
+  keccak256,
   zeroAddress,
   type Address,
   type Hex,
@@ -14,9 +15,11 @@ import {
 import { erc20Abi, vaultAbi } from "./abi";
 import { AmountError, formatNative, formatUsdc, parseUsdc, TOKEN_DECIMALS } from "./amounts";
 import { matchesBuild, type Artifact } from "./build";
-import { ARC_TESTNET_ID, ARC_USDC, arcTestnet, chainFor, explorerTx, KNOWN_CREATION_BLOCKS } from "./chains";
+import { ARC_TESTNET_ID, ARC_USDC, arcTestnet, chainFor, explorerTx, KNOWN_CODE_HASHES, KNOWN_CREATION_BLOCKS } from "./chains";
 import { findFirstBlockWithCode, MAX_LOG_RANGE, pageLogs, retryRpc, verifyCreationBlock } from "./logs";
 import { assessProtection, isProtected } from "./protection";
+import { initV2 } from "./v2ui";
+import { vaultV2Abi } from "./v2";
 
 interface Eip1193 {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -58,7 +61,10 @@ let pub: PublicClient | undefined;
 let wallet: WalletClient | undefined;
 let vault: Address | undefined;
 let artifact: Artifact | undefined;
+let artifactV2: Artifact | undefined;
 let busy = false;
+/** 2 once the vault answers contractVersion(); 1 for the vaults deployed before it existed. */
+let vaultVersion: 1 | 2 = 1;
 let pendingWithdrawal: { to: Address; amount: bigint } | undefined;
 let pendingFund: { amount: bigint } | undefined;
 let balances = { vault: 0n, owner: 0n };
@@ -168,6 +174,9 @@ function renderBanner(): void {
 
 /** Forgets everything typed or computed for the previous vault, so nothing from it can be saved on another. */
 function resetForVault(): void {
+  vaultVersion = 1;
+  document.body.dataset.version = "1";
+  v2?.reset();
   vaultOwner = undefined;
   vendorScan = undefined;
   codeMatches = undefined;
@@ -227,6 +236,14 @@ async function run(label: string, action: () => Promise<Hex | void>, tagged = tr
     await refresh().catch(() => undefined);
     setControls();
   }
+}
+
+async function loadArtifactV2(): Promise<Artifact> {
+  if (artifactV2) return artifactV2;
+  const response = await fetch("/vault-artifact-v2.json");
+  if (!response.ok) throw new Error("vault-artifact-v2.json is missing. Run `npm run prepare-artifact` (it needs Foundry).");
+  artifactV2 = (await response.json()) as Artifact;
+  return artifactV2;
 }
 
 async function loadArtifact(): Promise<Artifact> {
@@ -467,15 +484,32 @@ async function openVault(address: Address, fromLink = false): Promise<void> {
     ]);
     const problem = await checkToken(token);
     if (problem) return status(`The vault's token: ${problem}`, true);
+    let version: 1 | 2 = 1;
+    try {
+      if ((await pub.readContract({ address, abi: vaultV2Abi, functionName: "contractVersion" })) === 2n) version = 2;
+    } catch {
+      /* a version 1 vault has no such function */
+    }
     resetForVault();
+    vaultVersion = version;
+    document.body.dataset.version = String(version);
     vault = address;
     vaultOwner = getAddress(owner);
     vaultToken = token;
     $<HTMLInputElement>("token-input").value = token;
     addRecent(address);
     renderRecent();
-    const built = await loadArtifact().catch(() => undefined);
+    const built = await (version === 2 ? loadArtifactV2() : loadArtifact()).catch(() => undefined);
     codeMatches = built ? matchesBuild(code, built) : undefined;
+    if (version === 2) {
+      const hash = keccak256(code);
+      const pinned = KNOWN_CODE_HASHES[`${chainId}:${address.toLowerCase()}`];
+      if (pinned && hash !== pinned) codeMatches = false;
+      setText(
+        "v2-code",
+        `${built ? (matchesBuild(code, built) ? "Matches this repository's version 2 build (owner and token addresses and the compiler's metadata trailer ignored). " : "DIFFERS from this repository's version 2 build. ") : "Build not compared: artifact missing. "}Code hash ${hash}${pinned ? (hash === pinned ? ", the pinned hash for this vault." : `, which is NOT the pinned hash ${pinned}. Do not fund this vault.`) : ", with no pinned hash for this vault."}`,
+      );
+    }
     setText(
       "v-code",
       !built
@@ -498,7 +532,7 @@ async function openVault(address: Address, fromLink = false): Promise<void> {
       /* the address bar is a convenience only */
     }
     renderBanner();
-    renderApprovals(true);
+    if (version === 1) renderApprovals(true);
     await refresh();
     status(getAddress(owner) === account ? `Vault ${address} connected.` : `Vault ${address} connected, but you are not its owner. Changes are disabled.`);
   } catch (error) {
@@ -507,6 +541,7 @@ async function openVault(address: Address, fromLink = false): Promise<void> {
 }
 
 async function refresh(): Promise<void> {
+  if (vaultVersion === 2) return v2.refresh();
   if (!pub || !vault || !account) return;
   const mine = vault;
   const read = <T extends (typeof vaultAbi)[number]["name"]>(functionName: T, args?: unknown[]) =>
@@ -583,7 +618,8 @@ function setControls(isOwner = ownerFlag): void {
   ownerFlag = isOwner;
   const off = busy || !isOwner;
   const fundBlocked = codeMatches === false && !fundingUnlocked;
-  for (const id of ["save-policy", "add-vendor", "toggle-pause", "withdraw", "withdraw-confirm"]) $<HTMLButtonElement>(id).disabled = off;
+  for (const id of ["save-policy", "add-vendor", "toggle-pause", "withdraw", "withdraw-confirm", "v2-cap-save", "v2-agent-save", "v2-agent-off", "v2-agent-clear", "v2-approver-add", "v2-confirm-yes", "v2-confirm-no"]) $<HTMLButtonElement>(id).disabled = off;
+  for (const button of document.querySelectorAll<HTMLButtonElement>("#v2-agent-list button, #v2-approver-list button")) button.disabled = off;
   for (const id of ["fund", "fund-confirm", "fund-max"]) $<HTMLButtonElement>(id).disabled = off || fundBlocked;
   for (const id of ["deploy", "deploy-yes", "load-vault"]) $<HTMLButtonElement>(id).disabled = busy || !account;
   for (const button of document.querySelectorAll<HTMLButtonElement>("#vendors button, #recent button")) button.disabled = button.closest("#recent") ? busy : off;
@@ -902,3 +938,27 @@ window.ethereum?.on?.("chainChanged", () => location.reload());
   }
 }
 renderBanner();
+
+const v2 = initV2({
+  pub: () => pub,
+  wallet: () => wallet,
+  account: () => account,
+  vault: () => vault,
+  isOwner: () => vaultOwner !== undefined && vaultOwner === account,
+  busy: () => busy,
+  status,
+  run: (label, action) => run(label, action),
+  creationBlock,
+  labels,
+  setVendor: (address, allowed) => setVendor(address, allowed),
+  shared: ({ vaultTokens, ownerTokens, token, owner, paused }) => {
+    balances = { vault: vaultTokens, owner: ownerTokens };
+    vaultToken = token;
+    vaultOwner = owner;
+    renderBanner();
+    setText("toggle-pause", paused ? "Unpause" : "Pause");
+    setControls(vaultOwner === account);
+  },
+  setControls: () => setControls(),
+});
+
