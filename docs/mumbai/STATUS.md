@@ -52,9 +52,12 @@ The agent side used only the real MCP server over stdio, with a real relay, a re
 | 0.25 USDC routine payment through the tools | Settled | `0x5ed2e5e078b7c2d419037963471df405c031c43c95bbcc84eb6e99de6535f455` |
 | Payment to a recipient not on the allowlist | Tool refuses, `POLICY_LIMIT` | |
 | 5 USDC, over what is left of the daily limit | Tool refuses, `POLICY_LIMIT`: "no approval can lift" | |
+| 1.2 USDC exception: alert, owner signs, the page posts to the relay by itself, agent collects and submits | Settled, no file carried | `0x3b9558c3c381af00ee12286ceb6c8bf6fd08f65449d8595e4032d1dea8428073` |
 | Watcher, threshold 8 USDC | Relay accepted its notices; no unresolved transactions | Telegram delivery of these to be confirmed by the owner |
 
-**Not shown yet:** the page posting a signature to the relay by itself on Arc (that path has only run on a local chain), and opening the link on a phone.
+Balances after: vault 50.30 USDC, vendor A 9.70 USDC, and 9.70 of today's 10 USDC limit spent.
+
+**Not shown yet:** opening the link on a phone.
 
 **What this run found, all fixed:**
 
