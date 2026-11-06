@@ -97,7 +97,7 @@ Run with `scripts/arkiv_gate.sh` on Rabdi, chain ID 7794095.
 
 With no project process running locally and no access key, the fetch returned 1,762 bytes identical to the local grant. The verifier then reported record integrity, authorization, settlement and policy at execution as verified against Arc. Another writer's address returned nothing, and a copy with one changed bit was refused.
 
-The first verify attempt read unavailable because the RPC did not answer, so it is retried, and it passed on the next attempt. The grant expires on 12 November 2026, and the entity about two days later.
+The first verify attempt read unavailable because the RPC did not answer, so it is retried, and it passed on the next attempt. The grant expires on 12 November 2026, and the entity about a day later.
 
 **Not shown:** this fetch ran on the issuer's Mac with a reviewer key made there, so it was not a separate reviewer's machine. Nobody outside the team has used it.
 
