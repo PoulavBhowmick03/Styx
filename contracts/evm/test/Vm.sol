@@ -5,6 +5,18 @@ pragma solidity ^0.8.24;
 /// @notice The Foundry cheatcode interface, restricted to the cheatcodes these tests use.
 /// @dev Declared locally so the test suite needs no forge-std dependency and no git submodule.
 interface Vm {
+    struct Log {
+        bytes32[] topics;
+        bytes data;
+        address emitter;
+    }
+
+    function recordLogs() external;
+
+    function getRecordedLogs() external returns (Log[] memory);
+
+    function etch(address target, bytes calldata code) external;
+
     function readFile(string calldata path) external view returns (string memory);
 
     function parseJsonString(string calldata json, string calldata key) external pure returns (string memory);
