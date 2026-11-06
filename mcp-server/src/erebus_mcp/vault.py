@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -28,6 +29,8 @@ _FORBIDDEN_VARIABLES = (
     "EREBUS_VAULT_OWNER_KEY", "EREBUS_VAULT_OWNER_KEY_FILE", "EREBUS_DISCLOSURE_KEY_FILE", "TELEGRAM_BOT_TOKEN",
 )
 _RELAY_UNAVAILABLE = "RELAY_UNAVAILABLE"
+# Models do not know the current time, and a guessed deadline fails the payment.
+_DEFAULT_PAYMENT_SECONDS = 3600
 _RELAY_TIMEOUT_SECONDS = 15
 _MAX_RELAY_RESPONSE_BYTES = 64 * 1024
 
@@ -144,19 +147,28 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
 
     @server.tool()
     async def erebus_propose_payment(
-        recipient: str, amount: str, invoice_name: str, invoice_reference: str, valid_until: int,
+        recipient: str, amount: str, invoice_name: str, invoice_reference: str, valid_until: int | None = None,
     ) -> dict[str, Any]:
-        """Journal a new payment from an invoice file in the vault directory. Moves no funds."""
+        """Journal a new payment from an invoice file in the vault directory. Moves no funds.
+
+        Leave valid_until out unless you were given a time: it defaults to one hour from now.
+        """
         try:
             invoice = settings.artifact(invoice_name)
         except VaultError as error:
             return invalid(error)
         return await call("propose", recipient=recipient, amount=amount, invoice_file=invoice,
-                          invoice_reference=invoice_reference, valid_until=valid_until)
+                          invoice_reference=invoice_reference,
+                          valid_until=valid_until if valid_until is not None else int(time.time()) + _DEFAULT_PAYMENT_SECONDS)
 
     @server.tool()
-    async def erebus_request_owner_approval(payment_id: str, authorization_expiry: int) -> dict[str, Any]:
-        """Write the approval request the owner opens on their signing page. Moves no funds."""
+    async def erebus_request_owner_approval(payment_id: str, authorization_expiry: int | None = None) -> dict[str, Any]:
+        """Write the approval request the owner opens on their signing page. Moves no funds.
+
+        Leave authorization_expiry out unless you were given a time: it defaults to one hour from now.
+        """
+        if authorization_expiry is None:
+            authorization_expiry = int(time.time()) + _DEFAULT_PAYMENT_SECONDS
         stem = payment_id.removeprefix("0x")[:12]
         name = f"pending-{stem}.json"
         try:
