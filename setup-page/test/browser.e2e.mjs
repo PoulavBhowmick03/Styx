@@ -15,7 +15,7 @@ const ROOT = resolve(HERE, "../..");
 const WORK = mkdtempSync(join(tmpdir(), "setup-page-e2e-"));
 const SHOTS = process.env.E2E_SCREENSHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-const RPC_PORT = 18761, PAGE_PORT = 18762;
+const RPC_PORT = 18761, PAGE_PORT = 18762, HOSTED_PORT = 18764;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
 const XSS = '<img src=x onerror="window.__pwned=1">';
 const VENDOR = "0x00000000000000000000000000000000000000a1";
@@ -65,11 +65,14 @@ try {
   // A 2-page fallback window (about 20,000 blocks) keeps the "RPC cannot say when the vault was created" test cheap.
   const FALLBACK_BLOCKS = 2 * 9999;
   start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2" } });
+  // The hosted site is built with a relay address. This one stands in for it, so the approvals section can be tested.
+  start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(HOSTED_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2", VITE_RELAY_URL: "https://relay.example/ignored/path" } });
   await waitFor(async () => (await fetch(`http://127.0.0.1:${PAGE_PORT}`)).ok, "page");
+  await waitFor(async () => (await fetch(`http://127.0.0.1:${HOSTED_PORT}`)).ok, "hosted-style page");
   browser = await chromium.launch({ channel: "chrome", headless: true });
 
   async function openPage(options = {}) { return openPageAt("", options); }
-  async function openPageAt(query, { account = owner, chainId = "0x7a69", rejectNext = false } = {}) {
+  async function openPageAt(query, { account = owner, chainId = "0x7a69", rejectNext = false, port = PAGE_PORT } = {}) {
     const context = await browser.newContext({ viewport: { width: 1000, height: 1400 }, acceptDownloads: true });
     const page = await context.newPage();
     const errors = [];
@@ -107,7 +110,7 @@ try {
         }),
       };
     });
-    await page.goto(`http://127.0.0.1:${PAGE_PORT}/${query}`);
+    await page.goto(`http://127.0.0.1:${port}/${query}`);
     await page.waitForLoadState("networkidle");
     return { page, errors, prompts, control, context };
   }
@@ -601,6 +604,95 @@ try {
     for (let i = 7; i <= 10; i++) assert.equal(pay(agentKey, 900 + i, "1000000").status, 0);
     assert.notEqual(pay(agentKey, 911, "1000000").status, 0, "the 11th USDC in a day must be refused");
     assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", VENDOR)) - vendorBefore, 10_000_000n); // exactly the daily limit, never signed for
+  });
+
+  // ---- Approving from alerts with no config file ----
+  const trustRecords = (page) => page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith("vault-trust/"))));
+  const approvalsText = (page) => page.locator("#approvals-state").textContent();
+  const hosted = (options = {}) => openPageAt("", { port: HOSTED_PORT, ...options });
+
+  await scenario("on a build with a relay, connecting as the owner sets approvals up and says what happens next", async () => {
+    const { page, prompts, context } = await hosted();
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await waitFor(async () => /^Ready in this browser/.test(await approvalsText(page)), "approvals ready");
+    const state = await approvalsText(page);
+    assert.ok(state.toLowerCase().includes(vault.toLowerCase()), "names the vault");
+    assert.ok(state.includes("https://relay.example") && !state.includes("ignored/path"), "names the relay's origin only");
+    assert.equal(await page.locator("#approvals-steps").isVisible(), true);
+    assert.match(await page.locator("#approvals-steps").textContent(), /No file is needed/);
+    assert.match(await page.locator("#approvals-note").textContent(), /Changing limits or vendors cancels approvals that are waiting/);
+    assert.match(await page.locator("#approvals-trusted").textContent(), /trusts this vault for approvals/);
+    // The record is exactly what the approval page reads, so alerts go straight to review.
+    const records = await trustRecords(page);
+    const key = `vault-trust/31337/${vault.toLowerCase()}`;
+    assert.deepEqual(Object.keys(records), [key]);
+    const saved = JSON.parse(records[key]);
+    assert.equal(saved.chainId, "31337");
+    assert.equal(saved.vault.toLowerCase(), vault.toLowerCase());
+    assert.equal(saved.relay, "https://relay.example");
+    assert.equal(sends(prompts), 0); // setting this up sends nothing
+    await shot(page, "approvals-ready");
+    await context.close();
+  });
+
+  await scenario("a wallet that is not the owner sets nothing up", async () => {
+    const { page, context } = await hosted({ account: stranger });
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    assert.match(await approvalsText(page), /You are not this vault's owner/);
+    assert.deepEqual(await trustRecords(page), {});
+    assert.equal(await page.locator("#approvals-steps").isVisible(), false);
+    await context.close();
+  });
+
+  await scenario("a look-alike vault is not trusted for approvals, even when its owner is you", async () => {
+    const odd = forgeVault(); // the repo's own build: its code differs from the page's
+    const { page, context } = await hosted();
+    await connect(page, token);
+    await openVaultByAddress(page, odd);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    assert.match(await approvalsText(page), /does not match the build this page knows/);
+    assert.deepEqual(await trustRecords(page), {});
+    await page.click("#unlock-funding"); // unlocking funding must not set approvals up either
+    assert.deepEqual(await trustRecords(page), {});
+    await context.close();
+  });
+
+  await scenario("the owner can stop trusting a vault and set it up again, and two vaults are listed", async () => {
+    const { page, context } = await hosted();
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await waitFor(async () => /^Ready in this browser/.test(await approvalsText(page)), "ready");
+    await page.click("#approvals-forget");
+    assert.deepEqual(await trustRecords(page), {});
+    assert.match(await approvalsText(page), /Approvals are not set up for this vault in this browser/);
+    assert.match(await page.locator("#approvals-trusted").textContent(), /trusts no vault/);
+    assert.equal(await page.locator("#approvals-use").isVisible(), true);
+    await page.click("#approvals-use");
+    await waitFor(async () => /^Ready in this browser/.test(await approvalsText(page)), "ready again");
+    assert.equal(Object.keys(await trustRecords(page)).length, 1);
+    // A second vault the owner also owns: both are listed, and forgetting one leaves the other.
+    await openVaultByAddress(page, otherVault);
+    await waitFor(async () => (await dd(page, "v-address")).trim().toLowerCase() === otherVault.toLowerCase(), "second vault");
+    await waitFor(async () => /2 vaults/.test(await page.locator("#approvals-trusted").textContent()), "two listed");
+    assert.match(await page.locator("#approvals-trusted").textContent(), /An alert for any other vault always asks you first/);
+    await page.click("#approvals-forget");
+    const left = Object.keys(await trustRecords(page));
+    assert.deepEqual(left, [`vault-trust/31337/${vault.toLowerCase()}`]);
+    await context.close();
+  });
+
+  await scenario("a copy of the page with no relay says so and sets nothing up", async () => {
+    const { page, context } = await openPage(); // the plain build
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    assert.match(await approvalsText(page), /not connected to an alert relay/);
+    assert.deepEqual(await trustRecords(page), {});
+    for (const id of ["approvals-use", "approvals-forget", "approvals-steps"]) assert.equal(await page.locator(`#${id}`).isVisible(), false, id);
+    await context.close();
   });
 
   await scenario("a non-owner can read the vault but every change is disabled", async () => {

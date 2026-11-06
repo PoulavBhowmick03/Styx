@@ -350,15 +350,110 @@ async function deploy(): Promise<void> {
   if (ok && deployedAt) await openVault(deployedAt);
 }
 
+// ---- Approving from alerts, with no config file ----
+
+/** The relay this build was made for. A copy of the page built without one cannot set up approvals. */
+const BUILT_IN_RELAY: string | undefined = (() => {
+  const raw = import.meta.env.VITE_RELAY_URL;
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return undefined;
+  }
+})();
+const TRUST_PREFIX = "vault-trust/";
+const trustKeyFor = (chain: number, address: Address) => `${TRUST_PREFIX}${chain}/${address.toLowerCase()}`;
+
+/** Vaults this browser has been told to trust for approvals. The approval page, on the same site, reads these. */
+function trustedVaults(): string[] {
+  const found: string[] = [];
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(TRUST_PREFIX)) continue;
+      try {
+        const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "");
+        const vaultField = (parsed as { vault?: unknown })?.vault;
+        if (typeof vaultField === "string" && isAddress(vaultField, { strict: false })) found.push(getAddress(vaultField));
+      } catch {
+        /* a damaged record counts as none */
+      }
+    }
+  } catch {
+    /* storage can be blocked */
+  }
+  return found;
+}
+
+function isTrustedHere(address: Address): boolean {
+  return trustedVaults().includes(address);
+}
+
+/** Writes the record the approval page reads, then reads it back, since storage can silently refuse. */
+function trustForApprovals(address: Address): boolean {
+  if (!BUILT_IN_RELAY) return false;
+  const key = trustKeyFor(chainId, address);
+  remember(key, JSON.stringify({ chainId: String(chainId), vault: address, relay: BUILT_IN_RELAY }));
+  return isTrustedHere(address);
+}
+
+function forgetForApprovals(address: Address): void {
+  try {
+    localStorage.removeItem(trustKeyFor(chainId, address));
+  } catch {
+    /* nothing to undo if storage is blocked */
+  }
+}
+
 /**
- * On a hosted site, the approval page shares this page's storage. Connecting as the vault's owner
- * counts as confirming it there, so the first alert goes straight to review. Without a relay built
- * in, this stays out of the way and the approval page asks once.
+ * Says what will happen when an alert arrives, and sets this browser up for it when it is safe to. It is safe
+ * only for a vault the connected wallet owns and whose code matches the build: a look-alike contract can report
+ * any owner it likes, so ownership alone is not enough.
  */
-function rememberForApprovals(address: Address): void {
-  const relay: string | undefined = import.meta.env.VITE_RELAY_URL || undefined;
-  if (!relay) return;
-  remember(`vault-trust/${chainId}/${address.toLowerCase()}`, JSON.stringify({ chainId: String(chainId), vault: address, relay: new URL(relay).origin }));
+function renderApprovals(setUp: boolean): void {
+  if (!vault || !account) return;
+  const text = (message: string) => setText("approvals-state", message);
+  const show = (id: string, visible: boolean) => void ($(id).hidden = !visible);
+  const owns = vaultOwner !== undefined && vaultOwner === account;
+  let ready = false;
+  show("approvals-use", false);
+  show("approvals-forget", false);
+
+  if (!BUILT_IN_RELAY) {
+    text("This copy of the page is not connected to an alert relay, so an alert cannot reach the approval page by itself. To approve here, download the config in section 4 and load it, with the request file, in the approval page. The hosted copy of this page is connected, and sets approvals up without a file.");
+  } else if (!owns) {
+    text("You are not this vault's owner, so approvals are not set up from here. Connect the owner's wallet to set them up.");
+  } else if (codeMatches !== true) {
+    text(codeMatches === false
+      ? "This vault's code does not match the build this page knows, so this page will not set up approvals for it. A look-alike contract can claim any owner. Ask someone you trust to review the vault first."
+      : "This page could not compare this vault's code with its build, so it will not set up approvals for it.");
+  } else if (isTrustedHere(vault)) {
+    ready = true;
+  } else if (setUp && trustForApprovals(vault)) {
+    ready = true;
+  } else if (setUp) {
+    text("This browser would not save the setting (storage may be blocked). Alerts will still work: the approval page asks you to confirm this vault once, with your owner wallet.");
+  } else {
+    text("Approvals are not set up for this vault in this browser. Alerts will still work: the approval page asks you to confirm the vault once, with your owner wallet.");
+    show("approvals-use", true);
+  }
+
+  if (ready) {
+    text(`Ready in this browser. The approval page trusts vault ${vault} and sends your signature only to ${BUILT_IN_RELAY}.`);
+    show("approvals-forget", true);
+  }
+  show("approvals-steps", ready);
+  show("approvals-note", ready);
+  const trusted = trustedVaults();
+  setText(
+    "approvals-trusted",
+    BUILT_IN_RELAY
+      ? trusted.length
+        ? `This browser trusts ${trusted.length === 1 ? "this vault" : `${trusted.length} vaults`} for approvals: ${trusted.join(", ")}. An alert for any other vault always asks you first.`
+        : "This browser trusts no vault for approvals yet."
+      : "",
+  );
 }
 
 async function openVault(address: Address, fromLink = false): Promise<void> {
@@ -403,7 +498,7 @@ async function openVault(address: Address, fromLink = false): Promise<void> {
       /* the address bar is a convenience only */
     }
     renderBanner();
-    if (getAddress(owner) === account) rememberForApprovals(address);
+    renderApprovals(true);
     await refresh();
     status(getAddress(owner) === account ? `Vault ${address} connected.` : `Vault ${address} connected, but you are not its owner. Changes are disabled.`);
   } catch (error) {
@@ -783,6 +878,16 @@ $("toggle-pause").addEventListener("click", async () => {
 $("withdraw").addEventListener("click", reviewWithdrawal);
 $("withdraw-all").addEventListener("click", () => void ($<HTMLInputElement>("withdraw-amount").value = formatUsdc(balances.vault)));
 $("withdraw-confirm").addEventListener("click", () => void confirmWithdrawal());
+$("approvals-use").addEventListener("click", () => {
+  renderApprovals(true);
+  status("Approvals are set up for this vault in this browser.");
+});
+$("approvals-forget").addEventListener("click", () => {
+  if (!vault) return;
+  forgetForApprovals(vault);
+  renderApprovals(false);
+  status("This browser no longer trusts this vault for approvals. An alert will ask you to confirm it again.");
+});
 
 // Changing account or chain invalidates everything on screen, so start over rather than guess.
 window.ethereum?.on?.("accountsChanged", () => location.reload());
