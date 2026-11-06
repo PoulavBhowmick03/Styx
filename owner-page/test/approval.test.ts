@@ -13,6 +13,8 @@ import {
   parseOwnerConfig,
   parsePending,
   parseRelayLink,
+  POLICY_CALLS,
+  reviewAgainstChain,
   paymentHash,
   reviewPending,
   SIGNATURE_SCHEMA,
@@ -126,7 +128,7 @@ describe("review", () => {
     const view = reviewPending(parsePending(pendingJson()), ownerConfig(), NOW);
     expect(view.vendorLabel).toBe("Acme Supplies");
     expect(view.amount).toBe("6 USDC");
-    expect(view.exceededRule).toBe("Exceeds the per-payment limit of 1 USDC");
+    expect(view.exceededRule).toBe("The agent says the limit is 1 USDC. Not verified");
     expect(view.digest).toBe(vector.expected.approvalDigest);
   });
 
@@ -212,6 +214,27 @@ describe("formatUsdc", () => {
     expect(formatUsdc(1n)).toBe("0.000001 USDC");
     expect(formatUsdc(0n)).toBe("0 USDC");
     expect(formatUsdc(123_456_789_012_345_678_901n)).toBe("123456789012345.678901 USDC");
+  });
+});
+
+describe("the chain's answer", () => {
+  it("replaces the limit the agent stated", () => {
+    const pending = pendingWith((value) => {
+      value.perPaymentLimit = "1";
+    });
+    expect(reviewAgainstChain(pending, { perPaymentLimit: 1_000_000n, policyVersion: 3n })).toBe(
+      "Exceeds the vault's limit of 1 USDC, read from the chain",
+    );
+    expect(reviewAgainstChain(pending, { perPaymentLimit: 6_000_000n, policyVersion: 3n })).toMatch(/does not need an exception/);
+  });
+
+  it("refuses a request for an old policy version", () => {
+    expect(() => reviewAgainstChain(parsePending(pendingJson()), { perPaymentLimit: 1n, policyVersion: 4n })).toThrow(/policy changed/);
+  });
+
+  it("uses the vault's real getter selectors", () => {
+    expect(POLICY_CALLS.perPaymentLimit).toBe(keccak256(toHex("perPaymentLimit()")).slice(0, 10));
+    expect(POLICY_CALLS.policyVersion).toBe(keccak256(toHex("policyVersion()")).slice(0, 10));
   });
 });
 

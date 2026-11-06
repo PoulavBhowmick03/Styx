@@ -10,6 +10,7 @@ import {
   hashTypedData,
   isAddress,
   recoverTypedDataAddress,
+  toFunctionSelector,
   type Address,
   type Hex,
 } from "viem";
@@ -227,7 +228,7 @@ export function reviewPending(pending: Pending, config: OwnerConfig, nowSeconds:
     amount: formatUsdc(pending.payment.amount),
     invoiceReference: pending.invoiceReference,
     expiresAt: new Date(Number(pending.authorization.authorizationExpiry) * 1000).toISOString(),
-    exceededRule: `Exceeds the per-payment limit of ${formatUsdc(pending.perPaymentLimit)}`,
+    exceededRule: `The agent says the limit is ${formatUsdc(pending.perPaymentLimit)}. Not verified`,
     digest: approvalDigest(pending),
   };
 }
@@ -305,4 +306,29 @@ export function parseRelayLink(search: string): RelayLink | undefined {
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new ApprovalError("this approval link is malformed");
   return { relay: url.origin, request };
+}
+
+export interface OnChainPolicy {
+  perPaymentLimit: bigint;
+  policyVersion: bigint;
+}
+
+export const POLICY_CALLS = {
+  // The first four bytes of keccak256("perPaymentLimit()") and keccak256("policyVersion()").
+  perPaymentLimit: toFunctionSelector("perPaymentLimit()"),
+  policyVersion: toFunctionSelector("policyVersion()"),
+} as const;
+
+/**
+ * Compares the request with what the vault itself reports. The pending file's limit comes from the
+ * agent and is not signed, so it never appears as fact once the chain has answered. Throwing here means
+ * the sign button goes away: a signature for an old policy version can only revert.
+ */
+export function reviewAgainstChain(pending: Pending, policy: OnChainPolicy): string {
+  if (pending.payment.policyVersion !== policy.policyVersion) {
+    fail("the vault's policy changed after this request was made. Ask the agent to propose it again");
+  }
+  return pending.payment.amount > policy.perPaymentLimit
+    ? `Exceeds the vault's limit of ${formatUsdc(policy.perPaymentLimit)}, read from the chain`
+    : `Within the vault's limit of ${formatUsdc(policy.perPaymentLimit)}, read from the chain. This payment does not need an exception`;
 }

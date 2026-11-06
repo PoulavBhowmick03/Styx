@@ -187,7 +187,7 @@ export class Relay {
       "Your agent wants to spend over its limit.",
       `Requested: ${formatUsdc(pending.payment.amount)}`,
       `Recipient: ${pending.payment.recipient}`,
-      `Limit: ${formatUsdc(pending.perPaymentLimit)} per payment`,
+      `The agent says the limit is ${formatUsdc(pending.perPaymentLimit)} per payment.`,
       "",
       "This message proves nothing. Check the details on the approval page before signing.",
       url,

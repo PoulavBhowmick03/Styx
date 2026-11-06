@@ -6,6 +6,8 @@ import {
   parseOwnerConfig,
   parsePending,
   parseRelayLink,
+  POLICY_CALLS,
+  reviewAgainstChain,
   reviewPending,
   typedDataRequest,
   type OwnerConfig,
@@ -85,7 +87,41 @@ function render(): void {
     }
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "This approval could not be read.", true);
+    return;
   }
+  void checkChain(config, pending);
+}
+
+let chainCheck = 0;
+// Asks the owner's own wallet what the vault reports. If it cannot answer, the page keeps the agent's
+// number labelled as unverified: the vault enforces the limit whatever this page shows.
+async function checkChain(ownerConfig: OwnerConfig, request: Pending): Promise<void> {
+  const check = ++chainCheck;
+  const wallet = window.ethereum;
+  if (!wallet) return;
+  const read = async (data: Hex) => {
+    const result = (await wallet.request({ method: "eth_call", params: [{ to: request.vault, data }, "latest"] })) as string;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(result)) throw new Error("no answer");
+    return BigInt(result);
+  };
+  let rule: string;
+  try {
+    const chainId = BigInt((await wallet.request({ method: "eth_chainId" })) as string);
+    if (chainId !== ownerConfig.chainId) return;
+    const [perPaymentLimit, policyVersion] = await Promise.all([read(POLICY_CALLS.perPaymentLimit), read(POLICY_CALLS.policyVersion)]);
+    if (check !== chainCheck) return;
+    try {
+      rule = reviewAgainstChain(request, { perPaymentLimit, policyVersion });
+    } catch (error) {
+      signButton.hidden = true;
+      worldButton.hidden = true;
+      showStatus(error instanceof ApprovalError ? error.message : "This approval could not be checked.", true);
+      return;
+    }
+  } catch {
+    return;
+  }
+  element("rule").textContent = rule;
 }
 
 async function readJson(input: HTMLInputElement): Promise<unknown> {

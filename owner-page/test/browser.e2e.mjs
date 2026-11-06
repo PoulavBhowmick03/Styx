@@ -101,7 +101,8 @@ try {
     page.on("pageerror", (e) => errors.push(e.message));
     const prompts = [];
     await page.exposeFunction("__wallet", async (method, params) => {
-      prompts.push(method);
+      // Reads show the owner nothing, so only the requests a wallet would prompt for are recorded.
+      if (method !== "eth_call" && method !== "eth_chainId") prompts.push(method);
       if (method === "eth_requestAccounts") return [account];
       if (method === "eth_chainId") return chainId;
       const r = await (await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json();
@@ -129,13 +130,13 @@ try {
     assert.equal(await page.locator("#amount").textContent(), "6 USDC");
     assert.equal(await page.locator("#vendor").textContent(), "Acme Supplies");
     assert.equal((await page.locator("#recipient").textContent()).toLowerCase(), VENDOR);
-    assert.match(await page.locator("#rule").textContent(), /per-payment limit of 1 USDC/);
+    await waitFor(async () => /limit of 1 USDC, read from the chain/.test(await page.locator("#rule").textContent()), "the chain's limit");
     await shot(page, "review");
     await page.click("#sign");
     await page.locator("#output").waitFor({ state: "visible" });
     await shot(page, "signed");
     assert.equal(await page.locator("#sign").isVisible(), false);
-    assert.deepEqual(prompts, ["eth_requestAccounts", "eth_chainId", "eth_signTypedData_v4"]);
+    assert.deepEqual(prompts, ["eth_requestAccounts", "eth_signTypedData_v4"]);
     const signature = join(WORK, "signature.json");
     writeFileSync(signature, await page.locator("#output-text").inputValue());
     assert.equal(errors.length, 0, errors.join());
@@ -175,6 +176,27 @@ try {
       await context.close();
     });
   }
+
+  await scenario("a limit misstated by the agent is replaced with the chain's", async () => {
+    const original = JSON.parse(readFileSync(approve(propose().payment_id), "utf8"));
+    original.perPaymentLimit = "1";
+    const file = join(WORK, `understated-${counter++}.json`);
+    writeFileSync(file, JSON.stringify(original));
+    const { page, context } = await openPage(PAGE_PORT);
+    await load(page, file);
+    await waitFor(async () => /limit of 1 USDC, read from the chain/.test(await page.locator("#rule").textContent()), "the chain's limit");
+    assert.equal((await page.locator("#rule").textContent()).includes("0.000001"), false);
+    await context.close();
+  });
+
+  await scenario("when the chain cannot be read, the agent's limit stays marked as unverified", async () => {
+    const { page, context } = await openPage(PAGE_PORT, { chainId: "0x1" });
+    await load(page, approve(propose().payment_id));
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await sleep(300);
+    assert.match(await page.locator("#rule").textContent(), /agent says the limit is 1 USDC. Not verified/);
+    await context.close();
+  });
 
   await scenario("a recipient outside the owner's list never shows the sign button", async () => {
     const other = join(WORK, "other-owner.json");
@@ -299,6 +321,16 @@ try {
     await page.click("#sign");
     await waitFor(async () => /relay could not be reached/.test(await status(page)), "send failure");
     assert.ok((await page.locator("#output-text").inputValue()).includes("vault-owner-signature/1"));
+    await context.close();
+  });
+  await scenario("a request for an old policy version loses its sign button", async () => {
+    const stale = approve(propose().payment_id);
+    send(vault, "setRecipient(address,bool)", "0x00000000000000000000000000000000000000c4", "true");
+    const { page, prompts, context } = await openPage(PAGE_PORT);
+    await load(page, stale);
+    await waitFor(async () => /policy changed/.test(await status(page)), "version refusal");
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal(prompts.length, 0);
     await context.close();
   });
   telegram.close();
