@@ -3,7 +3,7 @@ src = "src"
 out = "out"
 test = "test"
 libs = []
-# Pinned so the settlement contract is compiled by one known compiler. forge downloads it.
+# Pinned so the vault is compiled by one known compiler. forge downloads it.
 solc = "0.8.24"
 optimizer = false
 # The known-answer vectors live in the Rust core so there is exactly one generated copy. Tests

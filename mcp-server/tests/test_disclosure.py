@@ -17,14 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get("STYX_TEST_DISCLOSURE_BIN", ROOT / "sdk/evm/target/debug/styx-disclosure"))
 
 
-def test_settings_reject_insecure_directories_and_partial_issuer_configuration(monkeypatch, tmp_path):
+def test_settings_reject_insecure_directories(monkeypatch, tmp_path):
     monkeypatch.setenv("STYX_DISCLOSURE_DIR", str(tmp_path))
     tmp_path.chmod(0o755)
     with pytest.raises(ConfigError, match="owner-only"):
-        DisclosureSettings.from_env()
-    tmp_path.chmod(0o700)
-    monkeypatch.setenv("STYX_DISCLOSURE_STATE_ROOT", str(tmp_path / "state"))
-    with pytest.raises(ConfigError, match="four"):
         DisclosureSettings.from_env()
 
 
@@ -47,12 +43,13 @@ def test_symlink_directory_is_rejected(monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(not BINARY.exists(), reason="build styx-disclosure to run real MCP tests")
-def test_auditor_stdio_server_uses_rust_keys_without_starknet_or_prover_settings(tmp_path):
+def test_reviewer_stdio_server_uses_rust_keys(tmp_path):
     tmp_path.chmod(0o700)
     parameters = StdioServerParameters(
         command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT),
         env={"STYX_BACKEND": "disclosure", "STYX_DISCLOSURE_DIR": str(tmp_path),
-             "STYX_DISCLOSURE_CLI": str(BINARY)},
+             "STYX_DISCLOSURE_CLI": str(BINARY),
+             "STYX_DISCLOSURE_VAULT_PINS": json.dumps({"chain_id": 5042002, "rpc_urls": ["http://127.0.0.1:1"], "vault": "0x" + "11" * 20, "vault_code_hash": "0x" + "22" * 32})},
     )
 
     async def run():
@@ -60,7 +57,7 @@ def test_auditor_stdio_server_uses_rust_keys_without_starknet_or_prover_settings
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = {tool.name for tool in (await session.list_tools()).tools}
-                assert tools == {"create_disclosure_key", "disclosure_key_info", "verify_disclosed_agreement"}
+                assert tools == {"create_disclosure_key", "disclosure_key_info", "verify_vault_payment"}
                 def result(response):
                     return response.structured_content or json.loads(response.content[0].text)
                 created = result(await session.call_tool("create_disclosure_key", {}))
@@ -70,11 +67,11 @@ def test_auditor_stdio_server_uses_rust_keys_without_starknet_or_prover_settings
                 assert restored["result"]["recipient_public_key"] == key
                 duplicate = result(await session.call_tool("create_disclosure_key", {}))
                 assert duplicate["ok"] is False
-                missing = result(await session.call_tool("verify_disclosed_agreement", {
+                missing = result(await session.call_tool("verify_vault_payment", {
                     "grant_name": "missing.grant", "expected_issuer": "0x" + "11" * 20,
                 }))
                 assert missing["ok"] is False
-                escape = result(await session.call_tool("verify_disclosed_agreement", {
+                escape = result(await session.call_tool("verify_vault_payment", {
                     "grant_name": "../outside.grant", "expected_issuer": "0x" + "11" * 20,
                 }))
                 assert escape["ok"] is False

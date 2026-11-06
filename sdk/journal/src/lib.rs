@@ -4,8 +4,7 @@
 //! duplicate chain effect or a forgotten one. This crate owns the part of that which does not
 //! depend on the chain: where records live, how they are locked, how they reach disk, and how
 //! they are read back and pruned. The record types, their stages, and the rules for moving
-//! between stages belong to the backend; the Starknet client in `sdk/rs` is the first one.
-//!
+//! between stages belong to the caller.
 //! One directory per journal:
 //!
 //! | Name | What it is |

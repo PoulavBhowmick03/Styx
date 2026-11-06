@@ -2,7 +2,7 @@
 
 The `styx-cli` wheel contains `styx-vault` and `styx-disclosure` executables.
 Installation does not invoke Cargo or download executables at runtime. It needs Python 3.11+
-and uv. This package does not include the old Starknet CLI.
+and uv.
 
 From a downloaded wheelhouse for your platform, run one command:
 

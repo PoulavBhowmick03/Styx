@@ -1,211 +1,29 @@
-//! Verification of one disclosed agreement from stored transcript evidence.
-//!
-//! This verifies the agreement only. A payment claim also needs independent backend
-//! observation; a caller-supplied settlement receipt is not chain evidence.
+//! Encrypted, signed grants that disclose one payment record to one reviewer.
 
-use styx_core::auth::{verify_authorization_signature, AuthError, Authorization, Role};
-use styx_core::commitment::{
-    commit_agreement, deal_nullifier, CommitmentBlinding, CommitmentError, DealCommitment,
-    DealNullifier,
-};
-use styx_core::encoding::{EncodingError, Reader, Writer};
-use styx_core::suite;
-use styx_core::terms::AgreementTerms;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+
+use styx_core::encoding::{EncodingError, Reader, Writer};
+use styx_core::suite;
 use zeroize::Zeroizing;
 
 use crate::identity::{AuthorizationIdentity, DisclosureIdentity};
-use crate::limits::MAX_MESSAGES_PER_DEAL;
-use crate::message::{Message, MessageError};
-use crate::store::{StoreError, TranscriptStore};
-use crate::transcript::{Transcript, TranscriptError};
 
-/// The private opening and selected transcript to disclose to one recipient.
-/// It must be encrypted before it leaves the issuer's machine.
-#[derive(Clone)]
-pub struct SelectedAgreement {
-    /// Canonical accepted terms, including the committed transcript root.
-    pub terms: AgreementTerms,
-    /// The secret that opens the agreement commitment.
-    pub blinding: CommitmentBlinding,
-    /// Buyer's authorization of the accepted commitment.
-    pub buyer: Authorization,
-    /// Seller's authorization of the accepted commitment.
-    pub seller: Authorization,
-    /// Transcript hash version, independent of the agreement suite.
-    pub transcript_hash_version: u16,
-    /// Only messages from this agreement's deal.
-    pub messages: Vec<Message>,
-}
-
-impl core::fmt::Debug for SelectedAgreement {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("SelectedAgreement { <redacted> }")
-    }
-}
-
-/// The agreement facts established by replay and both participant signatures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VerifiedAgreement {
-    /// The accepted deal identifier.
-    pub deal_id: [u8; 16],
-    /// The accepted revision.
-    pub revision: u32,
-    /// The authorized agreement commitment.
-    pub commitment: DealCommitment,
-    /// The one-time settlement identity shared by revisions of the deal.
-    pub nullifier: DealNullifier,
-    /// The transcript root signed as part of the agreement.
-    pub transcript_root: [u8; 32],
-}
-
-/// A selected agreement was incomplete or did not match its transcript or signatures.
-#[derive(Debug, thiserror::Error)]
-pub enum DisclosureError {
-    /// The stored messages cannot form one deal transcript.
-    #[error(transparent)]
-    Transcript(#[from] TranscriptError),
-    /// The messages do not reproduce the root authorized in the terms.
-    #[error("disclosed transcript does not match the accepted agreement")]
-    TranscriptRoot,
-    /// An authorization was supplied in the wrong role.
-    #[error("disclosed authorizations must contain buyer and seller roles")]
-    Roles,
-    /// The agreement commitment or nullifier cannot be derived.
-    #[error(transparent)]
-    Commitment(#[from] CommitmentError),
-    /// An authorization does not verify against the opened agreement.
-    #[error(transparent)]
-    Authorization(#[from] AuthError),
-    /// Evidence encoding is malformed or exceeds a bound.
-    #[error(transparent)]
-    Encoding(#[from] EncodingError),
-    /// A canonical agreement could not be decoded.
-    #[error(transparent)]
-    Terms(#[from] styx_core::terms::TermsError),
-    /// An individual transcript message could not be decoded.
-    #[error(transparent)]
-    Message(#[from] MessageError),
-    /// The selected evidence exceeds the disclosure package bound.
-    #[error("selected disclosure exceeds the size bound")]
-    TooLarge,
-    /// The package names an unsupported format version.
-    #[error("unsupported disclosure evidence version")]
-    UnsupportedVersion,
-    /// The selected transcript could not be read from participant storage.
-    #[error(transparent)]
-    Store(#[from] StoreError),
-    /// No messages remain for the selected deal in participant storage.
-    #[error("selected deal transcript is unavailable")]
-    TranscriptUnavailable,
-}
-
-/// Maximum plaintext bytes in one selected-deal package, including 4,096 messages.
+/// Largest record a grant can carry.
 pub const MAX_DISCLOSURE_BYTES: usize = 48 * 1024 * 1024;
 
-impl SelectedAgreement {
-    /// Reconstructs export evidence from one participant's stored transcript.
-    /// Supply the opening and authorizations from trusted durable agreement state.
-    /// Missing data is not payment evidence; this never queries or submits to a chain.
-    pub fn from_store(
-        terms: AgreementTerms,
-        blinding: CommitmentBlinding,
-        buyer: Authorization,
-        seller: Authorization,
-        transcript_hash_version: u16,
-        store: &dyn TranscriptStore,
-        namespace: &str,
-    ) -> Result<Self, DisclosureError> {
-        let messages = store.messages(namespace, terms.deal_id)?;
-        if messages.is_empty() {
-            return Err(DisclosureError::TranscriptUnavailable);
-        }
-        let evidence = Self {
-            terms,
-            blinding,
-            buyer,
-            seller,
-            transcript_hash_version,
-            messages,
-        };
-        verify_selected_agreement(&evidence)?;
-        Ok(evidence)
-    }
-
-    /// Encodes only this deal's evidence for encrypted export.
-    pub fn encode(&self) -> Result<Vec<u8>, DisclosureError> {
-        if self.messages.len() > MAX_MESSAGES_PER_DEAL {
-            return Err(DisclosureError::TooLarge);
-        }
-        let mut writer = Writer::new();
-        writer.u16(1);
-        writer.u16(self.transcript_hash_version);
-        writer.bytes_bounded(&self.terms.encode()?, u16::MAX as usize);
-        writer.fixed(self.blinding.as_bytes());
-        writer.bytes(&self.buyer.encode()?);
-        writer.bytes(&self.seller.encode()?);
-        writer.u32(self.messages.len() as u32);
-        for message in &self.messages {
-            writer.bytes_bounded(&message.encode(), u16::MAX as usize);
-        }
-        let bytes = writer.finish();
-        if bytes.len() > MAX_DISCLOSURE_BYTES {
-            return Err(DisclosureError::TooLarge);
-        }
-        Ok(bytes)
-    }
-
-    /// Decodes a complete selected-deal package without accepting trailing bytes.
-    pub fn decode(bytes: &[u8]) -> Result<Self, DisclosureError> {
-        if bytes.len() > MAX_DISCLOSURE_BYTES {
-            return Err(DisclosureError::TooLarge);
-        }
-        let mut reader = Reader::new(bytes);
-        if reader.u16("disclosure_version")? != 1 {
-            return Err(DisclosureError::UnsupportedVersion);
-        }
-        let transcript_hash_version = reader.u16("transcript_hash_version")?;
-        let terms = AgreementTerms::decode(reader.bytes("terms", 1, u16::MAX as usize)?)?;
-        let blinding = CommitmentBlinding::from_bytes(reader.fixed("blinding")?);
-        let buyer = Authorization::decode(reader.bytes("buyer_authorization", 1, 1024)?)?;
-        let seller = Authorization::decode(reader.bytes("seller_authorization", 1, 1024)?)?;
-        let count = reader.u32("message_count")? as usize;
-        if count > MAX_MESSAGES_PER_DEAL {
-            return Err(DisclosureError::TooLarge);
-        }
-        let mut messages = Vec::with_capacity(count);
-        for _ in 0..count {
-            messages.push(Message::decode(reader.bytes(
-                "message",
-                1,
-                u16::MAX as usize,
-            )?)?);
-        }
-        reader.finish()?;
-        Ok(Self {
-            terms,
-            blinding,
-            buyer,
-            seller,
-            transcript_hash_version,
-            messages,
-        })
-    }
-}
-
-/// A recipient-bound, issuer-signed encrypted grant for one deal.
+/// A recipient-bound, issuer-signed encrypted grant for one record.
 #[derive(Clone)]
 pub struct DisclosureGrant {
-    /// Suite-1 address (20 bytes) or suite-2 participant key (64 bytes).
+    /// Issuer address.
     /// The recipient must obtain the expected identity independently.
     pub issuer: Vec<u8>,
     /// Intended disclosure recipient's X25519 public key.
     pub recipient: [u8; 32],
-    /// Deal selected by this grant.
+    /// Record selected by this grant.
     pub deal_id: [u8; 16],
     /// Unix time after which a recipient must reject the grant.
     pub expires_at: u64,
@@ -224,9 +42,6 @@ impl core::fmt::Debug for DisclosureGrant {
 /// Grant creation or opening failed.
 #[derive(Debug, thiserror::Error)]
 pub enum GrantError {
-    /// The disclosure evidence failed verification or canonical decoding.
-    #[error(transparent)]
-    Evidence(#[from] DisclosureError),
     /// Grant structure or issuer signature is invalid.
     #[error("invalid disclosure grant")]
     Invalid,
@@ -247,8 +62,6 @@ pub enum GrantError {
     Backup,
 }
 
-const GRANT_DOMAIN: &[u8] = b"STYX_DEAL_DISCLOSURE_V1";
-const SHIELDED_GRANT_DOMAIN: &[u8] = b"STYX_DEAL_DISCLOSURE_V2_SUITE2";
 const RECORD_GRANT_DOMAIN: &[u8] = b"STYX_RECORD_DISCLOSURE_V3";
 const RECORD_GRANT_VERSION: u16 = 3;
 const NOISE_N: &str = "Noise_N_25519_ChaChaPoly_BLAKE2s";
@@ -262,7 +75,7 @@ impl DisclosureGrant {
     pub fn encode(&self) -> Result<Vec<u8>, GrantError> {
         if !matches!(
             (self.version, self.issuer.len(), self.signature.len()),
-            (1 | RECORD_GRANT_VERSION, 20, 65) | (2, 64, 96)
+            (RECORD_GRANT_VERSION, 20, 65)
         ) {
             return Err(GrantError::Invalid);
         }
@@ -292,11 +105,10 @@ impl DisclosureGrant {
         }
         let mut reader = Reader::new(bytes);
         let version = reader.u16("grant_version")?;
-        let issuer = match version {
-            1 | RECORD_GRANT_VERSION => reader.fixed::<20>("issuer")?.to_vec(),
-            2 => reader.fixed::<64>("issuer")?.to_vec(),
-            _ => return Err(GrantError::Invalid),
-        };
+        if version != RECORD_GRANT_VERSION {
+            return Err(GrantError::Invalid);
+        }
+        let issuer = reader.fixed::<20>("issuer")?.to_vec();
         let recipient = reader.fixed("recipient")?;
         let deal_id = reader.fixed("deal_id")?;
         let expires_at = reader.u64("expires_at")?;
@@ -309,11 +121,7 @@ impl DisclosureGrant {
         for _ in 0..count {
             frames.push(reader.bytes("frame", 16, MAX_FRAME_BYTES)?.to_vec());
         }
-        let signature = match version {
-            1 | RECORD_GRANT_VERSION => reader.fixed::<65>("signature")?.to_vec(),
-            2 => reader.fixed::<96>("signature")?.to_vec(),
-            _ => return Err(GrantError::Invalid),
-        };
+        let signature = reader.fixed::<65>("signature")?.to_vec();
         reader.finish()?;
         Ok(Self {
             issuer,
@@ -370,88 +178,6 @@ impl DisclosureGrant {
             })
             .map_err(|_| GrantError::Backup)?;
         Self::decode(&bytes)
-    }
-
-    /// Encrypts verified evidence for a recipient who need not be online.
-    pub fn seal(
-        evidence: &SelectedAgreement,
-        issuer: &AuthorizationIdentity,
-        recipient: [u8; 32],
-        expires_at: u64,
-        now: u64,
-    ) -> Result<Self, GrantError> {
-        if evidence.terms.suite_id != 1 {
-            return Err(GrantError::Invalid);
-        }
-        let mut grant = Self::encrypt(
-            evidence,
-            issuer.address().to_vec(),
-            1,
-            recipient,
-            expires_at,
-            now,
-        )?;
-        grant.signature = issuer.sign_digest(&grant.signature_digest()).to_vec();
-        Ok(grant)
-    }
-
-    /// Signs a version-2 grant directly with a suite-2 agreement participant seed.
-    /// This performs local signing only; no witness, circuit, or prover is involved.
-    pub fn seal_shielded(
-        evidence: &SelectedAgreement,
-        issuer_seed: &[u8; 32],
-        recipient: [u8; 32],
-        expires_at: u64,
-        now: u64,
-    ) -> Result<Self, GrantError> {
-        use styx_core::{
-            shielded::disclosure_message,
-            shielded_auth::{derive_key, sign_message},
-        };
-        if evidence.terms.suite_id != 2
-            || evidence.terms.settlement_mode != styx_core::terms::SettlementMode::Shielded
-        {
-            return Err(GrantError::Invalid);
-        }
-        let issuer = derive_key(issuer_seed).map_err(|_| GrantError::Invalid)?;
-        if evidence.terms.buyer_authorization_key.as_bytes() != issuer
-            && evidence.terms.seller_authorization_key.as_bytes() != issuer
-        {
-            return Err(GrantError::Invalid);
-        }
-        let mut grant = Self::encrypt(evidence, issuer.to_vec(), 2, recipient, expires_at, now)?;
-        let message =
-            disclosure_message(&grant.signature_digest()).map_err(|_| GrantError::Invalid)?;
-        let (key, signature) =
-            sign_message(issuer_seed, &message).map_err(|_| GrantError::Invalid)?;
-        if key != issuer {
-            return Err(GrantError::Invalid);
-        }
-        grant.signature = signature.to_vec();
-        Ok(grant)
-    }
-
-    fn encrypt(
-        evidence: &SelectedAgreement,
-        issuer: Vec<u8>,
-        version: u16,
-        recipient: [u8; 32],
-        expires_at: u64,
-        now: u64,
-    ) -> Result<Self, GrantError> {
-        if now >= expires_at || recipient == [0; 32] {
-            return Err(GrantError::Invalid);
-        }
-        verify_selected_agreement(evidence)?;
-        let plaintext = Zeroizing::new(evidence.encode()?);
-        Self::encrypt_bytes(
-            &plaintext,
-            issuer,
-            version,
-            recipient,
-            evidence.terms.deal_id,
-            expires_at,
-        )
     }
 
     /// Encrypts one record for a recipient and signs it as a version 3 grant.
@@ -525,47 +251,6 @@ impl DisclosureGrant {
             grant.frames.push(buffer[..written].to_vec());
         }
         Ok(grant)
-    }
-
-    /// Opens a grant and independently verifies the selected agreement.
-    /// The caller supplies the independently expected issuer address or suite-2 key.
-    pub fn open(
-        &self,
-        recipient: &DisclosureIdentity,
-        expected_issuer: impl AsRef<[u8]>,
-        now: u64,
-    ) -> Result<(SelectedAgreement, VerifiedAgreement), GrantError> {
-        self.check_envelope(recipient, expected_issuer.as_ref(), now)?;
-        match self.version {
-            1 => suite::suite(1)
-                .map_err(|_| GrantError::Invalid)?
-                .verify_authorization(&self.issuer, &self.signature_digest(), &self.signature)
-                .map_err(|_| GrantError::Invalid)?,
-            2 => {
-                let message = styx_core::shielded::disclosure_message(&self.signature_digest())
-                    .map_err(|_| GrantError::Invalid)?;
-                styx_core::shielded_auth::verify_message(&self.issuer, &message, &self.signature)
-                    .map_err(|_| GrantError::Invalid)?;
-            }
-            _ => return Err(GrantError::Invalid),
-        }
-        let plaintext = self.decrypt(recipient)?;
-        let evidence = SelectedAgreement::decode(&plaintext)?;
-        if evidence.terms.deal_id != self.deal_id {
-            return Err(GrantError::Invalid);
-        }
-        let verified = verify_selected_agreement(&evidence)?;
-        if (self.version == 1 && evidence.terms.suite_id != 1)
-            || (self.version == 2
-                && (evidence.terms.suite_id != 2
-                    || evidence.terms.settlement_mode
-                        != styx_core::terms::SettlementMode::Shielded
-                    || (evidence.terms.buyer_authorization_key.as_bytes() != self.issuer
-                        && evidence.terms.seller_authorization_key.as_bytes() != self.issuer)))
-        {
-            return Err(GrantError::Invalid);
-        }
-        Ok((evidence, verified))
     }
 
     /// Opens a version 3 record grant. This authenticates and decrypts only: the caller compares
@@ -668,49 +353,6 @@ impl DisclosureGrant {
     }
 
     fn domain(&self) -> &'static [u8] {
-        match self.version {
-            2 => SHIELDED_GRANT_DOMAIN,
-            RECORD_GRANT_VERSION => RECORD_GRANT_DOMAIN,
-            _ => GRANT_DOMAIN,
-        }
+        RECORD_GRANT_DOMAIN
     }
-}
-
-/// Replays the selected transcript and verifies the accepted terms and both signatures.
-/// Expiry does not erase a signature that was valid when the deal was accepted.
-pub fn verify_selected_agreement(
-    evidence: &SelectedAgreement,
-) -> Result<VerifiedAgreement, DisclosureError> {
-    if evidence.buyer.role != Role::Buyer || evidence.seller.role != Role::Seller {
-        return Err(DisclosureError::Roles);
-    }
-    let transcript = Transcript::replay(
-        evidence.terms.deal_id,
-        evidence.transcript_hash_version,
-        &evidence.messages,
-    )?;
-    if transcript.root()? != evidence.terms.transcript_root {
-        return Err(DisclosureError::TranscriptRoot);
-    }
-    let commitment = commit_agreement(&evidence.terms, &evidence.blinding)?;
-    verify_authorization_signature(
-        &evidence.terms,
-        &commitment,
-        &evidence.blinding,
-        &evidence.buyer,
-    )?;
-    verify_authorization_signature(
-        &evidence.terms,
-        &commitment,
-        &evidence.blinding,
-        &evidence.seller,
-    )?;
-    let nullifier = deal_nullifier(&evidence.terms)?;
-    Ok(VerifiedAgreement {
-        deal_id: evidence.terms.deal_id,
-        revision: evidence.terms.revision,
-        commitment,
-        nullifier,
-        transcript_root: evidence.terms.transcript_root,
-    })
 }
