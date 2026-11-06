@@ -18,6 +18,8 @@ const CLI = join(ROOT, "sdk/evm/target/debug/styx-vault");
 const WORK = mkdtempSync(join(tmpdir(), "owner-page-e2e-"));
 chmodSync(WORK, 0o700);
 const SHOTS = process.env.E2E_SCREENSHOTS;
+// E2E_VIEWPORT=360x800 makes every page this wide, so the screenshots can be taken at phone width.
+const [VIEW_W, VIEW_H] = (process.env.E2E_VIEWPORT ?? "").match(/^(\d+)x(\d+)$/)?.slice(1).map(Number) ?? [];
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const RPC_PORT = 18661, PAGE_PORT = 18662, GATE_PORT = 18663, RELAY_PORT = 18664, TELEGRAM_PORT = 18665, HOSTED_PORT = 18666;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
@@ -108,7 +110,7 @@ try {
 
   /** A page whose wallet is Anvil, connected as `account`, on `chainId`. */
   async function openPage(port, { account = owner, chainId = "0x7a69", refuseCalls = 0 } = {}) {
-    const context = await browser.newContext({ viewport: { width: 1100, height: 1000 } });
+    const context = await browser.newContext({ viewport: { width: VIEW_W ?? 1100, height: VIEW_H ?? 1000 } });
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -135,7 +137,7 @@ try {
     await page.setInputFiles("#pending-file", pendingFile);
   };
   const status = (page) => page.locator("#status").textContent();
-  const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, `${name}.png`) }); };
+  const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, `${name}${VIEW_W ? `-${VIEW_W}` : ""}.png`), fullPage: true }); };
 
   await scenario("the owner reviews, signs in the page, and the payment settles", async () => {
     const id = propose().payment_id;
@@ -231,6 +233,7 @@ try {
     await page.locator("#sign").waitFor({ state: "visible" });
     await page.click("#sign");
     await waitFor(async () => /owner account/.test(await status(page)), "account refusal");
+    await shot(page, "wrong-account");
     assert.equal(prompts.includes("eth_signTypedData_v4"), false);
     await context.close();
   });
@@ -241,6 +244,7 @@ try {
     await page.locator("#sign").waitFor({ state: "visible" });
     await page.click("#sign");
     await waitFor(async () => /Switch your wallet/.test(await status(page)), "chain refusal");
+    await shot(page, "wrong-chain");
     assert.equal(prompts.includes("eth_signTypedData_v4"), false);
     await context.close();
   });
@@ -519,7 +523,7 @@ try {
   });
   await scenario("v2: with no wallet in the browser, the page offers to open the request in MetaMask", async () => {
     const { link } = await askApprover();
-    const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
+    const context = await browser.newContext({ viewport: { width: VIEW_W ?? 390, height: VIEW_H ?? 800 } });
     const page = await context.newPage();
     await allowHosted(page);
     await page.goto(link);
@@ -599,7 +603,7 @@ try {
   });
   await scenario("with no wallet in the browser, the page offers to open the request in MetaMask", async () => {
     const { link } = await askOwner();
-    const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
+    const context = await browser.newContext({ viewport: { width: VIEW_W ?? 390, height: VIEW_H ?? 800 } });
     const page = await context.newPage();
     await page.goto(link);
     await page.locator("#wallet-help").waitFor({ state: "visible" });
@@ -667,9 +671,25 @@ try {
     await page.route(`${RELAY}/requests/**`, (route) => route.abort());
     await page.click("#sign");
     await waitFor(async () => /relay could not be reached/.test(await status(page)), "send failure");
+    await shot(page, "relay-failed");
     assert.ok((await page.locator("#output-text").inputValue()).includes("vault-owner-signature/1"));
     await context.close();
   });
+  await scenario("the landing view shows with no link, links to setup, and is gone when a link is opened", async () => {
+    const { page, context } = await openPage(PAGE_PORT);
+    await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
+    await page.locator("#landing").waitFor({ state: "visible" });
+    assert.equal(await page.locator('#landing a[href="/setup/"]').count(), 1);
+    assert.match(await page.locator("#landing").textContent(), /Testnet only, and not audited/);
+    await shot(page, "landing");
+    const widest = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(widest <= 0, `no horizontal scrolling, got ${widest}px`);
+    const { link } = await askOwner();
+    await page.goto(link);
+    assert.equal(await page.locator("#landing").isHidden(), true);
+    await context.close();
+  });
+
   await scenario("a request for an old policy version loses its sign button", async () => {
     const stale = approve(propose().payment_id);
     send(vault, "setRecipient(address,bool)", "0x00000000000000000000000000000000000000c4", "true");
