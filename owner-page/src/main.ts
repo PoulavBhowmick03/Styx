@@ -23,6 +23,16 @@ import {
   type RelayLink,
   type VaultTrust,
 } from "./approval";
+import {
+  buildSignatureFileV2,
+  callData,
+  isPendingV2,
+  parsePendingV2,
+  reviewPendingV2,
+  typedDataRequestV2,
+  type ChainFactsV2,
+  type PendingV2,
+} from "./approval-v2";
 
 interface Eip1193 {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -51,6 +61,7 @@ const download = element<HTMLAnchorElement>("download");
 
 let config: OwnerConfig | undefined;
 let pending: Pending | undefined;
+let pendingV2: PendingV2 | undefined;
 
 // The World gate is optional and sits in front of the wallet only. The contract never checks World.
 const worldGate = import.meta.env.VITE_WORLD_GATE === "1";
@@ -225,6 +236,7 @@ signButton.addEventListener("click", () => {
 });
 
 async function sign(): Promise<void> {
+  if (pendingV2) return signV2(pendingV2);
   if (!config || !pending) return;
   const wallet = window.ethereum;
   if (!wallet) {
@@ -328,6 +340,11 @@ async function openFromLink(link: RelayLink): Promise<void> {
     const response = await fetch(`${link.relay}/requests/${encodeURIComponent(link.request)}`);
     if (!response.ok) throw new ApprovalError(response.status === 410 ? "this approval has expired" : "this approval request was not found");
     const body = (await response.json()) as { pending?: unknown };
+    if (isPendingV2(body.pending)) {
+      pendingV2 = parsePendingV2(body.pending);
+      await prepareReviewV2();
+      return;
+    }
     pending = parsePending(body.pending);
     await prepareReview(link);
   } catch (error) {
@@ -514,12 +531,149 @@ function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
   };
 }
 
+// ---- A v2 request: the signer may be an approver with their own wallet ----
+
+async function readFactsV2(wallet: Eip1193, request: PendingV2): Promise<ChainFactsV2> {
+  const read = async (data: Hex, words = 1) => {
+    const result = (await wallet.request({ method: "eth_call", params: [{ to: request.vault, data }, "latest"] })) as string;
+    if (!new RegExp(`^0x[0-9a-fA-F]{${64 * words}}$`).test(result)) throw new Error("no answer");
+    return Array.from({ length: words }, (_, index) => BigInt(`0x${result.slice(2 + index * 64, 66 + index * 64)}`));
+  };
+  const toAddress = (word: bigint) => getAddress(`0x${word.toString(16).padStart(40, "0")}`);
+  const { agent, recipient } = request.payment;
+  const { signer } = request.authorization;
+  const [[version], [owner], [token], [paused], [allowed], [recipientVersion], policy, approver] = await Promise.all([
+    read(callData("contractVersion")),
+    read(callData("owner")),
+    read(callData("token")),
+    read(callData("paused")),
+    read(callData("allowedRecipient", [recipient])),
+    read(callData("recipientVersion", [recipient])),
+    read(callData("agentPolicy", [agent]), 5),
+    read(callData("approverState", [signer]), 2),
+  ]);
+  return {
+    contractVersion: version!,
+    owner: toAddress(owner!),
+    token: toAddress(token!),
+    paused: paused === 1n,
+    recipientAllowed: allowed === 1n,
+    recipientVersion: recipientVersion!,
+    agentVersion: policy[0]!,
+    agentPerPaymentLimit: policy[1]!,
+    agentValidUntil: policy[3]!,
+    agentEnabled: policy[4] === 1n,
+    signerVersion: approver[0]!,
+    signerEnabled: approver[1] === 1n,
+  };
+}
+
+let connectedV2: Address | undefined;
+
+/** The vault's answers fill the review. If they cannot be read, the sign button stays hidden. */
+async function prepareReviewV2(): Promise<void> {
+  hideHelpers();
+  resetReview();
+  const request = pendingV2;
+  if (!request) return;
+  const wallet = window.ethereum;
+  if (!wallet) {
+    const { host, pathname, search } = window.location;
+    element<HTMLAnchorElement>("open-wallet").href = `https://link.metamask.io/dapp/${host}${pathname}${search}`;
+    element("wallet-help").hidden = false;
+    showStatus("Open this request in your wallet's browser to review and sign it.");
+    return;
+  }
+  const chainId = BigInt((await wallet.request({ method: "eth_chainId" })) as string);
+  if (chainId !== request.chainId) {
+    element("switch-chain").hidden = request.chainId !== ARC_CHAIN_ID;
+    showStatus(`Switch your wallet to chain ${request.chainId}, then try again.`, true);
+    return;
+  }
+  let facts: ChainFactsV2;
+  try {
+    facts = await readFactsV2(wallet, request);
+  } catch {
+    showStatus("This vault could not be read through your wallet, so there is nothing to check this request against.", true);
+    return;
+  }
+  let accounts: string[];
+  try {
+    accounts = (await wallet.request({ method: "eth_requestAccounts" })) as string[];
+  } catch {
+    element("connect-wallet").hidden = false;
+    showStatus("Connect your wallet to review this request.", true);
+    return;
+  }
+  if (!accounts[0]) {
+    element("connect-wallet").hidden = false;
+    showStatus("Connect your wallet to review this request.", true);
+    return;
+  }
+  connectedV2 = getAddress(accounts[0]);
+  try {
+    const view = reviewPendingV2(request, facts, connectedV2, BigInt(Math.floor(Date.now() / 1000)));
+    element("vault").textContent = view.vault;
+    element("vendor").textContent = view.agent;
+    element("vendor-label").textContent = "Requested by agent";
+    element("vendor-note").hidden = true;
+    element("signer-row").hidden = false;
+    element("signer").textContent = `${view.signer} (${view.signerRole})`;
+    element("recipient").textContent = view.recipient;
+    element("amount").textContent = view.amount;
+    element("invoice").textContent = view.invoiceReference;
+    element("expiry").textContent = view.expiresAt;
+    element("rule").textContent = view.exceededRule;
+    element("digest").textContent = view.digest;
+    review.hidden = false;
+    signButton.hidden = false;
+    showStatus("Check every field, then sign with your wallet.");
+  } catch (error) {
+    showStatus(error instanceof ApprovalError ? error.message : "This approval could not be read.", true);
+  }
+}
+
+async function signV2(request: PendingV2): Promise<void> {
+  const wallet = window.ethereum;
+  if (!wallet || !connectedV2) {
+    showStatus("No wallet found in this browser profile.", true);
+    return;
+  }
+  signButton.disabled = true;
+  try {
+    const signature = (await wallet.request({
+      method: "eth_signTypedData_v4",
+      params: [connectedV2, typedDataRequestV2(request)],
+    })) as Hex;
+    const file = await buildSignatureFileV2(request, signature);
+    outputText.value = file;
+    download.href = URL.createObjectURL(new Blob([file], { type: "application/json" }));
+    download.download = `signature-${request.payment.paymentId.slice(2, 14)}.json`;
+    output.hidden = false;
+    signButton.hidden = true;
+    // Only a build's own relay receives a v2 signature. A link cannot choose where it goes.
+    if (relayLink && BUILT_IN_RELAY && new URL(BUILT_IN_RELAY).origin === relayLink.relay) {
+      const sent = await sendToRelay(relayLink, file);
+      if (sent === "accepted") showStatus("Signed, and the relay accepted it. The agent still has to collect and submit it.");
+      else if (sent === "refused") showStatus("Signed, but the relay refused the signature. Check the request.", true);
+      else showStatus("Signed, but the relay could not be reached. Give the agent this file instead.", true);
+    } else {
+      showStatus("Signed, but not sent: this link's relay is not the one this site uses. Give the agent this file instead.", true);
+    }
+  } catch (error) {
+    showStatus(error instanceof ApprovalError ? error.message : "The wallet did not sign.", true);
+  } finally {
+    signButton.disabled = false;
+  }
+}
+
 element("trust-vault").addEventListener("click", () => {
   confirmVault?.().catch(() => showStatus("The wallet did not connect.", true));
 });
 
 element("connect-wallet").addEventListener("click", () => {
-  if (relayLink) void prepareReview(relayLink);
+  if (pendingV2) void prepareReviewV2();
+  else if (relayLink) void prepareReview(relayLink);
 });
 
 element("switch-chain").addEventListener("click", () => {
@@ -536,7 +690,8 @@ async function switchToArc(): Promise<void> {
       if ((error as { code?: number }).code !== 4902) throw error;
       await wallet.request({ method: "wallet_addEthereumChain", params: [ARC_CHAIN] });
     }
-    await prepareReview(relayLink);
+    if (pendingV2) await prepareReviewV2();
+    else await prepareReview(relayLink);
   } catch {
     showStatus("The wallet did not switch networks.", true);
   }

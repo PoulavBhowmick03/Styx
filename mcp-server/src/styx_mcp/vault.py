@@ -82,6 +82,7 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         raise ConfigError("configured vault binary is unavailable or incompatible") from None
     if capabilities.get("protocol") != 1:
         raise ConfigError("vault binary protocol mismatch")
+    is_v2 = capabilities.get("contract_version") == 2
     server = MCPServer(name="styx-vault", instructions=(
         "Propose and submit payments the vault allows. Amounts are decimal strings in USDC base units: "
         "1 USDC is 1000000. On-chain rules enforce the limits, not these tools. "
@@ -162,15 +163,23 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
                           valid_until=valid_until if valid_until is not None else int(time.time()) + _DEFAULT_PAYMENT_SECONDS)
 
     @server.tool()
-    async def styx_request_owner_approval(payment_id: str, authorization_expiry: int | None = None) -> dict[str, Any]:
+    async def styx_request_owner_approval(
+        payment_id: str, authorization_expiry: int | None = None, signer: str | None = None,
+    ) -> dict[str, Any]:
         """Write the approval request the owner opens on their signing page. Moves no funds.
 
         Leave authorization_expiry out unless you were given a time: it defaults to one hour from now.
+        On a v2 vault, signer names the approver who should sign. Leave it out to ask the owner.
         """
+        if signer is not None and not is_v2:
+            return invalid(VaultError(_INVALID, "this vault only accepts the owner's signature"))
+        if signer is not None and not re.fullmatch(r"0x[0-9a-fA-F]{40}", signer, flags=re.ASCII):
+            return invalid(VaultError(_INVALID, "signer must be an address"))
         if authorization_expiry is None:
             authorization_expiry = int(time.time()) + _DEFAULT_PAYMENT_SECONDS
         stem = payment_id.removeprefix("0x")[:12]
-        name = f"pending-{stem}.json"
+        # A different approver needs a new file, because the CLI never overwrites one.
+        name = f"pending-{stem}-{signer[2:10].lower()}.json" if signer else f"pending-{stem}.json"
         try:
             pending = settings.artifact(name)
         except VaultError as error:
@@ -180,7 +189,8 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             response: dict[str, Any] = {"ok": True, "result": {"status": "ok"}}
         else:
             response = await call("request_approval", payment_id=payment_id,
-                                  authorization_expiry=authorization_expiry, pending_file=pending)
+                                  authorization_expiry=authorization_expiry, pending_file=pending,
+                                  **({"signer": signer} if signer else {}))
         if response["ok"]:
             response["result"]["pending_file"] = name
             if settings.relay_url:

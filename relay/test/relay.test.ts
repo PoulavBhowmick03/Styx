@@ -9,6 +9,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { paymentHash, parsePending, typedDataRequest, SIGNATURE_SCHEMA, approvalDigest, type Pending } from "../../owner-page/src/approval";
+import { approvalDigestV2, buildSignatureFileV2, parsePendingV2, paymentHashV2, typedDataRequestV2 } from "../../owner-page/src/approval-v2";
 import { Relay, type RelayConfig } from "../src/relay";
 import { relayServer } from "../src/server";
 import { telegramNotifier } from "../src/telegram";
@@ -235,7 +236,7 @@ describe("the owner's signature", () => {
     expect((await r.get("/requests/unknown", null)).status).toBe(404);
     let now = Math.floor(Date.now() / 1000);
     const relay = new Relay(r.config, async () => true, () => now);
-    const { requestId } = await relay.submit(pendingJson());
+    const { requestId } = await relay.submit(pendingJson(), AGENT_TOKEN);
     now += 601;
     expect(() => relay.pending(requestId)).toThrow(/expired/);
   });
@@ -265,8 +266,8 @@ describe("restarts", () => {
     const pending = parsePending(json);
     await r.relay.sign(requestId, signatureBody(pending, await r.sign(pending)));
     const restarted = new Relay(r.config, async () => true);
-    expect(restarted.signature(requestId).status).toBe("signed");
-    const again = await restarted.submit(json);
+    expect(restarted.signature(requestId, AGENT_TOKEN).status).toBe("signed");
+    const again = await restarted.submit(json, AGENT_TOKEN);
     expect(again.requestId).toBe(requestId);
   });
 });
@@ -308,5 +309,120 @@ describe("hardening", () => {
     expect(() => new Relay(r.config, async () => true)).not.toThrow();
     writeFileSync(join(stateDir, "requests.json"), "{not json");
     expect(() => new Relay(r.config, async () => true)).not.toThrow();
+  });
+});
+
+describe("v2 requests", () => {
+  const V2_VAULT = "0x2000000000000000000000000000000000000002";
+  const AGENT_A = getAddress("0xa00000000000000000000000000000000000000a");
+  const AGENT_B = getAddress("0xb00000000000000000000000000000000000000b");
+  const TOKEN_A = "token-for-agent-a", TOKEN_B = "token-for-agent-b";
+  const approver = privateKeyToAccount(generatePrivateKey());
+
+  function pendingV2(agent = AGENT_A, signer: string = approver.address, suffix = "v2") {
+    const now = Math.floor(Date.now() / 1000);
+    const payment = {
+      paymentId: keccak256(toHex(`payment-${suffix}`)), agent, token: TOKEN, recipient: VENDOR, amount: "6000000",
+      evidenceCommitment: keccak256(toHex("invoice")), policyVersion: "3", recipientVersion: "1", validUntil: String(now + 3000),
+    };
+    const base = { schema: "vault-pending-approval/2", chainId: "5042002", vault: V2_VAULT, payment,
+      authorization: { paymentHash: "0x" + "00".repeat(32), signer, signerVersion: "1", approvalNonce: "7", authorizationExpiry: String(now + 600) },
+      invoiceReference: HOSTILE, exceededRule: "perPaymentLimit", perPaymentLimit: "1000000" };
+    base.authorization.paymentHash = paymentHashV2(parsePendingV2(base).payment);
+    return base;
+  }
+  const v2Config = { v2: { vault: getAddress(V2_VAULT), agentTokens: new Map([[AGENT_A, TOKEN_A], [AGENT_B, TOKEN_B]]) } };
+  async function signV2(json: ReturnType<typeof pendingV2>, account = approver) {
+    const pending = parsePendingV2(json);
+    const request = JSON.parse(typedDataRequestV2(pending));
+    const signature = await account.signTypedData({
+      domain: { ...request.domain, chainId: pending.chainId },
+      types: { ExceptionAuthorization: request.types.ExceptionAuthorization },
+      primaryType: "ExceptionAuthorization",
+      message: { ...pending.authorization },
+    });
+    return { pending, signature };
+  }
+
+  it("alerts with the agent and the approver, and returns the approver's signature to that agent", async () => {
+    const r = await setup({ config: v2Config });
+    const json = pendingV2();
+    const reply = await r.post("/requests", { pending: json }, TOKEN_A);
+    expect(reply.status).toBe(200);
+    const { requestId } = (await reply.json()) as { requestId: string };
+    const text = String(r.sent.at(-1)!.text);
+    expect(text).toContain(AGENT_A);
+    expect(text).toContain(approver.address);
+    expect(text).not.toContain("evil.test");
+
+    const { pending, signature } = await signV2(json);
+    expect((await r.get(`/requests/${requestId}/signature`, TOKEN_A)).status).toBe(200);
+    const accepted = await r.post(`/requests/${requestId}/signature`, JSON.parse(await buildSignatureFileV2(pending, signature)), null);
+    expect(accepted.status).toBe(200);
+    const result = (await (await r.get(`/requests/${requestId}/signature`, TOKEN_A)).json()) as { status: string; signature: Record<string, string> };
+    expect(result.status).toBe("signed");
+    expect(result.signature.schema).toBe("vault-approver-signature/2");
+    expect(result.signature.signer).toBe(approver.address);
+    expect(result.signature.signerVersion).toBe("1");
+    expect(result.signature.approvalDigest).toBe(approvalDigestV2(pending));
+  });
+
+  it("does not let one agent's token submit or read for another", async () => {
+    const r = await setup({ config: v2Config });
+    expect((await r.post("/requests", { pending: pendingV2(AGENT_A) }, TOKEN_B)).status).toBe(403);
+    expect((await r.post("/requests", { pending: pendingV2(AGENT_A) }, "unknown")).status).toBe(401);
+    const { requestId } = (await (await r.post("/requests", { pending: pendingV2(AGENT_A) }, TOKEN_A)).json()) as { requestId: string };
+    expect((await r.get(`/requests/${requestId}/signature`, TOKEN_B)).status).toBe(401);
+    expect((await r.get(`/requests/${requestId}/signature`, AGENT_TOKEN)).status).toBe(401);
+  });
+
+  it("refuses a signature by anyone but the named approver, including the agent", async () => {
+    const r = await setup({ config: v2Config });
+    const json = pendingV2();
+    const { requestId } = (await (await r.post("/requests", { pending: json }, TOKEN_A)).json()) as { requestId: string };
+    const stranger = privateKeyToAccount(generatePrivateKey());
+    const { pending, signature } = await signV2(json, stranger);
+    const body = { schema: "vault-approver-signature/2", paymentId: pending.payment.paymentId, approvalDigest: approvalDigestV2(pending), signer: approver.address, signerVersion: "1", signature };
+    expect((await r.post(`/requests/${requestId}/signature`, body, null)).status).toBe(403);
+    expect((await (await r.get(`/requests/${requestId}/signature`, TOKEN_A)).json())).toEqual({ status: "pending" });
+  });
+
+  it("refuses a signature meant for a different request", async () => {
+    const r = await setup({ config: v2Config });
+    const first = pendingV2(AGENT_A, approver.address, "first"), second = pendingV2(AGENT_A, approver.address, "second");
+    const { requestId } = (await (await r.post("/requests", { pending: first }, TOKEN_A)).json()) as { requestId: string };
+    const { pending, signature } = await signV2(second);
+    const body = JSON.parse(await buildSignatureFileV2(pending, signature));
+    expect((await r.post(`/requests/${requestId}/signature`, body, null)).status).toBe(403);
+  });
+
+  it("refuses another vault, an altered payment, and an unknown agent", async () => {
+    const r = await setup({ config: v2Config });
+    expect((await r.post("/requests", { pending: { ...pendingV2(), vault: VENDOR } }, TOKEN_A)).status).toBe(400);
+    const altered = pendingV2();
+    altered.payment.amount = "7000000";
+    expect((await r.post("/requests", { pending: altered }, TOKEN_A)).status).toBe(400);
+    expect((await r.post("/requests", { pending: pendingV2(getAddress(VENDOR)) }, TOKEN_A)).status).toBe(403);
+  });
+
+  it("refuses v2 entirely when no v2 vault is configured, and v1 still uses its own token", async () => {
+    const r = await setup();
+    expect((await r.post("/requests", { pending: pendingV2() }, AGENT_TOKEN)).status).toBe(400);
+    expect((await r.post("/requests", { pending: pendingJson("6000000", "still-v1") }, AGENT_TOKEN)).status).toBe(200);
+  });
+
+  it("keeps a v1 token out of v1 only", async () => {
+    const r = await setup({ config: v2Config });
+    expect((await r.post("/requests", { pending: pendingJson("6000000", "x") }, TOKEN_A)).status).toBe(401);
+  });
+
+  it("survives a restart", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-v2-"));
+    const r = await setup({ config: { ...v2Config, stateDir: dir } });
+    const json = pendingV2();
+    const { requestId } = (await (await r.post("/requests", { pending: json }, TOKEN_A)).json()) as { requestId: string };
+    const again = new Relay(r.config, async () => true);
+    expect(again.signature(requestId, TOKEN_A)).toEqual({ status: "pending" });
+    expect(() => again.signature(requestId, TOKEN_B)).toThrow(/unauthorized/);
   });
 });

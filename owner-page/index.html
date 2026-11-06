@@ -38,6 +38,7 @@
       input[type="file"] { display: block; margin-top: 0.25rem; font-weight: 400; max-width: 100%; }
       dl { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); gap: 0.5rem 1rem; margin: 1.5rem 0; }
       dt { color: var(--muted); }
+      dl .row { display: contents; }
       dd { margin: 0; overflow-wrap: anywhere; }
       .value { font-weight: 600; }
       .mono { font-family: ui-monospace, monospace; font-size: 0.875rem; }
@@ -119,11 +120,15 @@
       <dl>
         <dt>Amount</dt>
         <dd id="amount" class="value"></dd>
-        <dt>Vendor</dt>
+        <dt id="vendor-label">Vendor</dt>
         <dd>
           <span id="vendor" class="value"></span>
-          <div class="note">From your owner config</div>
+          <div id="vendor-note" class="note">From your owner config</div>
         </dd>
+        <div id="signer-row" class="row" hidden>
+          <dt>Signing as</dt>
+          <dd id="signer" class="mono"></dd>
+        </div>
         <dt>Recipient</dt>
         <dd id="recipient" class="mono"></dd>
         <dt>Rule exceeded</dt>

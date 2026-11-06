@@ -23,6 +23,26 @@ function address(name: string): Address {
   return getAddress(value);
 }
 
+/** RELAY_V2_AGENT_TOKENS is JSON: {"0xagent": "that agent's token"}. */
+function agentTokens(): Map<Address, string> {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(required("RELAY_V2_AGENT_TOKENS")) as Record<string, unknown>;
+  } catch {
+    console.error("RELAY_V2_AGENT_TOKENS must be JSON");
+    process.exit(2);
+  }
+  const tokens = new Map<Address, string>();
+  for (const [agent, token] of Object.entries(parsed)) {
+    if (!isAddress(agent, { strict: false }) || typeof token !== "string" || token.length < 32) {
+      console.error("RELAY_V2_AGENT_TOKENS needs agent addresses and tokens of at least 32 characters");
+      process.exit(2);
+    }
+    tokens.set(getAddress(agent), token);
+  }
+  return tokens;
+}
+
 const port = Number(process.env.RELAY_PORT ?? 8799);
 const config: RelayConfig = {
   chainId: BigInt(required("RELAY_CHAIN_ID")),
@@ -36,6 +56,7 @@ const config: RelayConfig = {
   maxAlertsPerHour: Number(process.env.RELAY_MAX_ALERTS_PER_HOUR ?? 10),
   maxRequests: Number(process.env.RELAY_MAX_REQUESTS ?? 200),
   ...(process.env.RELAY_STATE_DIR ? { stateDir: process.env.RELAY_STATE_DIR } : {}),
+  ...(process.env.RELAY_V2_VAULT ? { v2: { vault: address("RELAY_V2_VAULT"), agentTokens: agentTokens() } } : {}),
 };
 const notify = telegramNotifier({
   botToken: required("TELEGRAM_BOT_TOKEN"),

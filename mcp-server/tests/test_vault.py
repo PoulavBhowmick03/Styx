@@ -361,3 +361,35 @@ def test_models_can_leave_the_timestamps_out(tmp_path):
     requests = {json.loads(line)["method"]: json.loads(line) for line in (tmp_path / "requests.log").read_text().splitlines()}
     assert before + 3500 < requests["propose"]["valid_until"] < before + 3700
     assert before + 3500 < requests["request_approval"]["authorization_expiry"] < before + 3700
+
+
+def test_a_named_approver_reaches_the_binary_on_v2_and_is_refused_on_v1(tmp_path):
+    approver = "0x" + "ab" * 20
+    for version, expected_ok in ((2, True), (1, False)):
+        directory = private_dir(tmp_path / f"v{version}")
+        capture = directory / "requests.log"
+        script = directory / "fake-vault"
+        script.write_text(textwrap.dedent(f"""\
+            #!{sys.executable}
+            import json, sys
+            request = json.load(sys.stdin)
+            open({str(capture)!r}, "a").write(json.dumps(request) + "\\n")
+            if request["method"] == "version":
+                print(json.dumps({{"status": "ok", "protocol": 1, "contract_version": {version}}}))
+            else:
+                print(json.dumps({{"status": "ok", "pending_file": request.get("pending_file"), "approval_digest": "0x" + "11" * 32}}))
+            """))
+        script.chmod(0o700)
+
+        async def body(session):
+            reply = result(await session.call_tool("styx_request_owner_approval", {"payment_id": "0x" + "cd" * 32, "signer": approver}))
+            assert reply["ok"] is expected_ok, reply
+            if expected_ok:
+                assert reply["result"]["pending_file"] == f"pending-{'cd' * 6}-{'ab' * 4}.json"
+            bad = result(await session.call_tool("styx_request_owner_approval", {"payment_id": "0x" + "cd" * 32, "signer": "not-an-address"}))
+            assert bad["ok"] is False
+
+        run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(script)}, body)
+        forwarded = [json.loads(line) for line in capture.read_text().splitlines()]
+        sent = [request for request in forwarded if request["method"] == "request_approval"]
+        assert [request.get("signer") for request in sent] == ([approver] if expected_ok else [])

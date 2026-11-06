@@ -18,6 +18,15 @@ import {
   type OwnerConfig,
   type Pending,
 } from "../../owner-page/src/approval";
+import {
+  approvalDigestV2,
+  buildSignatureFileV2,
+  isPendingV2,
+  parsePendingV2,
+  paymentHashV2,
+  SIGNATURE_SCHEMA_V2,
+  type PendingV2,
+} from "../../owner-page/src/approval-v2";
 
 export interface RelayConfig {
   chainId: bigint;
@@ -31,6 +40,8 @@ export interface RelayConfig {
   maxAlertsPerHour: number;
   maxRequests: number;
   stateDir?: string;
+  /** A v2 vault, and each of its agents' own token. One agent's token never acts for another. */
+  v2?: { vault: Address; agentTokens: Map<Address, string> };
 }
 
 export interface Alert {
@@ -51,7 +62,9 @@ interface Stored {
   pending: unknown;
   expiresAt: number;
   alerted: boolean;
-  signature?: { schema: string; paymentId: Hex; approvalDigest: Hex; signature: Hex };
+  /** Set on v2 requests: only this agent's token can read the signature. */
+  agent?: Address;
+  signature?: { schema: string; paymentId: Hex; approvalDigest: Hex; signature: Hex; signer?: Address; signerVersion?: string };
 }
 
 /** A failure with the HTTP status it should produce. Messages never echo submitted values. */
@@ -175,11 +188,76 @@ export class Relay {
     }
   }
 
+  private validateV2(input: unknown, token: string | undefined): PendingV2 {
+    const known = [...(this.config.v2?.agentTokens.values() ?? [])].some((expected) => tokenMatches(token, expected));
+    if (!this.config.v2) throw new RelayError(400, "this relay has no v2 vault");
+    if (!known) throw new RelayError(401, "unauthorized");
+    let pending: PendingV2;
+    try {
+      pending = parsePendingV2(input);
+    } catch {
+      throw new RelayError(400, "invalid pending approval");
+    }
+    if (pending.chainId !== this.config.chainId || pending.vault !== this.config.v2.vault || pending.payment.token !== this.config.token) {
+      throw new RelayError(400, "this request is for another vault");
+    }
+    if (!tokenMatches(token, this.config.v2.agentTokens.get(pending.payment.agent))) {
+      throw new RelayError(403, "this token is for another agent");
+    }
+    if (paymentHashV2(pending.payment) !== pending.authorization.paymentHash) {
+      throw new RelayError(400, "the authorization does not match the payment");
+    }
+    if (pending.authorization.authorizationExpiry < BigInt(this.now())) throw new RelayError(400, "this request has expired");
+    if (pending.authorization.authorizationExpiry > BigInt(this.now() + MAX_REQUEST_LIFETIME_SECONDS)) {
+      throw new RelayError(400, "this request stays open too long");
+    }
+    if (pending.exceededRule !== "perPaymentLimit" || pending.payment.amount <= pending.perPaymentLimit) {
+      throw new RelayError(400, "this amount does not exceed the stated limit");
+    }
+    return pending;
+  }
+
   /** Stores a request and alerts the owner. Repeating one request never alerts twice. */
-  async submit(input: unknown): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean }> {
+  async submit(input: unknown, token: string | undefined): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean }> {
+    if (isPendingV2(input)) {
+      const pending = this.validateV2(input, token);
+      // Typed fields only. The agent's invoice reference is shown on the page, marked as unverified.
+      const lines = (url: string) => [
+        "An agent wants to spend over its limit.",
+        `Agent: ${pending.payment.agent}`,
+        `Requested: ${formatUsdc(pending.payment.amount)}`,
+        `Recipient: ${pending.payment.recipient}`,
+        `Approver asked to sign: ${pending.authorization.signer}`,
+        `The agent says the limit is ${formatUsdc(pending.perPaymentLimit)} per payment.`,
+        "",
+        "This message proves nothing. Check the details on the approval page before signing.",
+        url,
+      ];
+      return this.store(input, approvalDigestV2(pending), Number(pending.authorization.authorizationExpiry) + 1, pending.payment.agent, lines);
+    }
+    if (!tokenMatches(token, this.config.agentToken)) throw new RelayError(401, "unauthorized");
     const pending = this.validate(input);
+    // Typed fields only. The agent's invoice reference is shown on the page, marked as unverified.
+    const lines = (url: string) => [
+      "Your agent wants to spend over its limit.",
+      `Requested: ${formatUsdc(pending.payment.amount)}`,
+      `Recipient: ${pending.payment.recipient}`,
+      `The agent says the limit is ${formatUsdc(pending.perPaymentLimit)} per payment.`,
+      "",
+      "This message proves nothing. Check the details on the approval page before signing.",
+      url,
+    ];
+    return this.store(input, approvalDigest(pending), Number(pending.authorization.authorizationExpiry), undefined, lines);
+  }
+
+  private async store(
+    input: unknown,
+    digest: Hex,
+    expiresAt: number,
+    agent: Address | undefined,
+    lines: (url: string) => string[],
+  ): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean }> {
     this.prune();
-    const digest = approvalDigest(pending);
     const known = this.byDigest.get(digest);
     let request = known ? this.requests.get(known) : undefined;
     if (!request) {
@@ -188,8 +266,9 @@ export class Relay {
         id: randomBytes(16).toString("base64url"),
         digest,
         pending: input,
-        expiresAt: Number(pending.authorization.authorizationExpiry),
+        expiresAt,
         alerted: false,
+        ...(agent ? { agent } : {}),
       };
       this.requests.set(request.id, request);
       this.byDigest.set(digest, request.id);
@@ -200,16 +279,7 @@ export class Relay {
       return { requestId: request.id, alerted: false, rateLimited: true };
     }
     const url = this.link(request.id);
-    // Typed fields only. The agent's invoice reference is shown on the page, marked as unverified.
-    const text = [
-      "Your agent wants to spend over its limit.",
-      `Requested: ${formatUsdc(pending.payment.amount)}`,
-      `Recipient: ${pending.payment.recipient}`,
-      `The agent says the limit is ${formatUsdc(pending.perPaymentLimit)} per payment.`,
-      "",
-      "This message proves nothing. Check the details on the approval page before signing.",
-      url,
-    ].join("\n");
+    const text = lines(url).join("\n");
     request.alerted = await this.send("approval", { text, url });
     this.save();
     return { requestId: request.id, alerted: request.alerted };
@@ -226,27 +296,31 @@ export class Relay {
     return this.find(id).pending;
   }
 
-  /** Accepts only the owner's signature over this exact request. The first valid one stands. */
+  /** Accepts only the named signer's signature over this exact request. The first valid one stands. */
   async sign(id: string, body: unknown): Promise<void> {
     const request = this.find(id);
     const value = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
-    if (value.schema !== SIGNATURE_SCHEMA || typeof value.signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(value.signature)) {
+    const v2 = isPendingV2(request.pending);
+    if (value.schema !== (v2 ? SIGNATURE_SCHEMA_V2 : SIGNATURE_SCHEMA) || typeof value.signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(value.signature)) {
       throw new RelayError(400, "invalid signature file");
     }
-    const pending = parsePending(request.pending);
     let file: string;
     try {
-      file = await buildSignatureFile(pending, this.ownerConfig(), value.signature as Hex);
+      file = v2
+        ? await buildSignatureFileV2(parsePendingV2(request.pending), value.signature as Hex)
+        : await buildSignatureFile(parsePending(request.pending), this.ownerConfig(), value.signature as Hex);
     } catch {
-      throw new RelayError(403, "this signature is not the owner's for this request");
+      throw new RelayError(403, "this signature is not the named signer's for this request");
     }
     if (request.signature) return;
     request.signature = JSON.parse(file) as Stored["signature"];
     this.save();
   }
 
-  signature(id: string): { status: "pending" } | { status: "signed"; signature: NonNullable<Stored["signature"]> } {
+  signature(id: string, token: string | undefined): { status: "pending" } | { status: "signed"; signature: NonNullable<Stored["signature"]> } {
     const request = this.find(id);
+    const expected = request.agent ? this.config.v2?.agentTokens.get(request.agent) : this.config.agentToken;
+    if (!tokenMatches(token, expected)) throw new RelayError(401, "unauthorized");
     return request.signature ? { status: "signed", signature: request.signature } : { status: "pending" };
   }
 
