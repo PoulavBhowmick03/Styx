@@ -1,4 +1,4 @@
-"""Stateful stand-ins for erebus-wallet, erebus-negotiate and erebus-payment.
+"""Stateful stand-ins for styx-wallet, styx-negotiate and styx-payment.
 
 They speak the native JSON envelopes the seam validates, keep state in FAKE_STATE, and count
 every simulated broadcast, so tests can prove the MCP layer never sends twice. Operations finish
@@ -147,7 +147,7 @@ def fail(state, message):
 
 def negotiate(request, state):
     if request["method"] == "version":
-        reply({"status": "ok", "protocol_version": 1, "service": "erebus-negotiate", "settlement_submission": False})
+        reply({"status": "ok", "protocol_version": 1, "service": "styx-negotiate", "settlement_submission": False})
     # A many-buyer seller: FAKE_PEERS names the configured peers, FAKE_CONNECTING the order in
     # which buyers connect (each connects once), FAKE_UNCERTAIN peers whose first exchange binds
     # the operation and then fails as uncertain delivery.
@@ -197,7 +197,7 @@ def negotiate(request, state):
 
 def payment(request, state):
     if request["method"] == "version":
-        reply({"status": "ok", "protocol_version": 1, "service": "erebus-payment",
+        reply({"status": "ok", "protocol_version": 1, "service": "styx-payment",
                "modes": ["public-bound", "shielded"], "automatic_rebroadcast": False})
     state.setdefault("payment_calls", []).append(request["method"])
     pending = [op for op in state["ops"].values() if op["state"] == "submitted"]

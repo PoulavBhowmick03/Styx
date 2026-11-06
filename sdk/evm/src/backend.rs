@@ -15,13 +15,13 @@ use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 
-use erebus_core::auth::{verify_authorization_signature, Authorization, Role};
-use erebus_core::commitment::{commit_agreement, deal_nullifier, CommitmentBlinding};
-use erebus_core::settlement::{
+use styx_core::auth::{verify_authorization_signature, Authorization, Role};
+use styx_core::commitment::{commit_agreement, deal_nullifier, CommitmentBlinding};
+use styx_core::settlement::{
     check_capabilities, BackendCapabilities, PreparedSettlement, SettlementContext,
 };
-use erebus_core::suite::EVM_SECP256K1_KECCAK_SUITE_ID;
-use erebus_core::terms::{AgreementTerms, Guarantee, GuaranteeSet, SettlementMode};
+use styx_core::suite::EVM_SECP256K1_KECCAK_SUITE_ID;
+use styx_core::terms::{AgreementTerms, Guarantee, GuaranteeSet, SettlementMode};
 
 use crate::abi;
 use crate::deployment::{EvmDeployment, ADDRESS_BYTES};
@@ -476,7 +476,7 @@ pub(crate) fn validate_prepared(
             role,
             suite_id: terms.suite_id,
             commitment,
-            signature: erebus_core::ids::SignatureBytes::new(signature.to_vec())?,
+            signature: styx_core::ids::SignatureBytes::new(signature.to_vec())?,
         };
         verify_authorization_signature(&terms, &commitment, &blinding, &authorization)?;
     }

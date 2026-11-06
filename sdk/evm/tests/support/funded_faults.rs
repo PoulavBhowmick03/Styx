@@ -1,7 +1,7 @@
 //! Real-chain operation-write sweep, distinct from synthetic coordinator storage tests.
 
 use super::*;
-use erebus_journal::{Boundary, FaultHook, NoFaults, Step};
+use styx_journal::{Boundary, FaultHook, NoFaults, Step};
 
 type Failure = Box<dyn std::error::Error + Send + Sync>;
 
@@ -68,7 +68,7 @@ async fn drive(
         let assessment = coordinator.reconcile(operation, &evidence, time)?;
         if matches!(
             assessment.state,
-            erebus_core::deal_state::DealState::PaidFinalized { .. }
+            styx_core::deal_state::DealState::PaidFinalized { .. }
         ) {
             journal.release(
                 &chain
@@ -114,7 +114,7 @@ async fn drive(
     )?;
     let replacement = SigningPlan::new(
         key.address(),
-        erebus_evm::chain::TransactionParams {
+        styx_evm::chain::TransactionParams {
             fees: Eip1559Fees::new(3_000_000_000, 1_500_000_000)?,
             ..plan.params()
         },
@@ -135,8 +135,8 @@ async fn drive(
                 previous.raw(),
             )?;
             SigningPlan::decode(bytes)?.validate(&deployment, previous.prepared(), raw)?;
-            erebus_evm::chain::SignedTransaction::from_raw(raw)?.validate_replacement(
-                &erebus_evm::chain::SignedTransaction::from_raw(previous.raw())?,
+            styx_evm::chain::SignedTransaction::from_raw(raw)?.validate_replacement(
+                &styx_evm::chain::SignedTransaction::from_raw(previous.raw())?,
             )
         },
     )?;
@@ -154,7 +154,7 @@ async fn drive(
     let assessment = coordinator.reconcile(operation, &evidence, time)?;
     assert!(matches!(
         assessment.state,
-        erebus_core::deal_state::DealState::PaidFinalized { .. }
+        styx_core::deal_state::DealState::PaidFinalized { .. }
     ));
     journal.release(
         &chain
@@ -290,7 +290,7 @@ async fn finalized_expiry_releases_spending_but_never_an_unconsumed_signer_nonce
     coordinator
         .reconcile(
             prepared.operation_ref,
-            &erebus_core::deal_state::DealEvidence::Unknown,
+            &styx_core::deal_state::DealEvidence::Unknown,
             now(),
         )
         .unwrap();
@@ -316,7 +316,7 @@ async fn finalized_expiry_releases_spending_but_never_an_unconsumed_signer_nonce
         .unwrap();
     assert_eq!(
         assessment.state,
-        erebus_core::deal_state::DealState::ClosedUnpaid
+        styx_core::deal_state::DealState::ClosedUnpaid
     );
     assert_eq!(
         coordinator.ledger().unwrap().reservations()[0].state,
@@ -327,7 +327,7 @@ async fn finalized_expiry_releases_spending_but_never_an_unconsumed_signer_nonce
         .address();
     assert!(matches!(
         journal.release(&chain.verified_finalized_nonce(signer).await.unwrap()),
-        Err(erebus_evm::chain::NonceError::NotConsumed)
+        Err(styx_evm::chain::NonceError::NotConsumed)
     ));
     assert!(journal
         .resume(&deployment(&fixture), &prepared)
@@ -394,15 +394,15 @@ async fn internally_consistent_rpc_histories_can_disagree_about_one_deal() {
     let (_, revisions) = coordinator.recorded_deal(prepared.operation_ref).unwrap();
     // This demonstrates the single-provider trust limit, not consensus proof.
     // Each endpoint passes its own canonical/state checks but yields a conflicting outcome.
-    let paid_state = erebus_core::deal_state::assess_deal(&revisions, &paid_evidence);
-    let unpaid_state = erebus_core::deal_state::assess_deal(&revisions, &unpaid_evidence);
+    let paid_state = styx_core::deal_state::assess_deal(&revisions, &paid_evidence);
+    let unpaid_state = styx_core::deal_state::assess_deal(&revisions, &unpaid_evidence);
     assert!(matches!(
         paid_state.state,
-        erebus_core::deal_state::DealState::PaidFinalized { .. }
+        styx_core::deal_state::DealState::PaidFinalized { .. }
     ));
     assert_eq!(
         unpaid_state.state,
-        erebus_core::deal_state::DealState::ClosedUnpaid
+        styx_core::deal_state::DealState::ClosedUnpaid
     );
     assert_ne!(paid_state.state, unpaid_state.state);
     assert!(paid
@@ -423,9 +423,9 @@ async fn internally_consistent_rpc_histories_can_disagree_about_one_deal() {
         .await
         .is_err());
     let paid_history =
-        erebus_evm::chain::ObservationJournal::open(root.path().join("paid-history")).unwrap();
+        styx_evm::chain::ObservationJournal::open(root.path().join("paid-history")).unwrap();
     let unpaid_history =
-        erebus_evm::chain::ObservationJournal::open(root.path().join("unpaid-history")).unwrap();
+        styx_evm::chain::ObservationJournal::open(root.path().join("unpaid-history")).unwrap();
     assert!(paid
         .finalized_deal_evidence_resumable_agreed(
             &paid_history,
@@ -467,9 +467,9 @@ async fn optional_two_provider_reads_require_matching_anchors_and_hold_on_timeou
     .await
     .unwrap();
     let history =
-        erebus_evm::chain::ObservationJournal::open(root.path().join("primary-history")).unwrap();
+        styx_evm::chain::ObservationJournal::open(root.path().join("primary-history")).unwrap();
     let peer_history =
-        erebus_evm::chain::ObservationJournal::open(root.path().join("peer-history")).unwrap();
+        styx_evm::chain::ObservationJournal::open(root.path().join("peer-history")).unwrap();
     assert!(chain
         .finalized_deal_evidence_resumable_agreed(
             &history,
@@ -534,13 +534,13 @@ async fn optional_two_provider_reads_require_matching_anchors_and_hold_on_timeou
             .await
             .unwrap()
         {
-            erebus_evm::chain::HistoricalObservation::Pending { .. } => {
+            styx_evm::chain::HistoricalObservation::Pending { .. } => {
                 assert_eq!(
                     coordinator.ledger().unwrap().reservations()[0].state,
                     ReservationState::Reserved
                 );
             }
-            erebus_evm::chain::HistoricalObservation::Complete { .. } => {
+            styx_evm::chain::HistoricalObservation::Complete { .. } => {
                 matched = true;
                 break;
             }

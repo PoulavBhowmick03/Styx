@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from erebus import AccessError, AccessSeam
+from styx import AccessError, AccessSeam
 
 
 def request():

@@ -3,7 +3,7 @@
 Public-bound settlement for one authorized Styx agreement (Metropolis M3). The Rust
 adapter that drives these contracts is [sdk/evm](../../sdk/evm).
 
-## What `ErebusSettlement` does
+## What `StyxSettlement` does
 
 `settle(terms, blinding, buyerSignature, sellerSignature, token)`:
 
@@ -12,7 +12,7 @@ adapter that drives these contracts is [sdk/evm](../../sdk/evm).
 2. Requires the configured chain id to equal `block.chainid` and derives the chain namespace.
 3. Requires the decoded domain to match the namespace, contract, and verifier version.
 4. Requires `block.timestamp < expiry`.
-5. Recomputes `Cdeal = keccak256("EREBUS_DEAL_COMMITMENT_V1" || terms || blinding)` and verifies
+5. Recomputes `Cdeal = keccak256("STYX_DEAL_COMMITMENT_V1" || terms || blinding)` and verifies
    both role authorizations against it with `ecrecover`, requiring raw recovery ids and low-`s`.
 6. Recomputes `Ndeal`, requires it unused, and marks it consumed **before** any external call.
 7. Resolves the token from the asset identifier, requires it to match the supplied address, and
@@ -24,12 +24,12 @@ Payment amount, asset, payer, recipient, and fee are public. This is not shielde
 
 | Path | Purpose |
 |---|---|
-| `src/ErebusCodec.sol` | Canonical decoder and the three digests |
-| `src/ErebusSettlement.sol` | The settlement contract |
+| `src/StyxCodec.sol` | Canonical decoder and the three digests |
+| `src/StyxSettlement.sol` | The settlement contract |
 | `src/MockERC20.sol` | Test token, with a fee-on-transfer mode for the negative test |
 | `src/MockReentrantERC20.sol` | Token that re-enters `settle` during `transferFrom` |
-| `test/ErebusVectors.t.sol` | Known-answer test against the Rust agreement vectors |
-| `test/ErebusSettlement.t.sol` | Happy path and adversarial matrix |
+| `test/StyxVectors.t.sol` | Known-answer test against the Rust agreement vectors |
+| `test/StyxSettlement.t.sol` | Happy path and adversarial matrix |
 
 There are no git submodules and no forge-std dependency; the tests declare a minimal `Vm`
 cheatcode interface.

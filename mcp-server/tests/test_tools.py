@@ -51,11 +51,11 @@ def _server_params(
     env = {
         "AGENT_ADDRESS": identity,
         "PROVING_SERVICE_URL": "http://unused.invalid",
-        "EREBUS_MOCK_STORE_PATH": str(store_path),
-        "EREBUS_MOCK_LATENCY_SECONDS": "0",
-        "EREBUS_MOCK_SPENDABLE_NOTES": spendable_notes,
-        "EREBUS_SETTLEMENT_ROLE": role,
-        "UV_CACHE_DIR": str(Path(tempfile.gettempdir()) / "erebus-uv-cache"),
+        "STYX_MOCK_STORE_PATH": str(store_path),
+        "STYX_MOCK_LATENCY_SECONDS": "0",
+        "STYX_MOCK_SPENDABLE_NOTES": spendable_notes,
+        "STYX_SETTLEMENT_ROLE": role,
+        "UV_CACHE_DIR": str(Path(tempfile.gettempdir()) / "styx-uv-cache"),
     }
     if extra_env:
         env.update(extra_env)
@@ -259,7 +259,7 @@ def test_accept_and_settle_refuses_a_settlement_above_the_configured_per_deal_ca
             store,
             role="payer",
             identity="0xbuyer",
-            extra_env={"EREBUS_SPENDING_LIMITS": '{"0xtoken": {"per_deal": "100"}}'},
+            extra_env={"STYX_SPENDING_LIMITS": '{"0xtoken": {"per_deal": "100"}}'},
         )
         async with stdio_client(seller_params) as (seller_read, seller_write):
             async with ClientSession(seller_read, seller_write) as seller:
@@ -321,8 +321,8 @@ def test_spending_cap_is_enforced_across_a_server_restart(tmp_path):
         store = tmp_path / "store.json"
         spend_state = tmp_path / "spend.json"
         buyer_env = {
-            "EREBUS_SPENDING_LIMITS": '{"0xtoken": {"daily": "100"}}',
-            "EREBUS_SPENDING_STATE_PATH": str(spend_state),
+            "STYX_SPENDING_LIMITS": '{"0xtoken": {"daily": "100"}}',
+            "STYX_SPENDING_STATE_PATH": str(spend_state),
         }
 
         # First buyer process settles 60 against its 100 daily cap, then exits.
@@ -763,7 +763,7 @@ def test_a_write_leaves_no_pending_intent_once_it_has_returned(tmp_path):
     async def run():
         intents_dir = tmp_path / "intents"
         params = _server_params(
-            tmp_path / "store.json", extra_env={"EREBUS_INTENT_STATE_DIR": str(intents_dir)}
+            tmp_path / "store.json", extra_env={"STYX_INTENT_STATE_DIR": str(intents_dir)}
         )
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:

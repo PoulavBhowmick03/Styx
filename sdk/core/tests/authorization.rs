@@ -4,18 +4,18 @@
 //! authorization, and cross-domain replay fails. They exercise the public API exactly as a
 //! coordinator would, with deterministic keys and no chain.
 
-use erebus_core::auth::{
+use styx_core::auth::{
     authorization_digest, verify_authorization, verify_authorization_signature, AuthError,
     Authorization, Role,
 };
-use erebus_core::commitment::{commit_agreement, CommitmentBlinding};
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{
+use styx_core::commitment::{commit_agreement, CommitmentBlinding};
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{
     AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes, SignatureBytes,
 };
-use erebus_core::service::ServiceRecord;
-use erebus_core::suite::{suite, SuiteError, EVM_SECP256K1_KECCAK_SUITE_ID};
-use erebus_core::terms::{
+use styx_core::service::ServiceRecord;
+use styx_core::suite::{suite, SuiteError, EVM_SECP256K1_KECCAK_SUITE_ID};
+use styx_core::terms::{
     AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode, TermsError,
     CURRENT_PROTOCOL_VERSION,
 };
@@ -70,7 +70,7 @@ fn terms_with(buyer: &SigningKey, seller: &SigningKey) -> AgreementTerms {
 
 fn authorize(
     terms: &AgreementTerms,
-    commitment: &erebus_core::commitment::DealCommitment,
+    commitment: &styx_core::commitment::DealCommitment,
     role: Role,
     key: &SigningKey,
 ) -> Authorization {

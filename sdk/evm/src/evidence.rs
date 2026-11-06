@@ -7,7 +7,7 @@
 //! The encoding is the same canonical form the rest of the protocol uses: integers big-endian,
 //! variable fields length-prefixed, unknown tags and trailing bytes rejected.
 
-use erebus_core::encoding::{EncodingError, Reader, Writer};
+use styx_core::encoding::{EncodingError, Reader, Writer};
 
 /// Evidence protocol version.
 pub const EVIDENCE_PROTOCOL_VERSION: u16 = 1;

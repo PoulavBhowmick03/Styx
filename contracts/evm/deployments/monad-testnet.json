@@ -6,7 +6,7 @@
   "deploymentTransaction": "0x6c7b810c837c038753815df985c3b9ce210be3b40df6fab4ec0682e1a271ca65",
   "deploymentBlock": 67495473,
   "verifierVersion": 1,
-  "artifact": "contracts/evm/out/ErebusSettlement.sol/ErebusSettlement.json",
+  "artifact": "contracts/evm/out/StyxSettlement.sol/StyxSettlement.json",
   "sourceCommit": "b20123a34df3ea990bbc7bf21bb700dc7c2ee55a",
   "verified": {
     "checker": "scripts/check-evm-deployment.py",

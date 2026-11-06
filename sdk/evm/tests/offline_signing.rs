@@ -1,13 +1,13 @@
 //! No RPC or local node: validate restored transactions against pinned M1 evidence.
-use erebus_core::commitment::{commit_agreement, deal_nullifier, CommitmentBlinding};
-use erebus_core::settlement::PreparedSettlement;
-use erebus_core::terms::AgreementTerms;
-use erebus_evm::chain::{
+use styx_core::commitment::{commit_agreement, deal_nullifier, CommitmentBlinding};
+use styx_core::settlement::PreparedSettlement;
+use styx_core::terms::AgreementTerms;
+use styx_evm::chain::{
     build_signed, Eip1559Fees, NonceError, SignedTransaction, SignerJournal, TransactionKey,
     TransactionParams,
 };
-use erebus_evm::deployment::EvmDeployment;
-use erebus_evm::evidence::SettlementEvidence;
+use styx_evm::deployment::EvmDeployment;
+use styx_evm::evidence::SettlementEvidence;
 
 fn fixture() -> (EvmDeployment, PreparedSettlement) {
     let vectors: serde_json::Value = serde_json::from_str(include_str!(
@@ -118,8 +118,8 @@ fn restored_evidence_requires_both_valid_authorizations() {
 
 #[tokio::test]
 async fn coordinator_persists_real_signed_bytes_and_revalidates_after_restart() {
-    use erebus_coordinator::{Coordinator, Stage};
-    use erebus_core::{
+    use styx_coordinator::{Coordinator, Stage};
+    use styx_core::{
         auth::{Authorization, Role},
         ids::{BaseUnits, SignatureBytes},
         policy::SpendingPolicy,
@@ -182,7 +182,7 @@ async fn coordinator_persists_real_signed_bytes_and_revalidates_after_restart() 
         .prepare([1; 32], 12, |_, _, _, _| Ok::<_, ()>(prepared.clone()))
         .unwrap();
     let key = TransactionKey::from_bytes(&[1; 32]).unwrap();
-    use erebus_evm::chain::SigningPlan;
+    use styx_evm::chain::SigningPlan;
     let nonce_dir = tempfile::tempdir().unwrap();
     let journal =
         SignerJournal::open(nonce_dir.path(), deployment.chain_id, key.address()).unwrap();
@@ -259,11 +259,11 @@ async fn coordinator_persists_real_signed_bytes_and_revalidates_after_restart() 
         .unwrap();
     assert_eq!(
         unknown.outcome,
-        erebus_evm::chain::BroadcastOutcome::Unknown
+        styx_evm::chain::BroadcastOutcome::Unknown
     );
     assert_eq!(
         restarted.broadcast_history([1; 32]).unwrap()[0].outcome,
-        erebus_coordinator::BroadcastOutcome::Unknown
+        styx_coordinator::BroadcastOutcome::Unknown
     );
     responses.push_success(&alloy::primitives::U64::from(deployment.chain_id));
     responses.push_success(&alloy::primitives::B256::from(unknown.hash));
@@ -276,11 +276,11 @@ async fn coordinator_persists_real_signed_bytes_and_revalidates_after_restart() 
     assert_eq!(history.len(), 2);
     assert_eq!(
         history[0].outcome,
-        erebus_coordinator::BroadcastOutcome::Unknown
+        styx_coordinator::BroadcastOutcome::Unknown
     );
     assert_eq!(
         history[1].outcome,
-        erebus_coordinator::BroadcastOutcome::Submitted
+        styx_coordinator::BroadcastOutcome::Submitted
     );
     assert_eq!(
         restarted
@@ -379,7 +379,7 @@ fn generic_pool_call_claim_survives_restart_and_fences_target_and_calldata() {
 }
 
 fn other_deployment() -> (EvmDeployment, PreparedSettlement) {
-    use erebus_core::{
+    use styx_core::{
         auth::{authorization_digest, Role},
         ids::AddressBytes,
     };
@@ -478,8 +478,8 @@ fn nonce_write_faults_recover_without_reassignment() {
         count: AtomicUsize,
         at: usize,
     }
-    impl erebus_journal::FaultHook for Fail {
-        fn after(&self, _: erebus_journal::Boundary<'_>) -> std::io::Result<()> {
+    impl styx_journal::FaultHook for Fail {
+        fn after(&self, _: styx_journal::Boundary<'_>) -> std::io::Result<()> {
             if self.count.fetch_add(1, Ordering::SeqCst) + 1 == self.at {
                 Err(std::io::Error::other("injected failure"))
             } else {
@@ -525,7 +525,7 @@ fn nonce_write_faults_recover_without_reassignment() {
 }
 
 async fn mock_chain() -> (
-    erebus_evm::chain::EvmChain,
+    styx_evm::chain::EvmChain,
     alloy::transports::mock::Asserter,
 ) {
     use alloy::providers::{Provider, ProviderBuilder};
@@ -535,7 +535,7 @@ async fn mock_chain() -> (
     let provider = ProviderBuilder::default()
         .connect_mocked_client(responses.clone())
         .erased();
-    let chain = erebus_evm::chain::EvmChain::from_provider(
+    let chain = styx_evm::chain::EvmChain::from_provider(
         deployment,
         provider,
         std::time::Duration::from_secs(1),
@@ -611,7 +611,7 @@ async fn rpc_nonce_disagreement_or_chain_change_never_creates_a_claim() {
 #[tokio::test]
 async fn broadcast_never_turns_rpc_errors_into_nonpayment() {
     use alloy::primitives::{B256, U64};
-    use erebus_evm::chain::{BroadcastOutcome, SigningPlan};
+    use styx_evm::chain::{BroadcastOutcome, SigningPlan};
     let (deployment, prepared) = fixture();
     let key = TransactionKey::from_bytes(&[1; 32]).unwrap();
     let plan = SigningPlan::new(key.address(), params()).unwrap();
@@ -640,7 +640,7 @@ async fn broadcast_never_turns_rpc_errors_into_nonpayment() {
 #[tokio::test]
 async fn broadcast_validates_locally_and_checks_chain_before_sending() {
     use alloy::primitives::{B256, U64};
-    use erebus_evm::chain::SigningPlan;
+    use styx_evm::chain::SigningPlan;
     let (deployment, prepared) = fixture();
     let key = TransactionKey::from_bytes(&[1; 32]).unwrap();
     let plan = SigningPlan::new(key.address(), params()).unwrap();

@@ -5,7 +5,7 @@
 //! transcript. An I/O failure requires a new connection and explicit re-delivery.
 
 use core::fmt;
-use erebus_core::{
+use styx_core::{
     auth::{Authorization, Role},
     ids::BaseUnits,
 };
@@ -113,7 +113,7 @@ impl NegotiationPeer {
         local_binding
             .verify(local_descriptor, &terms.domain, local_key, now)
             .map_err(|_| PeerError::Binding)?;
-        let mut writer = erebus_core::encoding::Writer::new();
+        let mut writer = styx_core::encoding::Writer::new();
         writer.u16(1);
         writer.u8(4);
         writer.bytes(&local_binding.encode().map_err(|_| PeerError::Binding)?);
@@ -144,9 +144,9 @@ impl NegotiationPeer {
 
     fn verify_binding_message(
         message: &Message,
-        terms: &erebus_core::terms::AgreementTerms,
+        terms: &styx_core::terms::AgreementTerms,
         descriptor: &ServiceDescriptor,
-        expected_key: &erebus_core::ids::KeyBytes,
+        expected_key: &styx_core::ids::KeyBytes,
         now: u64,
     ) -> Result<(), PeerError> {
         if message.deal_id != terms.deal_id
@@ -157,7 +157,7 @@ impl NegotiationPeer {
         {
             return Err(PeerError::Binding);
         }
-        let mut reader = erebus_core::encoding::Reader::new(&message.body);
+        let mut reader = styx_core::encoding::Reader::new(&message.body);
         if reader.u16("profile").map_err(|_| PeerError::Binding)? != 1
             || reader.u8("event").map_err(|_| PeerError::Binding)? != 4
         {
@@ -247,11 +247,11 @@ impl NegotiationPeer {
             .into_iter()
             .filter(|message| message.author == self.role())
             .collect();
-        let mut writer = erebus_core::encoding::Writer::new();
+        let mut writer = styx_core::encoding::Writer::new();
         writer.u64(local.len() as u64);
         self.send_control(6, &writer.finish())?;
         let remote = self.receive_control(6)?;
-        let mut reader = erebus_core::encoding::Reader::new(&remote);
+        let mut reader = styx_core::encoding::Reader::new(&remote);
         let count = reader
             .u64("retained_count")
             .map_err(|_| PeerError::Binding)?;
@@ -289,7 +289,7 @@ impl NegotiationPeer {
     }
 
     fn send_control(&mut self, event: u8, payload: &[u8]) -> Result<(), PeerError> {
-        let mut writer = erebus_core::encoding::Writer::new();
+        let mut writer = styx_core::encoding::Writer::new();
         writer.u16(1);
         writer.u8(event);
         writer.bytes(payload);
@@ -318,7 +318,7 @@ impl NegotiationPeer {
         {
             return Err(PeerError::Binding);
         }
-        let mut reader = erebus_core::encoding::Reader::new(&message.body);
+        let mut reader = styx_core::encoding::Reader::new(&message.body);
         if reader.u16("profile").map_err(|_| PeerError::Binding)? != 1
             || reader.u8("event").map_err(|_| PeerError::Binding)? != event
         {

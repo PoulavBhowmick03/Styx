@@ -7,7 +7,7 @@ check." These pin the fail-closed behavior directly, without needing a live clie
 
 from __future__ import annotations
 
-from erebus_mcp.interface import Consistency, DisclosedSettlement
+from styx_mcp.interface import Consistency, DisclosedSettlement
 
 
 def test_matching_paid_and_agreed_amounts_are_consistent() -> None:

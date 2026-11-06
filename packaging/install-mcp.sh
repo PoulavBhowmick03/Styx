@@ -6,16 +6,16 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 WHEELS="$(cd "${1:-$(dirname "$0")}" && pwd)"
-for name in erebus_cli erebus_sdk erebus_mcp_server; do
+for name in styx_cli styx_sdk styx_mcp_server; do
   compgen -G "$WHEELS/${name}-0.3.0-*.whl" >/dev/null || { echo "Missing wheel: $name" >&2; exit 2; }
 done
-CLI_WHEELS=( "$WHEELS"/erebus_cli-0.3.0-*.whl )
+CLI_WHEELS=( "$WHEELS"/styx_cli-0.3.0-*.whl )
 if [ "${#CLI_WHEELS[@]}" -ne 1 ]; then
   echo 'Use one platform wheelhouse per install.' >&2
   exit 2
 fi
 uv tool install --no-build --find-links "$WHEELS" \
-  --with-executables-from erebus-cli \
-  "$WHEELS/erebus_mcp_server-0.3.0-py3-none-any.whl" \
-  --with "$WHEELS/erebus_sdk-0.3.0-py3-none-any.whl" \
+  --with-executables-from styx-cli \
+  "$WHEELS/styx_mcp_server-0.3.0-py3-none-any.whl" \
+  --with "$WHEELS/styx_sdk-0.3.0-py3-none-any.whl" \
   --with "${CLI_WHEELS[0]}"

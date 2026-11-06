@@ -1988,87 +1988,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "erebus-coordinator"
-version = "0.1.0"
-dependencies = [
- "erebus-core",
- "erebus-journal",
- "rand 0.8.8",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "erebus-core"
-version = "0.1.0"
-dependencies = [
- "affinidi-zkp-crypto",
- "ark-bn254",
- "ark-ff 0.5.0",
- "hex",
- "k256",
- "light-poseidon 0.4.0",
- "serde_json",
- "sha2",
- "sha3 0.10.9",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "erebus-evm"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "erebus-coordinator",
- "erebus-core",
- "erebus-journal",
- "erebus-transport",
- "getrandom 0.2.17",
- "hex",
- "k256",
- "serde",
- "serde_json",
- "sha3 0.10.9",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "zeroize",
-]
-
-[[package]]
-name = "erebus-journal"
-version = "0.1.0"
-dependencies = [
- "fs2",
- "rand 0.8.8",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "erebus-transport"
-version = "0.1.0"
-dependencies = [
- "axum",
- "erebus-core",
- "fs2",
- "hex",
- "k256",
- "rand 0.8.8",
- "serde",
- "serde_json",
- "sha3 0.10.9",
- "snow",
- "thiserror 2.0.20",
- "tokio",
- "zeroize",
-]
-
-[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4333,6 +4252,87 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "styx-coordinator"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "styx-core",
+ "styx-journal",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
+name = "styx-core"
+version = "0.1.0"
+dependencies = [
+ "affinidi-zkp-crypto",
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "hex",
+ "k256",
+ "light-poseidon 0.4.0",
+ "serde_json",
+ "sha2",
+ "sha3 0.10.9",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
+name = "styx-evm"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "getrandom 0.2.17",
+ "hex",
+ "k256",
+ "serde",
+ "serde_json",
+ "sha3 0.10.9",
+ "styx-coordinator",
+ "styx-core",
+ "styx-journal",
+ "styx-transport",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "styx-journal"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "styx-transport"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "fs2",
+ "hex",
+ "k256",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "sha3 0.10.9",
+ "snow",
+ "styx-core",
+ "thiserror 2.0.20",
+ "tokio",
+ "zeroize",
+]
 
 [[package]]
 name = "subtle"

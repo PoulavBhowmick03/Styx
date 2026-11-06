@@ -24,7 +24,7 @@ use crate::suite::{self, SuiteError};
 use crate::terms::AgreementTerms;
 
 /// Domain separation for authorization digests.
-pub const AUTHORIZATION_DOMAIN: &[u8] = b"EREBUS_DEAL_AUTHORIZATION_V1";
+pub const AUTHORIZATION_DOMAIN: &[u8] = b"STYX_DEAL_AUTHORIZATION_V1";
 
 /// Which participant an authorization belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

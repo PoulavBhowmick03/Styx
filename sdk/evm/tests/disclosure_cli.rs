@@ -7,8 +7,8 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-use erebus_coordinator::Coordinator;
-use erebus_core::{
+use styx_coordinator::Coordinator;
+use styx_core::{
     auth::{authorization_digest, Authorization, Role},
     commitment::{commit_agreement, CommitmentBlinding},
     domain::DeploymentDomain,
@@ -18,7 +18,7 @@ use erebus_core::{
     settlement::{BackendCapabilities, SettlementContext},
     terms::{AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode},
 };
-use erebus_transport::{
+use styx_transport::{
     disclosure::{DisclosureGrant, SelectedAgreement, MAX_DISCLOSURE_BYTES},
     hashing::TRANSCRIPT_HASH_VERSION,
     identity::{AuthorizationIdentity, DisclosureIdentity},
@@ -31,9 +31,9 @@ use serde_json::{json, Value};
 const GRANT_EXPIRY: u64 = 4_102_444_800;
 
 fn binary() -> PathBuf {
-    std::env::var_os("EREBUS_TEST_DISCLOSURE_BIN")
+    std::env::var_os("STYX_TEST_DISCLOSURE_BIN")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_erebus-disclosure")))
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_styx-disclosure")))
 }
 
 fn run_bytes(root: &Path, bytes: &[u8]) -> Output {
@@ -202,7 +202,7 @@ fn public_bound_command_neither_advertises_nor_runs_an_auditor_checkpoint() {
         .iter()
         .map(|method| method.as_str().unwrap())
         .collect();
-    if std::env::var_os("EREBUS_TEST_DISCLOSURE_BIN").is_some() && methods.contains(&"checkpoint") {
+    if std::env::var_os("STYX_TEST_DISCLOSURE_BIN").is_some() && methods.contains(&"checkpoint") {
         // A shielded command under test advertises and implements the checkpoint itself.
         return;
     }
@@ -486,7 +486,7 @@ fn issuer_selects_evidence_from_durable_state_and_a_fresh_recipient_verifies() {
 }
 
 fn shielded_fixture() -> SelectedAgreement {
-    use erebus_core::{
+    use styx_core::{
         shielded::note_spend_tag,
         shielded_auth::{derive_key, sign_message},
     };
@@ -679,7 +679,7 @@ fn issuer_workflow(agreement: SelectedAgreement, issuer: String) {
     let mut wrong_issuer = verify.clone();
     wrong_issuer["expected_issuer"] = json!("0x00");
     assert!(!run(auditor.path(), wrong_issuer).0.status.success());
-    if let Some(python) = std::env::var_os("EREBUS_TEST_MCP_PYTHON") {
+    if let Some(python) = std::env::var_os("STYX_TEST_MCP_PYTHON") {
         let check =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/check-disclosure-mcp.py");
         let output = Command::new(python)

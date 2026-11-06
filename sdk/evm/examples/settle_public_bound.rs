@@ -2,44 +2,44 @@
 //!
 //! Test tooling for the M8 funded workflow: blinding, nonce, and deal values are test-only.
 //! Independent mode requires an explicit seller address and external authorization.
-//! A deterministic local seller requires EREBUS_EVM_ALLOW_TEST_SELLER=1.
+//! A deterministic local seller requires STYX_EVM_ALLOW_TEST_SELLER=1.
 //!
 //! Environment:
-//! - `EREBUS_EVM_RPC_URL`, `EREBUS_EVM_SETTLEMENT`, `EREBUS_EVM_TOKEN`
-//! - `EREBUS_EVM_BUYER_KEY_FILE` (a 32-byte hex key, owner-only)
-//! - `EREBUS_EVM_STATE_ROOT` (coordinator and signer-journal directory)
-//! - `EREBUS_EVM_AMOUNT` (base units, default 1000000)
-//! - `EREBUS_EVM_SELLER_ADDRESS` (expected independent seller, lowercase 0x address)
+//! - `STYX_EVM_RPC_URL`, `STYX_EVM_SETTLEMENT`, `STYX_EVM_TOKEN`
+//! - `STYX_EVM_BUYER_KEY_FILE` (a 32-byte hex key, owner-only)
+//! - `STYX_EVM_STATE_ROOT` (coordinator and signer-journal directory)
+//! - `STYX_EVM_AMOUNT` (base units, default 1000000)
+//! - `STYX_EVM_SELLER_ADDRESS` (expected independent seller, lowercase 0x address)
 //!
 //! Flow: durable intent, both authorizations, preparation, nonce claim, local signing,
 //! journaled broadcast, finalized observation, and reconciliation.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use erebus_coordinator::Coordinator;
-use erebus_core::auth::{
+use styx_coordinator::Coordinator;
+use styx_core::auth::{
     authorization_digest, verify_authorization_signature, Authorization, Role,
 };
-use erebus_core::commitment::{commit_agreement, CommitmentBlinding};
-use erebus_core::deal_state::DealState;
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{
+use styx_core::commitment::{commit_agreement, CommitmentBlinding};
+use styx_core::deal_state::DealState;
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{
     AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes, SignatureBytes,
 };
-use erebus_core::policy::SpendingPolicy;
-use erebus_core::service::ServiceRecord;
-use erebus_core::settlement::{BackendCapabilities, SettlementContext};
-use erebus_core::terms::{
+use styx_core::policy::SpendingPolicy;
+use styx_core::service::ServiceRecord;
+use styx_core::settlement::{BackendCapabilities, SettlementContext};
+use styx_core::terms::{
     AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode, CURRENT_PROTOCOL_VERSION,
 };
-use erebus_evm::backend::EvmSettlementBackend;
-use erebus_evm::chain::{
+use styx_evm::backend::EvmSettlementBackend;
+use styx_evm::chain::{
     Eip1559Fees, EvmChain, HistoricalObservation, ObservationJournal, ObservationLimits,
     SignerJournal, SigningPlan, TransactionKey,
 };
-use erebus_evm::deployment::{parse_lowercase_address, EvmDeployment};
-use erebus_transport::disclosure::SelectedAgreement;
-use erebus_transport::hashing::TRANSCRIPT_HASH_VERSION;
+use styx_evm::deployment::{parse_lowercase_address, EvmDeployment};
+use styx_transport::disclosure::SelectedAgreement;
+use styx_transport::hashing::TRANSCRIPT_HASH_VERSION;
 use k256::ecdsa::SigningKey;
 use serde_json::json;
 use zeroize::Zeroizing;
@@ -110,7 +110,7 @@ fn address_of(key: &SigningKey) -> [u8; 20] {
 fn authorization(
     role: Role,
     terms: &AgreementTerms,
-    commitment: erebus_core::commitment::DealCommitment,
+    commitment: styx_core::commitment::DealCommitment,
     key: &SigningKey,
 ) -> Result<Authorization, Box<dyn std::error::Error>> {
     let digest = authorization_digest(&terms.domain, role, &commitment, terms.suite_id)?;
@@ -128,19 +128,19 @@ fn authorization(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let rpc_url = env("EREBUS_EVM_RPC_URL")?;
-    let settlement = parse_lowercase_address(&env("EREBUS_EVM_SETTLEMENT")?)
-        .ok_or("EREBUS_EVM_SETTLEMENT must be a lowercase 0x address")?;
-    let token = parse_lowercase_address(&env("EREBUS_EVM_TOKEN")?)
-        .ok_or("EREBUS_EVM_TOKEN must be a lowercase 0x address")?;
-    let state_root = std::path::PathBuf::from(env("EREBUS_EVM_STATE_ROOT")?);
-    let amount: u128 = std::env::var("EREBUS_EVM_AMOUNT")
+    let rpc_url = env("STYX_EVM_RPC_URL")?;
+    let settlement = parse_lowercase_address(&env("STYX_EVM_SETTLEMENT")?)
+        .ok_or("STYX_EVM_SETTLEMENT must be a lowercase 0x address")?;
+    let token = parse_lowercase_address(&env("STYX_EVM_TOKEN")?)
+        .ok_or("STYX_EVM_TOKEN must be a lowercase 0x address")?;
+    let state_root = std::path::PathBuf::from(env("STYX_EVM_STATE_ROOT")?);
+    let amount: u128 = std::env::var("STYX_EVM_AMOUNT")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(1_000_000);
     let buyer_bytes: Zeroizing<[u8; 32]> = {
         let bytes = private_read(
-            std::path::Path::new(&env("EREBUS_EVM_BUYER_KEY_FILE")?),
+            std::path::Path::new(&env("STYX_EVM_BUYER_KEY_FILE")?),
             128,
         )?;
         let text = std::str::from_utf8(&bytes)?.trim();
@@ -154,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let buyer_key = SigningKey::from_slice(buyer_bytes.as_ref())?;
     let seller_key =
-        if std::env::var("EREBUS_EVM_ALLOW_TEST_SELLER").is_ok_and(|value| value == "1") {
+        if std::env::var("STYX_EVM_ALLOW_TEST_SELLER").is_ok_and(|value| value == "1") {
             Some(SigningKey::from_slice(&[0x5e; 32])?)
         } else {
             None
@@ -164,7 +164,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let buyer_address = address_of(&buyer_key);
     let seller_address = match &seller_key {
         Some(key) => address_of(key),
-        None => parse_lowercase_address(&env("EREBUS_EVM_SELLER_ADDRESS")?)
+        None => parse_lowercase_address(&env("STYX_EVM_SELLER_ADDRESS")?)
             .ok_or("expected seller must be a lowercase 0x address")?,
     };
     let now = unix_now()?;
@@ -175,7 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The buyer proposes terms and a blinding. A separate seller process signs the same
     // proposal; this process can also load that proposal instead of rebuilding it.
-    let (terms, blinding) = if let Ok(path) = std::env::var("EREBUS_EVM_PROPOSAL_IN") {
+    let (terms, blinding) = if let Ok(path) = std::env::var("STYX_EVM_PROPOSAL_IN") {
         let proposal: serde_json::Value =
             serde_json::from_slice(&private_read(std::path::Path::new(&path), 64 * 1024)?)?;
         let terms = AgreementTerms::decode(&hex::decode(
@@ -190,7 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "proposal blinding must be 32 bytes")?;
         (terms, CommitmentBlinding::from_bytes(bytes))
     } else {
-        let seed: u8 = std::env::var("EREBUS_EVM_DEAL_SEED")
+        let seed: u8 = std::env::var("STYX_EVM_DEAL_SEED")
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(0x42);
@@ -238,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("proposal differs from the selected buyer, seller, backend, or asset".into());
     }
     let commitment = commit_agreement(&terms, &blinding)?;
-    if let Ok(path) = std::env::var("EREBUS_EVM_PROPOSAL_OUT") {
+    if let Ok(path) = std::env::var("STYX_EVM_PROPOSAL_OUT") {
         private_write(
             std::path::Path::new(&path),
             &serde_json::to_vec(&json!({
@@ -252,7 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let buyer = authorization(Role::Buyer, &terms, commitment, &buyer_key)?;
-    let seller = if let Ok(path) = std::env::var("EREBUS_EVM_SELLER_AUTHORIZATION_FILE") {
+    let seller = if let Ok(path) = std::env::var("STYX_EVM_SELLER_AUTHORIZATION_FILE") {
         let bytes = private_read(std::path::Path::new(&path), 4096)?;
         let seller = Authorization::decode(&hex::decode(std::str::from_utf8(&bytes)?.trim())?)?;
         if seller.role != Role::Seller || seller.commitment != commitment {
@@ -266,7 +266,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("independent settlement requires the seller authorization file")?;
         authorization(Role::Seller, &terms, commitment, key)?
     };
-    if let Ok(path) = std::env::var("EREBUS_EVM_EVIDENCE_OUT") {
+    if let Ok(path) = std::env::var("STYX_EVM_EVIDENCE_OUT") {
         let evidence = SelectedAgreement {
             terms: terms.clone(),
             blinding: blinding.clone(),
@@ -344,7 +344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A live chain is far taller than a public RPC's `eth_getLogs` range cap, so the scan
     // starts at the deployment block and checkpoints its progress. The caller must supply a
     // block at or before the deployment's first possible settlement.
-    let from_block: u64 = env("EREBUS_EVM_FROM_BLOCK")?.parse()?;
+    let from_block: u64 = env("STYX_EVM_FROM_BLOCK")?.parse()?;
     let journal = ObservationJournal::open(state_root.join("history"))?;
     let budget = ObservationLimits {
         log_block_range: 100,
@@ -396,7 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "deal_state": format!("{:?}", assessment.state),
             "payment_finalized": matches!(
                 assessment.state,
-                erebus_core::deal_state::DealState::PaidFinalized { .. }
+                styx_core::deal_state::DealState::PaidFinalized { .. }
             ),
         })
     );

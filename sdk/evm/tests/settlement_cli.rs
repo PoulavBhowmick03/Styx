@@ -1,4 +1,4 @@
-//! Fresh `erebus-settle` processes: read-only onboarding without keys, chain, or RPC access
+//! Fresh `styx-settle` processes: read-only onboarding without keys, chain, or RPC access
 //! for the failure paths. The funded path reuses the Anvil-tested `estimate` and
 //! `funding_diagnostics` methods.
 
@@ -9,7 +9,7 @@ use std::process::{Command, Output, Stdio};
 use serde_json::{json, Value};
 
 fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_erebus-settle"))
+    PathBuf::from(env!("CARGO_BIN_EXE_styx-settle"))
 }
 
 fn run(root: &std::path::Path, bytes: &[u8]) -> Output {

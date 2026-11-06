@@ -8,7 +8,7 @@ use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use erebus_evm::readiness::{check_network, NetworkCheck};
+use styx_evm::readiness::{check_network, NetworkCheck};
 
 struct Anvil {
     child: Child,

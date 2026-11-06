@@ -14,12 +14,12 @@ Each agent writes only the paths it owns. Each one reviews another's work, as pl
 
 | Worker | Owns | Reviews |
 | --- | --- | --- |
-| **Claude 1** (Poulav) | `arkiv/`, `relay/`, `owner-page/`, `mcp-server/src/erebus_mcp/vault.py`, `sdk/py/src/erebus/_vault.py`, `mcp-server/tests/test_vault*.py` | Claude 2 |
+| **Claude 1** (Poulav) | `arkiv/`, `relay/`, `owner-page/`, `mcp-server/src/styx_mcp/vault.py`, `sdk/py/src/styx/_vault.py`, `mcp-server/tests/test_vault*.py` | Claude 2 |
 | **Claude 2** (Ishita) | `setup-page/`, `mcp-server/examples/`, `docs/mumbai/AGENT_INSTALL.md` | Codex |
 | **Codex** (Poulav) | `packaging/`, `.github/`, `watcher/`, `docs/mumbai/SECURITY_REVIEW.md`, `sdk/evm/src/arc_vault/` (bug fixes only) | Claude 1 |
 | **Humans** | Arc Studio, deployments, keys, funds, sponsor logins, booth questions, the G0 decision, the demo video, the final README | Everything that handles contracts or signing |
 
-**Nobody edits `contracts/evm/src/ErebusPolicyVault.sol`.** It is the deployed v1, and all G1 to G4 evidence rests on it. Organization work goes in a new v2 file. See "V2 for organizations".
+**Nobody edits `contracts/evm/src/StyxPolicyVault.sol`.** It is the deployed v1, and all G1 to G4 evidence rests on it. Organization work goes in a new v2 file. See "V2 for organizations".
 
 ## Rules for every agent
 
@@ -51,7 +51,7 @@ One known failure: `test_every_mapped_message_exists_where_it_is_produced`, whic
 
 **Contract:** the EIP-712 types, `PaymentExecuted` and the error names, as in `BUILD_PLAN.md` section 4 and `sdk/core/tests/fixtures/vault-eip712-vector.json`.
 
-**CLI and MCP:** the `erebus-vault` methods and four tools as they stand in `sdk/evm/src/arc_vault/service.rs` and `mcp-server/src/erebus_mcp/vault.py`. Additions are fine; changes go through the owner.
+**CLI and MCP:** the `styx-vault` methods and four tools as they stand in `sdk/evm/src/arc_vault/service.rs` and `mcp-server/src/styx_mcp/vault.py`. Additions are fine; changes go through the owner.
 
 **Relay, owned by Claude 1.** All bodies are JSON. `relay/README.md` is authoritative.
 
@@ -80,8 +80,8 @@ Decided by Poulav on 7 November: try a v2 contract for organizations tonight. **
 
 | Worker | Owns |
 | --- | --- |
-| **Codex** | The opinion in `docs/mumbai/V2_REVIEW.md`, `contracts/evm/src/ErebusPolicyVaultV2.sol` and its tests, and v2 in `sdk/evm/src/arc_vault/`. Branch `codex/v2` |
-| **Claude 1** | `owner-page/`, `relay/`, `mcp-server/src/erebus_mcp/vault.py`, the agent join request, hosting, and the v2 deployment with Arc Studio and live runs |
+| **Codex** | The opinion in `docs/mumbai/V2_REVIEW.md`, `contracts/evm/src/StyxPolicyVaultV2.sol` and its tests, and v2 in `sdk/evm/src/arc_vault/`. Branch `codex/v2` |
+| **Claude 1** | `owner-page/`, `relay/`, `mcp-server/src/styx_mcp/vault.py`, the agent join request, hosting, and the v2 deployment with Arc Studio and live runs |
 | **Claude 2** | `setup-page/` screens for agents and approvers, `docs/mumbai/ARCHITECTURE.md`, `docs/mumbai/DEMO_SCRIPT.md`, the README sections. Branch `claude2/v2` |
 | **Poulav** | The go or no-go at the cutoff, review of the contract and signing code, Arc Studio |
 
@@ -91,7 +91,7 @@ Decided by Poulav on 7 November: try a v2 contract for organizations tonight. **
 
 ### Claude 1: alerts and relay (done, not yet run with a real bot)
 
-Built and tested against a fake Telegram server and a local chain: `relay/`, opening requests from alert links in `owner-page/`, and `erebus_check_owner_approval` plus relay alerts in `vault.py`. See `relay/README.md`.
+Built and tested against a fake Telegram server and a local chain: `relay/`, opening requests from alert links in `owner-page/`, and `styx_check_owner_approval` plus relay alerts in `vault.py`. See `relay/README.md`.
 
 Next, once a human provides a bot token: send one real alert and open its link on a phone.
 
@@ -122,8 +122,8 @@ Report what you find. Poulav decides the entry type (G0) and the prize picks, so
 
 ### Codex: packaging, CI, watcher, security
 
-1. **Security review first.** Adversarially review `ErebusPolicyVault.sol`, `sdk/evm/src/arc_vault/` and `owner-page/src/approval.ts`, and write findings with file and line in `docs/mumbai/SECURITY_REVIEW.md`. Add failing tests where you can. Report contract issues; do not patch the contract. This is not an audit and must not be described as one.
-2. **Packaging:** `packaging/erebus-cli` is a metadata-only stub. Ship `erebus-vault` and `erebus-disclosure` so an install needs no Rust toolchain, then make the MCP server installable in one command. Keep `uv lock` working.
+1. **Security review first.** Adversarially review `StyxPolicyVault.sol`, `sdk/evm/src/arc_vault/` and `owner-page/src/approval.ts`, and write findings with file and line in `docs/mumbai/SECURITY_REVIEW.md`. Add failing tests where you can. Report contract issues; do not patch the contract. This is not an audit and must not be described as one.
+2. **Packaging:** `packaging/styx-cli` is a metadata-only stub. Ship `styx-vault` and `styx-disclosure` so an install needs no Rust toolchain, then make the MCP server installable in one command. Keep `uv lock` working.
 3. **CI:** a GitHub Actions workflow running the test commands above, including gitleaks, with pinned actions and no secrets.
 4. `watcher/`: watches a vault and its agent address. Alerts through the relay's `POST /alerts` when the agent's transaction to the vault reverts, since reverts emit no events, and when daily spend passes a threshold. Tests run on Anvil.
 
@@ -133,7 +133,7 @@ Tasks 1 to 4 above are done. Claude 1 keeps everything on Arc and the end-to-end
 
 **A. Arkiv (G4) moved to Claude 1** on 6 November. Codex does not work in `arkiv/`.
 
-**B. Review Arc Studio's contract.** `SECURITY_REVIEW.md` was written against the earlier contract at `84b3288`. Repeat the review on `contracts/evm/src/ErebusPolicyVault.sol` from `1e8156c`, the deployed code. Do not edit it. Add a dated section with file and line, say which earlier findings still apply, and add failing tests where you can. This is not an audit, and Poulav's own review is still owed.
+**B. Review Arc Studio's contract.** `SECURITY_REVIEW.md` was written against the earlier contract at `84b3288`. Repeat the review on `contracts/evm/src/StyxPolicyVault.sol` from `1e8156c`, the deployed code. Do not edit it. Add a dated section with file and line, say which earlier findings still apply, and add failing tests where you can. This is not an audit, and Poulav's own review is still owed.
 
 **C. Review Claude 2's work,** as this file already assigns: `setup-page/`, including the code check in `src/build.ts`, `mcp-server/examples/` and `AGENT_INSTALL.md`.
 

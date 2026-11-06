@@ -18,31 +18,31 @@ use alloy::primitives::{Address, Bytes, U64};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
-use erebus_core::auth::{authorization_digest, Authorization, Role};
-use erebus_core::commitment::{
+use styx_core::auth::{authorization_digest, Authorization, Role};
+use styx_core::commitment::{
     commit_agreement, deal_nullifier, CommitmentBlinding, DealNullifier,
 };
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes};
-use erebus_core::service::ServiceRecord;
-use erebus_core::terms::{
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes};
+use styx_core::service::ServiceRecord;
+use styx_core::terms::{
     AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode, CURRENT_PROTOCOL_VERSION,
 };
-use erebus_evm::abi;
-use erebus_evm::deployment::EvmDeployment;
-use erebus_evm::x402::{
+use styx_evm::abi;
+use styx_evm::deployment::EvmDeployment;
+use styx_evm::x402::{
     encode_nonce_bitmap_call, nonce_consumed, settled_topic, verify_x402_exact, DealPermit,
     X402ExactEvidence, X402VerificationError, EXACT_PERMIT2_PROXY, PERMIT2,
 };
-use erebus_transport::disclosure::SelectedAgreement;
-use erebus_transport::identity::AuthorizationIdentity;
+use styx_transport::disclosure::SelectedAgreement;
+use styx_transport::identity::AuthorizationIdentity;
 use serde_json::{json, Value};
 use sha3::{Digest, Keccak256};
 
 /// Anvil's default dev key for account `index`, read at runtime so no key is stored in this repo.
-/// Set `EREBUS_TEST_ANVIL_KEY_<index>` to the hex key anvil prints at startup.
+/// Set `STYX_TEST_ANVIL_KEY_<index>` to the hex key anvil prints at startup.
 fn anvil_key(index: u8) -> [u8; 32] {
-    let name = format!("EREBUS_TEST_ANVIL_KEY_{index}");
+    let name = format!("STYX_TEST_ANVIL_KEY_{index}");
     let value = std::env::var(&name).unwrap_or_else(|_| panic!("{name} must be set"));
     hex::decode(value.trim_start_matches("0x"))
         .expect("hex key")
@@ -244,7 +244,7 @@ async fn deal_permit_settles_once_through_the_canonical_proxy() {
     )
     .await;
 
-    let deal = DealNullifier::from_bytes(Keccak256::digest(b"erebus x402 test deal").into());
+    let deal = DealNullifier::from_bytes(Keccak256::digest(b"styx x402 test deal").into());
     let permit = DealPermit {
         token: token.0 .0,
         amount: 70,
@@ -507,7 +507,7 @@ fn write_private(path: &Path, bytes: &[u8]) {
 }
 
 fn disclosure(request: &Value) -> (i32, Value) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-disclosure"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_styx-disclosure"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -576,7 +576,7 @@ fn signed_agreement(
         role,
         suite_id: 1,
         commitment,
-        signature: erebus_core::ids::SignatureBytes::new(
+        signature: styx_core::ids::SignatureBytes::new(
             key.sign_digest(&authorization_digest(&terms.domain, role, &commitment, 1).unwrap())
                 .to_vec(),
         )

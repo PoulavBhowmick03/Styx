@@ -1,13 +1,13 @@
 //! Errors for the EVM settlement adapter.
 
-use erebus_core::auth::AuthError;
-use erebus_core::commitment::CommitmentError;
-use erebus_core::domain::DomainError;
-use erebus_core::encoding::EncodingError;
-use erebus_core::ids::IdError;
-use erebus_core::settlement::SelectionError;
-use erebus_core::suite::SuiteError;
-use erebus_core::terms::TermsError;
+use styx_core::auth::AuthError;
+use styx_core::commitment::CommitmentError;
+use styx_core::domain::DomainError;
+use styx_core::encoding::EncodingError;
+use styx_core::ids::IdError;
+use styx_core::settlement::SelectionError;
+use styx_core::suite::SuiteError;
+use styx_core::terms::TermsError;
 
 use crate::evidence::EvidenceError;
 

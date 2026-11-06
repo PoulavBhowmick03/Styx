@@ -1,7 +1,7 @@
 //! Test-only replayable negotiation fixture for the funded M5/M7 harness.
 
-use erebus_core::auth::Role;
-use erebus_transport::{
+use styx_core::auth::Role;
+use styx_transport::{
     hashing::TRANSCRIPT_HASH_VERSION,
     message::{Message, MessageType},
     transcript::Transcript,

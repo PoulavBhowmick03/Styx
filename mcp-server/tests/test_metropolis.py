@@ -9,8 +9,8 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from erebus_mcp.config import ConfigError
-from erebus_mcp.metropolis import MetropolisSettings
+from styx_mcp.config import ConfigError
+from styx_mcp.metropolis import MetropolisSettings
 
 ROOT = Path(__file__).resolve().parents[2]
 BINARIES = ROOT / "sdk/shielded/target/debug"
@@ -25,11 +25,11 @@ def operator_file(path: Path, data: dict, mode: int = 0o600) -> Path:
 def configure(monkeypatch, tmp_path, role="buyer", payment=None):
     state = tmp_path / "state"
     negotiation = operator_file(tmp_path / "negotiation.json", {"role": role, "state_root": str(state)})
-    monkeypatch.setenv("EREBUS_NEGOTIATION_CONFIG", str(negotiation))
+    monkeypatch.setenv("STYX_NEGOTIATION_CONFIG", str(negotiation))
     if payment is not None:
-        monkeypatch.setenv("EREBUS_PAYMENT_CONFIG", str(operator_file(tmp_path / "payment.json", {"state_root": str(state), **payment})))
+        monkeypatch.setenv("STYX_PAYMENT_CONFIG", str(operator_file(tmp_path / "payment.json", {"state_root": str(state), **payment})))
     else:
-        monkeypatch.delenv("EREBUS_PAYMENT_CONFIG", raising=False)
+        monkeypatch.delenv("STYX_PAYMENT_CONFIG", raising=False)
     return state
 
 
@@ -71,7 +71,7 @@ def test_sponsorship_is_explicit_and_cannot_keep_a_buyer_gas_key(monkeypatch, tm
 
 
 def test_wallet_tools_require_operator_policy_and_share_the_state_root(monkeypatch, tmp_path):
-    import erebus_mcp.metropolis as module
+    import styx_mcp.metropolis as module
     state = configure(monkeypatch, tmp_path, payment={"mode":"shielded"})
     class Native:
         def __init__(self, **kwargs):
@@ -80,12 +80,12 @@ def test_wallet_tools_require_operator_policy_and_share_the_state_root(monkeypat
             return {}
     monkeypatch.setattr(module, "MetropolisSeam", Native)
     monkeypatch.setattr(module.MetropolisWallet, "version", lambda self: {})
-    monkeypatch.setenv("EREBUS_WALLET_CLI", "wallet")
+    monkeypatch.setenv("STYX_WALLET_CLI", "wallet")
     config = operator_file(tmp_path / "wallet.json", {"state_root":str(state)})
     policy = operator_file(tmp_path / "wallet-policy.json", {"version":1, "maximum_amount":"100",
         "allowed_methods":["notes", "sync", "status", "deposit"], "withdrawal_recipients":[]})
-    monkeypatch.setenv("EREBUS_WALLET_CONFIG", str(config))
-    monkeypatch.setenv("EREBUS_WALLET_POLICY", str(policy))
+    monkeypatch.setenv("STYX_WALLET_CONFIG", str(config))
+    monkeypatch.setenv("STYX_WALLET_POLICY", str(policy))
     server = module.build_metropolis_server()
     tools = asyncio.run(server.list_tools())
     names = {tool.name for tool in tools}
@@ -96,7 +96,7 @@ def test_wallet_tools_require_operator_policy_and_share_the_state_root(monkeypat
         module.build_metropolis_server()
 
 
-@pytest.mark.skipif(not (ROOT / "sdk/shielded/target/release/erebus-wallet").exists(), reason="build the release wallet binary")
+@pytest.mark.skipif(not (ROOT / "sdk/shielded/target/release/styx-wallet").exists(), reason="build the release wallet binary")
 def test_stdio_wallet_mutations_are_explicit_and_over_limit_requests_are_refused(tmp_path):
     state = tmp_path / "state"
     negotiation = operator_file(tmp_path / "negotiation.json", {"role":"buyer", "state_root":str(state)})
@@ -105,11 +105,11 @@ def test_stdio_wallet_mutations_are_explicit_and_over_limit_requests_are_refused
     policy = operator_file(tmp_path / "wallet-policy.json", {"version":1, "maximum_amount":"100",
         "allowed_methods":["notes", "sync", "deposit"], "withdrawal_recipients":[]})
     release = ROOT / "sdk/shielded/target/release"
-    env = {"EREBUS_BACKEND":"metropolis", "EREBUS_NEGOTIATION_CONFIG":str(negotiation),
-        "EREBUS_PAYMENT_CONFIG":str(payment), "EREBUS_NEGOTIATION_CLI":str(release / "erebus-negotiate"),
-        "EREBUS_PAYMENT_CLI":str(release / "erebus-payment"), "EREBUS_WALLET_CONFIG":str(wallet),
-        "EREBUS_WALLET_POLICY":str(policy), "EREBUS_WALLET_CLI":str(release / "erebus-wallet")}
-    params = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT), env=env)
+    env = {"STYX_BACKEND":"metropolis", "STYX_NEGOTIATION_CONFIG":str(negotiation),
+        "STYX_PAYMENT_CONFIG":str(payment), "STYX_NEGOTIATION_CLI":str(release / "styx-negotiate"),
+        "STYX_PAYMENT_CLI":str(release / "styx-payment"), "STYX_WALLET_CONFIG":str(wallet),
+        "STYX_WALLET_POLICY":str(policy), "STYX_WALLET_CLI":str(release / "styx-wallet")}
+    params = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT), env=env)
     async def run():
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
@@ -128,12 +128,12 @@ def test_stdio_wallet_mutations_are_explicit_and_over_limit_requests_are_refused
 @pytest.mark.parametrize("value", ["0", "901", "1e2", "-5"])
 def test_native_timeout_is_bounded(monkeypatch, tmp_path, value):
     configure(monkeypatch, tmp_path, role="seller")
-    monkeypatch.setenv("EREBUS_NATIVE_TIMEOUT_SECONDS", value)
+    monkeypatch.setenv("STYX_NATIVE_TIMEOUT_SECONDS", value)
     with pytest.raises(ConfigError, match="timeout"):
         MetropolisSettings.from_env()
 
 
-@pytest.mark.skipif(not (BINARIES / "erebus-payment").exists(), reason="build the shielded binaries")
+@pytest.mark.skipif(not (BINARIES / "styx-payment").exists(), reason="build the shielded binaries")
 @pytest.mark.parametrize("role,tools", [
     ("buyer", {"negotiate_deal", "check_settlement_funding", "settle_deal", "recover_deal"}),
     ("seller", {"negotiate_deal", "list_peers"}),
@@ -141,11 +141,11 @@ def test_native_timeout_is_bounded(monkeypatch, tmp_path, value):
 def test_stdio_tools_follow_the_configured_role(tmp_path, role, tools):
     state = tmp_path / "state"
     negotiation = operator_file(tmp_path / "negotiation.json", {"role": role, "state_root": str(state)})
-    env = {"EREBUS_BACKEND": "metropolis", "EREBUS_NEGOTIATION_CONFIG": str(negotiation),
-           "EREBUS_NEGOTIATION_CLI": str(BINARIES / "erebus-negotiate"), "EREBUS_PAYMENT_CLI": str(BINARIES / "erebus-payment")}
+    env = {"STYX_BACKEND": "metropolis", "STYX_NEGOTIATION_CONFIG": str(negotiation),
+           "STYX_NEGOTIATION_CLI": str(BINARIES / "styx-negotiate"), "STYX_PAYMENT_CLI": str(BINARIES / "styx-payment")}
     if role == "buyer":
-        env["EREBUS_PAYMENT_CONFIG"] = str(operator_file(tmp_path / "payment.json", {"mode": "shielded", "state_root": str(state)}))
-    params = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT), env=env)
+        env["STYX_PAYMENT_CONFIG"] = str(operator_file(tmp_path / "payment.json", {"mode": "shielded", "state_root": str(state)}))
+    params = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT), env=env)
 
     async def run():
         async with stdio_client(params) as (read, write):
@@ -167,7 +167,7 @@ def test_stdio_tools_follow_the_configured_role(tmp_path, role, tools):
     asyncio.run(run())
 
 
-@pytest.mark.skipif(not (BINARIES / "erebus-access").exists(), reason="build the shielded binaries")
+@pytest.mark.skipif(not (BINARIES / "styx-access").exists(), reason="build the shielded binaries")
 def test_buyer_access_uses_the_participant_evidence_directory(tmp_path):
     state = tmp_path / "state"
     negotiation = operator_file(tmp_path / "negotiation.json", {"role": "buyer", "state_root": str(state)})
@@ -175,25 +175,25 @@ def test_buyer_access_uses_the_participant_evidence_directory(tmp_path):
     key = tmp_path / "buyer.key"
     key.write_bytes(b"x" * 32)
     key.chmod(0o600)
-    env = {"EREBUS_BACKEND": "metropolis", "EREBUS_NEGOTIATION_CONFIG": str(negotiation), "EREBUS_PAYMENT_CONFIG": str(payment),
-           "EREBUS_NEGOTIATION_CLI": str(BINARIES / "erebus-negotiate"), "EREBUS_PAYMENT_CLI": str(BINARIES / "erebus-payment"),
-           "EREBUS_ACCESS_CLI": str(BINARIES / "erebus-access"), "EREBUS_ACCESS_BUYER_KEY_FILE": str(key),
-           "EREBUS_ACCESS_SERVICE_URL": "https://example.com/v1/access", "EREBUS_ACCESS_SERVICE_ID": "ab" * 32,
-           "EREBUS_ACCESS_CACHE": str(tmp_path / "cache")}
+    env = {"STYX_BACKEND": "metropolis", "STYX_NEGOTIATION_CONFIG": str(negotiation), "STYX_PAYMENT_CONFIG": str(payment),
+           "STYX_NEGOTIATION_CLI": str(BINARIES / "styx-negotiate"), "STYX_PAYMENT_CLI": str(BINARIES / "styx-payment"),
+           "STYX_ACCESS_CLI": str(BINARIES / "styx-access"), "STYX_ACCESS_BUYER_KEY_FILE": str(key),
+           "STYX_ACCESS_SERVICE_URL": "https://example.com/v1/access", "STYX_ACCESS_SERVICE_ID": "ab" * 32,
+           "STYX_ACCESS_CACHE": str(tmp_path / "cache")}
 
     async def tools(environment):
-        params = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT), env=environment)
+        params = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT), env=environment)
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 return {tool.name for tool in (await session.list_tools()).tools}
 
     assert "retrieve_service_access" in asyncio.run(tools(env))
-    x402 = {**env, "EREBUS_ACCESS_PAYMENT_RAIL": "x402-exact"}
-    x402.pop("EREBUS_PAYMENT_CONFIG")
+    x402 = {**env, "STYX_ACCESS_PAYMENT_RAIL": "x402-exact"}
+    x402.pop("STYX_PAYMENT_CONFIG")
     assert asyncio.run(tools(x402)) == {"negotiate_deal", "retrieve_service_access"}
     with pytest.raises(Exception):
-        asyncio.run(tools({**env, "EREBUS_ACCESS_PAYMENT_RAIL": "x402-exact"}))
+        asyncio.run(tools({**env, "STYX_ACCESS_PAYMENT_RAIL": "x402-exact"}))
     assert (state / "agent").is_dir() and (state / "agent").stat().st_mode & 0o077 == 0
     with pytest.raises(Exception):
-        asyncio.run(tools({**env, "EREBUS_ACCESS_EVIDENCE_DIR": str(tmp_path)}))
+        asyncio.run(tools({**env, "STYX_ACCESS_EVIDENCE_DIR": str(tmp_path)}))

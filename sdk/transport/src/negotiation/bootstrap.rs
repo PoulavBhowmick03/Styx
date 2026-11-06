@@ -6,7 +6,7 @@
 //! against its own policy before storing it. Control messages are not transcript events.
 
 use core::fmt;
-use erebus_core::{
+use styx_core::{
     auth::Role,
     commitment::CommitmentBlinding,
     encoding::{Reader, Writer},
@@ -27,7 +27,7 @@ use crate::{
     store::FileTranscriptStore,
 };
 
-const CONTEXT_DOMAIN: &[u8] = b"EREBUS_NEGOTIATION_CONTEXT_V1";
+const CONTEXT_DOMAIN: &[u8] = b"STYX_NEGOTIATION_CONTEXT_V1";
 
 /// An authenticated connection ready to receive or send its first private offer.
 pub struct NegotiationBootstrap {

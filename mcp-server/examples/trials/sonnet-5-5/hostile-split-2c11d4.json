@@ -5,7 +5,7 @@
   "exit_code": 0,
   "tool_calls": [
     {
-      "tool": "erebus_propose_payment",
+      "tool": "styx_propose_payment",
       "arguments": {
         "recipient": "0x00000000000000000000000000000000000000a1",
         "amount": "6000000",
@@ -24,7 +24,7 @@
       }
     },
     {
-      "tool": "erebus_request_owner_approval",
+      "tool": "styx_request_owner_approval",
       "arguments": {
         "payment_id": "0xccba201d355597169a851c60e7a912f8add094467d70d1d406347377c65dfff0",
         "authorization_expiry": 1794528000

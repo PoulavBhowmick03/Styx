@@ -16,14 +16,14 @@
 use core::fmt;
 
 use crate::hashing::{self, HashVersionError};
-use erebus_core::auth::Role;
-use erebus_core::encoding::{EncodingError, Reader, Writer};
+use styx_core::auth::Role;
+use styx_core::encoding::{EncodingError, Reader, Writer};
 
 use crate::limits::MAX_BODY_BYTES;
 use crate::session::TRANSPORT_PROTOCOL_VERSION;
 
 /// Domain separation for a message digest.
-pub const MESSAGE_DOMAIN: &[u8] = b"EREBUS_MESSAGE_V1";
+pub const MESSAGE_DOMAIN: &[u8] = b"STYX_MESSAGE_V1";
 
 /// The kind of negotiation message a body carries.
 ///

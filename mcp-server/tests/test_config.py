@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from erebus_mcp.config import ConfigError, ServerConfig
+from styx_mcp.config import ConfigError, ServerConfig
 
 REQUIRED_MOCK_ENV = {
     "AGENT_ADDRESS": "0xbuyer",
     "PROVING_SERVICE_URL": "http://unused.invalid",
-    "EREBUS_SETTLEMENT_ROLE": "both",
+    "STYX_SETTLEMENT_ROLE": "both",
 }
 
 
@@ -30,7 +30,7 @@ def test_spending_limits_default_to_empty() -> None:
 
 def test_spending_limits_parse_per_token_caps(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
-        "EREBUS_SPENDING_LIMITS",
+        "STYX_SPENDING_LIMITS",
         '{"0xToken": {"per_deal": "500", "daily": "2000"}}',
     )
     limits = ServerConfig.from_env().spending_limits
@@ -47,7 +47,7 @@ def test_spending_limits_parse_per_token_caps(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_spending_limits_field_may_be_partial(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EREBUS_SPENDING_LIMITS", '{"0xtoken": {"per_deal": "500"}}')
+    monkeypatch.setenv("STYX_SPENDING_LIMITS", '{"0xtoken": {"per_deal": "500"}}')
     cap = ServerConfig.from_env().spending_limits.for_token("0xtoken")
     assert cap.per_deal == 500
     assert cap.daily is None
@@ -68,7 +68,7 @@ def test_spending_limits_field_may_be_partial(monkeypatch: pytest.MonkeyPatch) -
 def test_spending_limits_rejects_malformed_config(
     monkeypatch: pytest.MonkeyPatch, raw: str
 ) -> None:
-    monkeypatch.setenv("EREBUS_SPENDING_LIMITS", raw)
+    monkeypatch.setenv("STYX_SPENDING_LIMITS", raw)
     with pytest.raises(ConfigError):
         ServerConfig.from_env()
 
@@ -88,7 +88,7 @@ def test_spending_state_path_honors_explicit_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     override = tmp_path / "spend.json"
-    monkeypatch.setenv("EREBUS_SPENDING_STATE_PATH", str(override))
+    monkeypatch.setenv("STYX_SPENDING_STATE_PATH", str(override))
     assert ServerConfig.from_env().spending_state_path == override
 
 
@@ -107,7 +107,7 @@ def test_intent_state_dir_honors_explicit_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     override = tmp_path / "intents"
-    monkeypatch.setenv("EREBUS_INTENT_STATE_DIR", str(override))
+    monkeypatch.setenv("STYX_INTENT_STATE_DIR", str(override))
     assert ServerConfig.from_env().intent_state_dir == override
 
 
@@ -119,7 +119,7 @@ def test_startup_doctor_defaults_on() -> None:
 def test_startup_doctor_skip_accepts_common_truthy_values(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    monkeypatch.setenv("EREBUS_SKIP_STARTUP_DOCTOR", value)
+    monkeypatch.setenv("STYX_SKIP_STARTUP_DOCTOR", value)
     assert ServerConfig.from_env().startup_doctor is False
 
 
@@ -127,23 +127,23 @@ def test_startup_doctor_skip_accepts_common_truthy_values(
 def test_startup_doctor_skip_ignores_other_values(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    monkeypatch.setenv("EREBUS_SKIP_STARTUP_DOCTOR", value)
+    monkeypatch.setenv("STYX_SKIP_STARTUP_DOCTOR", value)
     assert ServerConfig.from_env().startup_doctor is True
 
 
 def _enable_seam(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, network: str
 ) -> None:
-    for name in ("pool.key", "account.key", "erebus-cli"):
+    for name in ("pool.key", "account.key", "styx-cli"):
         (tmp_path / name).write_text("placeholder")
     values = {
-        "EREBUS_BACKEND": "seam",
-        "EREBUS_NETWORK": network,
-        "EREBUS_CLI": str(tmp_path / "erebus-cli"),
+        "STYX_BACKEND": "seam",
+        "STYX_NETWORK": network,
+        "STYX_CLI": str(tmp_path / "styx-cli"),
         "STARKNET_RPC_URL": "http://unused.invalid",
         "POOL_KEY_FILE": str(tmp_path / "pool.key"),
         "ACCOUNT_KEY_FILE": str(tmp_path / "account.key"),
-        "EREBUS_STATE_DIR": str(tmp_path / "state"),
+        "STYX_STATE_DIR": str(tmp_path / "state"),
         "TOKEN_ADDRESS": "0x2",
     }
     for key, value in values.items():
@@ -229,7 +229,7 @@ def test_legacy_canonical_pair_gets_friendly_network_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _enable_seam(monkeypatch, tmp_path, network="sepolia")
-    monkeypatch.delenv("EREBUS_NETWORK")
+    monkeypatch.delenv("STYX_NETWORK")
     monkeypatch.setenv("STARKNET_CHAIN_ID", "0x534e5f5345504f4c4941")
     monkeypatch.setenv(
         "POOL_ADDRESS",

@@ -10,16 +10,16 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from erebus import AccessError
-from erebus_mcp.access import AccessSettings
-from erebus_mcp.config import ConfigError
+from styx import AccessError
+from styx_mcp.access import AccessSettings
+from styx_mcp.config import ConfigError
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = ROOT / "sdk/shielded/target/debug/erebus-access"
+BINARY = ROOT / "sdk/shielded/target/debug/styx-access"
 
 
 def test_access_result_explains_flags_without_promoting_payment(monkeypatch, tmp_path):
-    from erebus_mcp import access
+    from styx_mcp import access
 
     class Seam:
         def __init__(self, **kwargs):
@@ -57,7 +57,7 @@ def test_access_result_explains_flags_without_promoting_payment(monkeypatch, tmp
 
 
 def test_x402_tool_uses_only_the_operator_selected_rail(monkeypatch, tmp_path):
-    from erebus_mcp import access
+    from styx_mcp import access
 
     seen = []
 
@@ -91,7 +91,7 @@ def test_x402_tool_uses_only_the_operator_selected_rail(monkeypatch, tmp_path):
 
 
 def test_metered_profile_registers_only_the_metered_tools(monkeypatch, tmp_path):
-    from erebus_mcp import access
+    from styx_mcp import access
 
     seen = []
 
@@ -132,7 +132,7 @@ def test_metered_profile_registers_only_the_metered_tools(monkeypatch, tmp_path)
 
 
 def test_metered_errors_keep_the_rust_code(monkeypatch, tmp_path):
-    from erebus_mcp import access
+    from styx_mcp import access
 
     class Seam:
         def __init__(self, **kwargs):
@@ -167,25 +167,25 @@ def test_metered_profile_rejects_the_x402_rail(monkeypatch, tmp_path):
     key = tmp_path / "buyer.key"
     key.write_bytes(b"x" * 32)
     key.chmod(0o600)
-    monkeypatch.setenv("EREBUS_ACCESS_EVIDENCE_DIR", str(tmp_path))
-    monkeypatch.setenv("EREBUS_ACCESS_BUYER_KEY_FILE", str(key))
-    monkeypatch.setenv("EREBUS_ACCESS_SERVICE_URL", "https://example.com/v1/metered")
-    monkeypatch.setenv("EREBUS_ACCESS_SERVICE_ID", "ab" * 32)
-    monkeypatch.setenv("EREBUS_ACCESS_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("EREBUS_ACCESS_PROFILE", "metered")
-    monkeypatch.setenv("EREBUS_ACCESS_PAYMENT_RAIL", "x402-exact")
+    monkeypatch.setenv("STYX_ACCESS_EVIDENCE_DIR", str(tmp_path))
+    monkeypatch.setenv("STYX_ACCESS_BUYER_KEY_FILE", str(key))
+    monkeypatch.setenv("STYX_ACCESS_SERVICE_URL", "https://example.com/v1/metered")
+    monkeypatch.setenv("STYX_ACCESS_SERVICE_ID", "ab" * 32)
+    monkeypatch.setenv("STYX_ACCESS_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STYX_ACCESS_PROFILE", "metered")
+    monkeypatch.setenv("STYX_ACCESS_PAYMENT_RAIL", "x402-exact")
     with pytest.raises(ConfigError, match="metered access cannot use the x402-exact rail"):
         AccessSettings.from_env()
-    monkeypatch.setenv("EREBUS_ACCESS_PAYMENT_RAIL", "observe")
+    monkeypatch.setenv("STYX_ACCESS_PAYMENT_RAIL", "observe")
     assert AccessSettings.from_env().profile == "metered"
-    monkeypatch.setenv("EREBUS_ACCESS_PROFILE", "streaming")
+    monkeypatch.setenv("STYX_ACCESS_PROFILE", "streaming")
     with pytest.raises(ConfigError, match="profile"):
         AccessSettings.from_env()
 
 
 @pytest.mark.parametrize("code", [None, "seller_ledger_behind", "private_marker_code"])
 def test_model_visible_failure_redacts_arbitrary_sdk_details(code):
-    from erebus_mcp.access import _access_unavailable
+    from styx_mcp.access import _access_unavailable
 
     reply = _access_unavailable(AccessError("private-provider-marker", code))
     assert "private-provider-marker" not in json.dumps(reply)
@@ -207,28 +207,28 @@ def test_configuration_rejects_insecure_paths(monkeypatch, tmp_path):
     key = tmp_path / "buyer.key"
     key.write_bytes(b"x" * 32)
     key.chmod(0o600)
-    monkeypatch.setenv("EREBUS_ACCESS_EVIDENCE_DIR", str(tmp_path))
-    monkeypatch.setenv("EREBUS_ACCESS_BUYER_KEY_FILE", str(key))
-    monkeypatch.setenv("EREBUS_ACCESS_SERVICE_URL", "https://example.com/v1/access")
-    monkeypatch.setenv("EREBUS_ACCESS_SERVICE_ID", "ab" * 32)
-    monkeypatch.setenv("EREBUS_ACCESS_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STYX_ACCESS_EVIDENCE_DIR", str(tmp_path))
+    monkeypatch.setenv("STYX_ACCESS_BUYER_KEY_FILE", str(key))
+    monkeypatch.setenv("STYX_ACCESS_SERVICE_URL", "https://example.com/v1/access")
+    monkeypatch.setenv("STYX_ACCESS_SERVICE_ID", "ab" * 32)
+    monkeypatch.setenv("STYX_ACCESS_CACHE", str(tmp_path / "cache"))
     tmp_path.chmod(0o755)
     with pytest.raises(ConfigError, match="owner-only"):
         AccessSettings.from_env()
     tmp_path.chmod(0o700)
     assert not AccessSettings.from_env().allow_loopback_http
     assert not AccessSettings.from_env().x402_exact
-    monkeypatch.setenv("EREBUS_ACCESS_PAYMENT_RAIL", "x402-exact")
+    monkeypatch.setenv("STYX_ACCESS_PAYMENT_RAIL", "x402-exact")
     assert AccessSettings.from_env().x402_exact
-    monkeypatch.setenv("EREBUS_ACCESS_PAYMENT_RAIL", "auto")
+    monkeypatch.setenv("STYX_ACCESS_PAYMENT_RAIL", "auto")
     with pytest.raises(ConfigError, match="payment rail"):
         AccessSettings.from_env()
-    monkeypatch.delenv("EREBUS_ACCESS_PAYMENT_RAIL")
+    monkeypatch.delenv("STYX_ACCESS_PAYMENT_RAIL")
     key.chmod(0o644)
     with pytest.raises(ConfigError, match="owner-only"):
         AccessSettings.from_env()
     key.chmod(0o600)
-    monkeypatch.setenv("EREBUS_ALLOW_LOOPBACK_ACCESS_HTTP", "yes")
+    monkeypatch.setenv("STYX_ALLOW_LOOPBACK_ACCESS_HTTP", "yes")
     with pytest.raises(ConfigError, match="0 or 1"):
         AccessSettings.from_env()
 
@@ -239,10 +239,10 @@ def test_stdio_access_has_no_starknet_prover_or_payment_configuration(tmp_path):
     key = tmp_path / "buyer.key"
     key.write_bytes(b"x" * 32)
     key.chmod(0o600)
-    params = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT), env={
-        "EREBUS_BACKEND": "access", "EREBUS_ACCESS_EVIDENCE_DIR": str(tmp_path),
-        "EREBUS_ACCESS_BUYER_KEY_FILE": str(key), "EREBUS_ACCESS_SERVICE_URL": "https://example.com/v1/access",
-        "EREBUS_ACCESS_SERVICE_ID": "ab" * 32, "EREBUS_ACCESS_CACHE": str(tmp_path / "cache"), "EREBUS_ACCESS_CLI": str(BINARY),
+    params = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT), env={
+        "STYX_BACKEND": "access", "STYX_ACCESS_EVIDENCE_DIR": str(tmp_path),
+        "STYX_ACCESS_BUYER_KEY_FILE": str(key), "STYX_ACCESS_SERVICE_URL": "https://example.com/v1/access",
+        "STYX_ACCESS_SERVICE_ID": "ab" * 32, "STYX_ACCESS_CACHE": str(tmp_path / "cache"), "STYX_ACCESS_CLI": str(BINARY),
     })
     async def run():
         async with stdio_client(params) as (read, write):
@@ -259,7 +259,7 @@ def test_stdio_access_has_no_starknet_prover_or_payment_configuration(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.skipif(os.environ.get("EREBUS_M8_TEST_ACCESS_INSTALL") != "1", reason="requires built access binaries, Anvil, and EVM artifacts")
+@pytest.mark.skipif(os.environ.get("STYX_M8_TEST_ACCESS_INSTALL") != "1", reason="requires built access binaries, Anvil, and EVM artifacts")
 def test_installed_wheels_retrieve_funded_access_without_source_imports(tmp_path):
     import shutil
     import subprocess
@@ -271,20 +271,20 @@ def test_installed_wheels_retrieve_funded_access_without_source_imports(tmp_path
         output = subprocess.run(["uv", *args], cwd=ROOT, capture_output=True, text=True, check=False)
         assert output.returncode == 0, output.stderr
     command("export", "--frozen", "--all-packages", "--no-dev", "--no-emit-project", "--no-emit-workspace", "--output-file", str(requirements))
-    for package in ("erebus-sdk", "erebus-mcp-server"):
+    for package in ("styx-sdk", "styx-mcp-server"):
         command("build", "--wheel", "--package", package, "--out-dir", str(wheels))
     environment = tmp_path / "environment"
     command("venv", "--python", sys.executable, str(environment))
     python = environment / "bin/python"
     command("pip", "install", "--python", str(python), "-r", str(requirements))
     command("pip", "install", "--python", str(python), "--no-deps", *(str(path) for path in wheels.glob("*.whl")))
-    installed_binary = environment / "bin/erebus-access"
+    installed_binary = environment / "bin/styx-access"
     shutil.copy2(BINARY, installed_binary)
-    imports = subprocess.run([str(python), "-c", "import erebus, erebus_mcp.access; print(erebus.__file__); print(erebus_mcp.access.__file__)"], cwd=tmp_path, capture_output=True, text=True, check=True)
+    imports = subprocess.run([str(python), "-c", "import styx, styx_mcp.access; print(styx.__file__); print(styx_mcp.access.__file__)"], cwd=tmp_path, capture_output=True, text=True, check=True)
     for path in imports.stdout.splitlines():
         assert Path(path).is_relative_to(environment)
         assert not Path(path).is_relative_to(ROOT)
-    variables = {**os.environ, "EREBUS_TEST_MCP_PYTHON": str(python), "EREBUS_TEST_ACCESS_BIN": str(installed_binary)}
+    variables = {**os.environ, "STYX_TEST_MCP_PYTHON": str(python), "STYX_TEST_ACCESS_BIN": str(installed_binary)}
     output = subprocess.run(["cargo", "test", "--locked", "--test", "access_http", "--", "--include-ignored"], cwd=ROOT / "sdk/shielded", env=variables, capture_output=True, text=True, timeout=180, check=False)
     assert output.returncode == 0, output.stdout + output.stderr
     assert "1 passed" in output.stdout

@@ -383,11 +383,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "erebus-coordinator"
+name = "styx-coordinator"
 version = "0.1.0"
 dependencies = [
- "erebus-core",
- "erebus-journal",
+ "styx-core",
+ "styx-journal",
  "hex",
  "rand",
  "serde",
@@ -398,7 +398,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "erebus-core"
+name = "styx-core"
 version = "0.1.0"
 dependencies = [
  "affinidi-zkp-crypto",
@@ -415,7 +415,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "erebus-journal"
+name = "styx-journal"
 version = "0.1.0"
 dependencies = [
  "fs2",

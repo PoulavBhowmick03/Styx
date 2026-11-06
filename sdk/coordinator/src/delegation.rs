@@ -1,6 +1,6 @@
 //! Buyer-side durable delegation. No transport or delegate signature lives here.
 
-use erebus_core::{suite::keccak256, terms::SettlementMode};
+use styx_core::{suite::keccak256, terms::SettlementMode};
 use serde::{Deserialize, Serialize};
 
 use crate::{record::Accounting, Coordinator, Error};

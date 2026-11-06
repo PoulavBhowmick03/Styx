@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from erebus import MetropolisError, MetropolisSeam
+from styx import MetropolisError, MetropolisSeam
 
 OPERATION = "ab" * 32
 
@@ -70,8 +70,8 @@ def test_settlement_uses_the_fixed_payment_configuration(monkeypatch):
 
 
 def test_version_requires_both_native_protocols(monkeypatch):
-    negotiate = {"status": "ok", "protocol_version": 1, "service": "erebus-negotiate", "settlement_submission": False}
-    payment = {"status": "ok", "protocol_version": 1, "service": "erebus-payment",
+    negotiate = {"status": "ok", "protocol_version": 1, "service": "styx-negotiate", "settlement_submission": False}
+    payment = {"status": "ok", "protocol_version": 1, "service": "styx-payment",
                "modes": ["public-bound", "shielded"], "automatic_rebroadcast": False}
     fake(monkeypatch, negotiate, payment)
     assert seam().version()["mode"] == "shielded"

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = Path(os.environ.get("EREBUS_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/erebus-vault"))
+BINARY = Path(os.environ.get("STYX_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/styx-vault"))
 AVAILABLE = BINARY.exists() and all(shutil.which(tool) for tool in ("anvil", "forge", "cast"))
 
 
@@ -21,7 +21,7 @@ def run(*command, cwd=None):
     return subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
 
 
-@pytest.mark.skipif(not AVAILABLE, reason="build erebus-vault and install Foundry to run this test")
+@pytest.mark.skipif(not AVAILABLE, reason="build styx-vault and install Foundry to run this test")
 def test_scripted_agent_pays_is_refused_then_settles_with_the_owners_signature(tmp_path):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -48,7 +48,7 @@ def test_scripted_agent_pays_is_refused_then_settles_with_the_owners_signature(t
             run("cast", "send", target, signature, *arguments, "--rpc-url", rpc, "--private-key", owner_key)
 
         token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
-        vault = create("src/ErebusPolicyVault.sol:ErebusPolicyVault", address(owner_key), token)
+        vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", address(owner_key), token)
         vendor = "0x00000000000000000000000000000000000000a1"
         send(vault, "configurePolicy(address,uint256,uint256,uint64)", address(agent_key), "1000000", "10000000",
              str(int(time.time()) + 86400))
@@ -61,10 +61,10 @@ def test_scripted_agent_pays_is_refused_then_settles_with_the_owners_signature(t
         key_file.write_text(agent_key)
         key_file.chmod(0o600)
         env = {
-            "PATH": os.environ["PATH"], "EREBUS_VAULT_DIR": str(directory), "EREBUS_VAULT_CLI": str(BINARY),
-            "EREBUS_VAULT_CHAIN_ID": "31337", "EREBUS_VAULT_RPC_URLS": rpc, "EREBUS_VAULT_ADDRESS": vault,
-            "EREBUS_VAULT_TOKEN": token, "EREBUS_VAULT_STATE_ROOT": str(tmp_path / "journal"),
-            "EREBUS_VAULT_AGENT_KEY_FILE": str(key_file),
+            "PATH": os.environ["PATH"], "STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(BINARY),
+            "STYX_VAULT_CHAIN_ID": "31337", "STYX_VAULT_RPC_URLS": rpc, "STYX_VAULT_ADDRESS": vault,
+            "STYX_VAULT_TOKEN": token, "STYX_VAULT_STATE_ROOT": str(tmp_path / "journal"),
+            "STYX_VAULT_AGENT_KEY_FILE": str(key_file),
         }
         agent_process = subprocess.Popen(
             [sys.executable, str(ROOT / "mcp-server/examples/vault_agent.py"), vendor, "--wait-seconds", "60"],
@@ -85,7 +85,7 @@ def test_scripted_agent_pays_is_refused_then_settles_with_the_owners_signature(t
 
         by_name = {event["event"]: event for event in events}
         assert by_name["tools"]["tools"] == sorted([
-            "erebus_propose_payment", "erebus_request_owner_approval", "erebus_submit_payment", "erebus_payment_status",
+            "styx_propose_payment", "styx_request_owner_approval", "styx_submit_payment", "styx_payment_status",
         ])
         assert by_name["refused_without_owner"]["outcome"] == "OWNER_APPROVAL_REQUIRED"
         assert by_name["done"] == {"event": "done", "outcome": "settled", "chain_state": "settled"}

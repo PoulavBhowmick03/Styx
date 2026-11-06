@@ -63,7 +63,7 @@ def chain():
             return json.loads(result)["deployedTo"].lower()
 
         token = deploy("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
-        vault = deploy("src/ErebusPolicyVault.sol:ErebusPolicyVault", owner, token)
+        vault = deploy("src/StyxPolicyVault.sol:StyxPolicyVault", owner, token)
 
         def send(to, signature, *args, agent_call=False):
             result = run(["cast", "send", to, signature, *args, "--async", "--gas-limit", "500000",

@@ -5,7 +5,7 @@ use super::{
     TransactionParams,
 };
 use crate::{deployment::EvmDeployment, error::EvmError};
-use erebus_core::{
+use styx_core::{
     encoding::{Reader, Writer},
     settlement::PreparedSettlement,
 };

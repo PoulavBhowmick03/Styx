@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 /// @notice Test-side canonical encoder for agreement terms.
 /// @dev This exists only so the settlement tests can build scenarios with known keys and the
 ///      deployed contract's address. It is not the trusted side: the decoder is pinned against
-///      the Rust vectors in `ErebusVectors.t.sol`, and this encoder is exercised by the happy
+///      the Rust vectors in `StyxVectors.t.sol`, and this encoder is exercised by the happy
 ///      path, so an encoder bug shows up as a decode revert rather than silently.
 library TermsLib {
     struct Data {

@@ -329,7 +329,7 @@ mod tests {
         let identity = AuthorizationIdentity::from_bytes(&[0x22; 32]).expect("valid key");
         let digest = [0x5a; 32];
         let signature = identity.sign_digest(&digest);
-        let suite = erebus_core::suite::suite(1).expect("suite 1");
+        let suite = styx_core::suite::suite(1).expect("suite 1");
         suite
             .verify_authorization(&identity.address(), &digest, &signature)
             .expect("suite must verify its own signature");

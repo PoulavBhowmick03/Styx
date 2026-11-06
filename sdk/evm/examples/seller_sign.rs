@@ -12,10 +12,10 @@
 
 use std::io::{Read, Write};
 
-use erebus_core::auth::{authorization_digest, Authorization, Role};
-use erebus_core::commitment::{commit_agreement, CommitmentBlinding};
-use erebus_core::ids::SignatureBytes;
-use erebus_core::terms::AgreementTerms;
+use styx_core::auth::{authorization_digest, Authorization, Role};
+use styx_core::commitment::{commit_agreement, CommitmentBlinding};
+use styx_core::ids::SignatureBytes;
+use styx_core::terms::AgreementTerms;
 use k256::ecdsa::SigningKey;
 use serde::Deserialize;
 use serde_json::json;

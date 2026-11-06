@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from erebus_mcp.intent import IntentConflict, IntentStore, new_operation_id
+from styx_mcp.intent import IntentConflict, IntentStore, new_operation_id
 
 _ID_PATTERN = re.compile(r"^op_[0-9a-f]{64}$")
 

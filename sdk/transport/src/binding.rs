@@ -10,7 +10,7 @@ use crate::{
     identity::AuthorizationIdentity,
 };
 use core::fmt;
-use erebus_core::{
+use styx_core::{
     domain::DeploymentDomain,
     encoding::{Reader, Writer},
     ids::KeyBytes,
@@ -18,7 +18,7 @@ use erebus_core::{
     suite,
 };
 
-const DOMAIN: &[u8] = b"EREBUS_AGREEMENT_KEY_BINDING_V1";
+const DOMAIN: &[u8] = b"STYX_AGREEMENT_KEY_BINDING_V1";
 /// Maximum encoded key binding, including its descriptor signature.
 pub const MAX_BINDING_BYTES: usize = 512;
 
@@ -187,8 +187,8 @@ impl AgreementKeyBinding {
     }
 }
 
-impl From<erebus_core::encoding::EncodingError> for BindingError {
-    fn from(_: erebus_core::encoding::EncodingError) -> Self {
+impl From<styx_core::encoding::EncodingError> for BindingError {
+    fn from(_: styx_core::encoding::EncodingError) -> Self {
         Self
     }
 }

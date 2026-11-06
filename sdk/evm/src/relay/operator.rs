@@ -8,8 +8,8 @@ use crate::{
     },
     evidence::SettlementEvidence,
 };
-use erebus_coordinator::{Coordinator, Stage};
-use erebus_core::{
+use styx_coordinator::{Coordinator, Stage};
+use styx_core::{
     auth::{Authorization, Role},
     commitment::CommitmentBlinding,
     deal_state::DealEvidence,
@@ -253,7 +253,7 @@ impl DurableRelayer {
         let (coordinator, journal) = self.open(service, &prepared, true)?;
         match coordinator.prepared_settlement(prepared.operation_ref) {
             Ok(stored) if stored.backend_evidence == bytes => {}
-            Err(erebus_coordinator::Error::Stage) => {}
+            Err(styx_coordinator::Error::Stage) => {}
             _ => return Err(RelayOperationError::Storage),
         }
         self.observe(service, &coordinator, &journal, &prepared, now)

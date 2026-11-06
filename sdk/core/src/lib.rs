@@ -1,4 +1,4 @@
-//! Canonical agreement and shared protocol types for Erebus.
+//! Canonical agreement and shared protocol types for Styx.
 //!
 //! This crate owns the chain-neutral half of the Metropolis protocol: agreement identifiers,
 //! canonical byte encoding, the blinded deal commitment, role-specific authorizations, the

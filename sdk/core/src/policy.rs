@@ -450,12 +450,12 @@ impl ReservationLedger {
     ///
     /// There is no proof-free live release method:
     /// ```compile_fail
-    /// use erebus_core::policy::{ReservationId, ReservationLedger};
+    /// use styx_core::policy::{ReservationId, ReservationLedger};
     /// ReservationLedger::new().release(ReservationId::from_bytes([1; 32]));
     /// ```
     /// Nor a proof-free live commit method:
     /// ```compile_fail
-    /// use erebus_core::policy::{ReservationId, ReservationLedger};
+    /// use styx_core::policy::{ReservationId, ReservationLedger};
     /// ReservationLedger::new().commit(ReservationId::from_bytes([1; 32]), 10);
     /// ```
     pub fn reconcile_deal(

@@ -10,11 +10,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REVIEWER_RPC_URL="${REVIEWER_RPC_URL:-https://rpc.testnet.arc.io}"
 VAULT="${VAULT:-0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1}"
-DISCLOSURE="$ROOT/sdk/evm/target/debug/erebus-disclosure"
+DISCLOSURE="$ROOT/sdk/evm/target/debug/styx-disclosure"
 RUN="$OUT/run-$(date +%s)"
 mkdir -p "$RUN"; chmod 700 "$RUN"
 
-project_processes() { pgrep -fl 'watcher/watcher\.py|relay/src/main\.ts|tsx src/main\.ts|erebus_mcp|vite|anvil' | grep -v "$$" || true; }
+project_processes() { pgrep -fl 'watcher/watcher\.py|relay/src/main\.ts|tsx src/main\.ts|styx_mcp|vite|anvil' | grep -v "$$" || true; }
 
 running="$(project_processes)"
 if [ -n "$running" ]; then

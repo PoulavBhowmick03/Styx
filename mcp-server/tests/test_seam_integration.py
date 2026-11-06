@@ -1,4 +1,4 @@
-"""MCP tool call through the Python seam into the real ``erebus-cli``.
+"""MCP tool call through the Python seam into the real ``styx-cli``.
 
 Every other test in this repository stops short of this. ``test_tools.py`` drives the mock
 backend, ``test_seam_client.py`` drives a stub holding payloads captured from a live run on
@@ -31,11 +31,11 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVER_PATH = REPO_ROOT / "mcp-server" / "src" / "server.py"
-CLI = REPO_ROOT / "sdk" / "rs" / "target" / "debug" / "erebus-cli"
+CLI = REPO_ROOT / "sdk" / "rs" / "target" / "debug" / "styx-cli"
 
 pytestmark = pytest.mark.skipif(
     not CLI.exists(),
-    reason="erebus-cli not built; run `cargo build --bin erebus-cli` in sdk/rs",
+    reason="styx-cli not built; run `cargo build --bin styx-cli` in sdk/rs",
 )
 
 #: Reserved as "no listener" by RFC 6335, so the RPC and prover legs fail immediately
@@ -60,17 +60,17 @@ def _seam_params(tmp_path: Path, role: str = "payer") -> StdioServerParameters:
         cwd=str(REPO_ROOT),
         env={
             **os.environ,
-            "EREBUS_BACKEND": "seam",
-            "EREBUS_NETWORK": "sepolia",
-            "EREBUS_CLI": str(CLI),
+            "STYX_BACKEND": "seam",
+            "STYX_NETWORK": "sepolia",
+            "STYX_CLI": str(CLI),
             "AGENT_ADDRESS": "0xa11ce",
             "PROVING_SERVICE_URL": UNREACHABLE,
             "STARKNET_RPC_URL": UNREACHABLE,
             "TOKEN_ADDRESS": "0x7042",
             "POOL_KEY_FILE": str(pool_key),
             "ACCOUNT_KEY_FILE": str(account_key),
-            "EREBUS_STATE_DIR": str(state),
-            "EREBUS_SETTLEMENT_ROLE": role,
+            "STYX_STATE_DIR": str(state),
+            "STYX_SETTLEMENT_ROLE": role,
         },
     )
 

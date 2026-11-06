@@ -5,8 +5,8 @@ use std::sync::{
     Arc, Barrier,
 };
 
-use erebus_coordinator::{BroadcastOutcome, Coordinator, Error, Stage};
-use erebus_core::{
+use styx_coordinator::{BroadcastOutcome, Coordinator, Error, Stage};
+use styx_core::{
     auth::{Authorization, Role},
     commitment::{commit_agreement, deal_nullifier, CommitmentBlinding},
     deal_state::{DealEvidence, DealReads, DealState, WinningSettlement},
@@ -15,7 +15,7 @@ use erebus_core::{
     settlement::{BackendCapabilities, PreparedSettlement, SettlementContext},
     terms::AgreementTerms,
 };
-use erebus_journal::{Boundary, FaultHook};
+use styx_journal::{Boundary, FaultHook};
 
 fn fixture(
     index: usize,
@@ -86,7 +86,7 @@ fn shielded_fixture() -> (
     Authorization,
     Authorization,
 ) {
-    use erebus_core::{
+    use styx_core::{
         ids::{AddressBytes, AssetId, KeyBytes},
         terms::{GuaranteeSet, SettlementMode},
     };
@@ -131,7 +131,7 @@ fn shielded_fixture() -> (
 
 #[test]
 fn shielded_agreements_use_the_same_durable_authorization_boundary_without_downgrade() {
-    use erebus_core::terms::SettlementMode;
+    use styx_core::terms::SettlementMode;
     let dir = tempfile::tempdir().unwrap();
     let (terms, blinding, buyer, seller) = shielded_fixture();
     let commitment = commit_agreement(&terms, &blinding).unwrap();
@@ -625,7 +625,7 @@ fn delegated_submission_survives_restart_and_never_runs_a_direct_signer() {
         .unwrap();
     assert_eq!(
         delegation.calldata_keccak256,
-        erebus_core::suite::keccak256(&[&[1, 2, 3]])
+        styx_core::suite::keccak256(&[&[1, 2, 3]])
     );
     let restarted = open(dir.path(), &terms, 100);
     assert_eq!(
@@ -1809,15 +1809,15 @@ fn disclosure_opening_is_readable_from_durable_state_without_a_session() {
     assert_eq!(terms, expected_terms);
 
     let (terms, blinding, buyer, seller) =
-        erebus_coordinator::read_disclosure_opening(dir.path(), [1; 32]).unwrap();
+        styx_coordinator::read_disclosure_opening(dir.path(), [1; 32]).unwrap();
     assert_eq!(terms, expected_terms);
     assert_eq!(blinding, expected_blinding);
     assert_eq!(buyer, expected_buyer);
     assert_eq!(seller, expected_seller);
     let commitment = commit_agreement(&terms, &blinding).unwrap();
-    erebus_core::auth::verify_authorization_signature(&terms, &commitment, &blinding, &buyer)
+    styx_core::auth::verify_authorization_signature(&terms, &commitment, &blinding, &buyer)
         .unwrap();
-    erebus_core::auth::verify_authorization_signature(&terms, &commitment, &blinding, &seller)
+    styx_core::auth::verify_authorization_signature(&terms, &commitment, &blinding, &seller)
         .unwrap();
 }
 
@@ -1826,7 +1826,7 @@ fn disclosure_opening_fails_closed_without_initialized_state() {
     let dir = tempfile::tempdir().unwrap();
     let absent = dir.path().join("absent");
     assert!(matches!(
-        erebus_coordinator::read_disclosure_opening(&absent, [1; 32]),
+        styx_coordinator::read_disclosure_opening(&absent, [1; 32]),
         Err(Error::Storage)
     ));
     assert!(
@@ -1834,13 +1834,13 @@ fn disclosure_opening_fails_closed_without_initialized_state() {
         "recovery must not create a missing state root"
     );
     assert!(matches!(
-        erebus_coordinator::read_disclosure_opening(dir.path(), [1; 32]),
+        styx_coordinator::read_disclosure_opening(dir.path(), [1; 32]),
         Err(Error::Storage)
     ));
     let (coordinator, _) = signed_coordinator(dir.path());
     drop(coordinator);
     assert!(matches!(
-        erebus_coordinator::read_disclosure_opening(dir.path(), [9; 32]),
+        styx_coordinator::read_disclosure_opening(dir.path(), [9; 32]),
         Err(Error::Conflict)
     ));
 }
@@ -1868,7 +1868,7 @@ fn disclosure_opening_rejects_changed_or_oversized_markers() {
             std::fs::write(&path, marker).unwrap();
         }
         assert!(
-            erebus_coordinator::read_disclosure_opening(dir.path(), [1; 32]).is_err(),
+            styx_coordinator::read_disclosure_opening(dir.path(), [1; 32]).is_err(),
             "accepted invalid {case} marker"
         );
     }
@@ -1885,7 +1885,7 @@ fn disclosure_opening_rejects_a_symlink_marker() {
     std::fs::rename(&path, &target).unwrap();
     std::os::unix::fs::symlink(&target, &path).unwrap();
     assert!(matches!(
-        erebus_coordinator::read_disclosure_opening(dir.path(), [1; 32]),
+        styx_coordinator::read_disclosure_opening(dir.path(), [1; 32]),
         Err(Error::Storage)
     ));
 }
@@ -1905,7 +1905,7 @@ fn disclosure_opening_rejects_corrupted_stored_authorizations() {
         let corrupt = serde_json::to_vec(&state).unwrap();
         std::fs::write(&path, &corrupt).unwrap();
         assert!(matches!(
-            erebus_coordinator::read_disclosure_opening(dir.path(), [1; 32]),
+            styx_coordinator::read_disclosure_opening(dir.path(), [1; 32]),
             Err(Error::Storage)
         ));
         assert_eq!(std::fs::read(&path).unwrap(), corrupt);

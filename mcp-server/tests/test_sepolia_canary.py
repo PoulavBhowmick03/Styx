@@ -3,7 +3,7 @@ and leaves open ("Those need a funded identity and a proving service, so they st
 runbook as a manual pass").
 
 Every other test in this repository either drives the mock backend or points the real
-`erebus-cli` at a dead RPC endpoint (`UNREACHABLE = "http://127.0.0.1:1"` in
+`styx-cli` at a dead RPC endpoint (`UNREACHABLE = "http://127.0.0.1:1"` in
 `test_seam_integration.py`). Both are correct for what they check, but neither can catch a
 regression that only shows up against a live chain: a real RPC dropping `proof_facts`,
 a pool ABI drifting out from under a pinned prover tag (roadmap Q4),
@@ -34,7 +34,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVER_PATH = REPO_ROOT / "mcp-server" / "src" / "server.py"
-CLI = REPO_ROOT / "sdk" / "rs" / "target" / "debug" / "erebus-cli"
+CLI = REPO_ROOT / "sdk" / "rs" / "target" / "debug" / "styx-cli"
 
 _REQUIRED_ENV = (
     "STARKNET_RPC_URL",
@@ -44,7 +44,7 @@ _REQUIRED_ENV = (
     "AGENT_ADDRESS",
     "POOL_KEY_FILE",
     "ACCOUNT_KEY_FILE",
-    "EREBUS_STATE_DIR",
+    "STYX_STATE_DIR",
     "TOKEN_ADDRESS",
 )
 
@@ -53,7 +53,7 @@ _reasons = []
 if _missing:
     _reasons.append(f"missing {', '.join(_missing)}")
 if not CLI.exists():
-    _reasons.append("erebus-cli not built (cargo build --bin erebus-cli in sdk/rs)")
+    _reasons.append("styx-cli not built (cargo build --bin styx-cli in sdk/rs)")
 
 pytestmark = pytest.mark.skipif(
     bool(_reasons),
@@ -64,10 +64,10 @@ pytestmark = pytest.mark.skipif(
 def _params() -> StdioServerParameters:
     env = {
         **os.environ,
-        "EREBUS_BACKEND": "seam",
-        "EREBUS_SETTLEMENT_ROLE": os.environ.get("EREBUS_SETTLEMENT_ROLE", "payer"),
+        "STYX_BACKEND": "seam",
+        "STYX_SETTLEMENT_ROLE": os.environ.get("STYX_SETTLEMENT_ROLE", "payer"),
     }
-    env.setdefault("EREBUS_CLI", str(CLI))
+    env.setdefault("STYX_CLI", str(CLI))
     return StdioServerParameters(command="uv", args=["run", "python", str(SERVER_PATH)], cwd=str(REPO_ROOT), env=env)
 
 

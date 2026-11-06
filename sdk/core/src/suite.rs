@@ -7,8 +7,8 @@
 //!
 //! Suite 1 is keccak256 commitments with secp256k1 ECDSA authorizations:
 //!
-//! - Commitment hash: `keccak256("EREBUS_DEAL_COMMITMENT_V1" || terms || blinding)`.
-//! - Authorization digest: `keccak256("EREBUS_DEAL_AUTHORIZATION_V1" || domain || role || Cdeal)`.
+//! - Commitment hash: `keccak256("STYX_DEAL_COMMITMENT_V1" || terms || blinding)`.
+//! - Authorization digest: `keccak256("STYX_DEAL_AUTHORIZATION_V1" || domain || role || Cdeal)`.
 //! - Authorization key: 20-byte Ethereum-style address.
 //! - Signature: 65 bytes `r || s || v` with `v` in `{0, 1}` and low-`s` enforced.
 //!

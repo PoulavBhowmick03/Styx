@@ -4,7 +4,7 @@ use crate::{
     negotiation::{peer::tests::connections, tests::proposal, tests::signed},
     store::TranscriptStore,
 };
-use erebus_core::{commitment::CommitmentBlinding, ids::BaseUnits};
+use styx_core::{commitment::CommitmentBlinding, ids::BaseUnits};
 use std::thread;
 
 const NOW: u64 = 1_700_000_000;
@@ -365,7 +365,7 @@ fn wrong_role_or_substituted_deployment_key_or_recipient_cannot_send_an_offer() 
                 }
                 2 => terms.seller_authorization_key = terms.buyer_authorization_key.clone(),
                 3 => {
-                    terms.asset = erebus_core::ids::AssetId::parse(
+                    terms.asset = styx_core::ids::AssetId::parse(
                         "eip155:10143/erc20:0x4444444444444444444444444444444444444444",
                     )
                     .unwrap()

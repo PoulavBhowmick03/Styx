@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from erebus_mcp.config import SpendingLimits, TokenSpendingLimit
-from erebus_mcp.spending import SpendGuard
+from styx_mcp.config import SpendingLimits, TokenSpendingLimit
+from styx_mcp.spending import SpendGuard
 
 DAY_ONE = 1_700_000_000
 DAY_TWO = DAY_ONE + 86_400

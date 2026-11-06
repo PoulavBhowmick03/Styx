@@ -24,7 +24,7 @@ use fs2::FileExt;
 
 use crate::message::{Message, MessageError};
 use crate::transcript::{Transcript, TranscriptError};
-use erebus_core::encoding::{Reader, Writer};
+use styx_core::encoding::{Reader, Writer};
 
 const RECORD_CHECKSUM_BYTES: usize = 32;
 const FREEZE_BYTES: usize = 116;
@@ -101,7 +101,7 @@ impl FrozenTranscript {
         let mut reader = Reader::new(&bytes[..FREEZE_BYTES - 32]);
         let decoded = (|| {
             if reader.u16("freeze_version")? != 1 {
-                return Err(erebus_core::encoding::EncodingError::UnknownTag(
+                return Err(styx_core::encoding::EncodingError::UnknownTag(
                     "freeze_version",
                     0,
                 ));
@@ -539,7 +539,7 @@ fn io_error(error: std::io::Error) -> StoreError {
 mod tests {
     use super::*;
     use crate::message::MessageType;
-    use erebus_core::auth::Role;
+    use styx_core::auth::Role;
 
     const DEAL: [u8; 16] = [0x77; 16];
 

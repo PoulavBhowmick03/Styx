@@ -1,7 +1,7 @@
 # MCP server
 
-Metropolis development: `EREBUS_BACKEND=disclosure` starts the branch's separate
-disclosure-only surface over `erebus-disclosure`. It needs no Starknet wallet or prover URL.
+Metropolis development: `STYX_BACKEND=disclosure` starts the branch's separate
+disclosure-only surface over `styx-disclosure`. It needs no Starknet wallet or prover URL.
 See the [disclosure section](../docs/metropolis-operations.md#6-disclosure-and-auditor-operations) for configuration,
 backup rules, and the current public-bound limitation. This is not part of the published release.
 
@@ -42,30 +42,30 @@ absent rather than falling back to a shared endpoint.
 
 ## Running against the real Rust client
 
-`EREBUS_BACKEND` selects the client. It defaults to `mock`, so the agent track stays
+`STYX_BACKEND` selects the client. It defaults to `mock`, so the agent track stays
 runnable with no chain, no keys and no gas. Set it to `seam` to drive the real Rust client
 through `sdk/py`'s subprocess binding.
 
 ```shell
-export EREBUS_BACKEND=seam
-export EREBUS_SETTLEMENT_ROLE=both       # use payer/payee for autonomous agents
-export EREBUS_CLI=~/Developer/erebus/sdk/rs/target/debug/erebus-cli
-set -a; . ~/.erebus-b/env; set +a          # the identity's own env, see docs/runbook.md
+export STYX_BACKEND=seam
+export STYX_SETTLEMENT_ROLE=both       # use payer/payee for autonomous agents
+export STYX_CLI=~/Developer/styx/sdk/rs/target/debug/styx-cli
+set -a; . ~/.styx-b/env; set +a          # the identity's own env, see docs/runbook.md
 uv run mcp dev mcp-server/src/server.py
 ```
 
 The env file supplies `AGENT_ADDRESS`, `PROVING_SERVICE_URL`, `STARKNET_RPC_URL`,
 `POOL_ADDRESS`, `STARKNET_CHAIN_ID`, `TOKEN_ADDRESS`, `POOL_KEY_FILE`, `ACCOUNT_KEY_FILE`
-and `EREBUS_STATE_DIR`. `EREBUS_WIRE_VERSION` selects `v2` or `v3` for newly opened channels
+and `STYX_STATE_DIR`. `STYX_WIRE_VERSION` selects `v2` or `v3` for newly opened channels
 and defaults to `v3`; existing channel records keep their persisted version. Every required
 setting is checked at startup, and the two key files are checked
 for existence, because discovering a missing key twenty seconds into a proof has already
 cost an agent a turn and some gas.
 
-`EREBUS_SPENDING_LIMITS` configures per-token, per-deal, and daily caps.
-`EREBUS_SPENDING_STATE_PATH` overrides the derived cap-ledger path.
-`EREBUS_INTENT_STATE_DIR` overrides the MCP intent-record directory. Reference agents use
-`EREBUS_CALLER_INTENT_PATH` or `EREBUS_STATE_DIR` for their own durable caller records.
+`STYX_SPENDING_LIMITS` configures per-token, per-deal, and daily caps.
+`STYX_SPENDING_STATE_PATH` overrides the derived cap-ledger path.
+`STYX_INTENT_STATE_DIR` overrides the MCP intent-record directory. Reference agents use
+`STYX_CALLER_INTENT_PATH` or `STYX_STATE_DIR` for their own durable caller records.
 
 **One server per identity.** Two identities in one process would put both pool keys in the
 same heap, which is the arrangement `docs/ishita.md` rejected when it chose two servers over
@@ -84,17 +84,17 @@ could not be parsed until the first settled.
 
 ## Registering with an MCP client
 
-`scripts/erebus-mcp.sh <env-file> <payer|payee|both>` launches one server for one identity
+`scripts/styx-mcp.sh <env-file> <payer|payee|both>` launches one server for one identity
 over stdio. The role is required: `accept_and_settle` spends the caller's private notes, so
 a payee server refuses that call rather than trusting a prompt to remember payment direction.
-It sources the identity's env, defaults `EREBUS_BACKEND` to `seam`, and refuses to start if
-`erebus-cli` is not built.
+It sources the identity's env, defaults `STYX_BACKEND` to `seam`, and refuses to start if
+`styx-cli` is not built.
 
 For Claude Code:
 
 ```shell
-claude mcp add erebus-seller -- ~/Developer/erebus/scripts/erebus-mcp.sh ~/.erebus-b/env payee
-claude mcp add erebus-buyer  -- ~/Developer/erebus/scripts/erebus-mcp.sh ~/.erebus-c/env payer
+claude mcp add styx-seller -- ~/Developer/styx/scripts/styx-mcp.sh ~/.styx-b/env payee
+claude mcp add styx-buyer  -- ~/Developer/styx/scripts/styx-mcp.sh ~/.styx-c/env payer
 ```
 
 For a client that reads a JSON config (Claude Desktop and most others):
@@ -102,9 +102,9 @@ For a client that reads a JSON config (Claude Desktop and most others):
 ```json
 {
   "mcpServers": {
-    "erebus": {
-      "command": "/Users/odinson/Developer/erebus/scripts/erebus-mcp.sh",
-      "args": ["/Users/odinson/.erebus-b/env", "payee"]
+    "styx": {
+      "command": "/Users/odinson/Developer/styx/scripts/styx-mcp.sh",
+      "args": ["/Users/odinson/.styx-b/env", "payee"]
     }
   }
 }
@@ -157,10 +157,10 @@ this legacy amount.
 
 Three things have to reach the target machine, and only one of them is a packaging problem.
 
-**The Python package.** `v0.1.0` publishes `erebus-mcp-server` and `erebus-sdk` through the
+**The Python package.** `v0.1.0` publishes `styx-mcp-server` and `styx-sdk` through the
 GitHub Pages package index. Those artifacts predate Protocol 4.
 
-**The `erebus-cli` binary.** The `erebus-cli` platform wheel carries the Rust binary for
+**The `styx-cli` binary.** The `styx-cli` platform wheel carries the Rust binary for
 Linux x86-64 and macOS arm64. Intel macOS is unsupported. The Python packages resolve this
 wheel through the same package index.
 
@@ -182,12 +182,12 @@ import, so the identity is bound before the first tool call and a newly created 
 not be used by that process. Provisioning therefore happens in the launcher.
 
 ```shell
-claude mcp add erebus --env EREBUS_PROVISION_FROM=erebus-agent \
-  -- ~/Developer/erebus/scripts/erebus-mcp.sh ~/.erebus-mine/env payer
+claude mcp add styx --env STYX_PROVISION_FROM=styx-agent \
+  -- ~/Developer/styx/scripts/styx-mcp.sh ~/.styx-mine/env payer
 ```
 
-When the env file is absent and `EREBUS_PROVISION_FROM` names a funded sncast account, the
-launcher creates the account, seeds it with STRK (`EREBUS_PROVISION_STRK`, default 15),
+When the env file is absent and `STYX_PROVISION_FROM` names a funded sncast account, the
+launcher creates the account, seeds it with STRK (`STYX_PROVISION_STRK`, default 15),
 deploys it, generates a pool key, writes the env, approves the pool and shields once, which
 also registers the identity. It takes a few minutes, mostly waiting ten blocks for the
 approve to mature. Later starts find the env and skip all of it.

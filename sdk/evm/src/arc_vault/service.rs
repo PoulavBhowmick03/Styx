@@ -1,4 +1,4 @@
-//! The operations behind the `erebus-vault` CLI. Each holds the journal lock for its whole run.
+//! The operations behind the `styx-vault` CLI. Each holds the journal lock for its whole run.
 
 use std::fs::OpenOptions;
 use std::io::{Read, Write};

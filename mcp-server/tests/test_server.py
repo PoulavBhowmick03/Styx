@@ -1,5 +1,5 @@
 """Tests for build_server()'s seam-backend startup checks: the version handshake and the
-optional doctor pre-flight. No real erebus-cli involved — Seam itself is replaced."""
+optional doctor pre-flight. No real styx-cli involved — Seam itself is replaced."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from erebus import PROTOCOL
+from styx import PROTOCOL
 
-from erebus_mcp.config import ConfigError
+from styx_mcp.config import ConfigError
 
-import erebus_mcp.server as server_module
+import styx_mcp.server as server_module
 
 
 def _install_fake_seam(monkeypatch: pytest.MonkeyPatch, *, protocol: int, ready: bool = True) -> dict:
@@ -30,7 +30,7 @@ def _install_fake_seam(monkeypatch: pytest.MonkeyPatch, *, protocol: int, ready:
             self.doctor_called = True
             return {"ready": ready, "checks": [], "repairs": []}
 
-    monkeypatch.setattr("erebus.Seam", _FakeSeam)
+    monkeypatch.setattr("styx.Seam", _FakeSeam)
     return holder
 
 
@@ -38,21 +38,21 @@ def _install_fake_seam(monkeypatch: pytest.MonkeyPatch, *, protocol: int, ready:
 def seam_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pool_key = tmp_path / "pool.key"
     account_key = tmp_path / "account.key"
-    cli = tmp_path / "erebus-cli"
+    cli = tmp_path / "styx-cli"
     for f in (pool_key, account_key, cli):
         f.write_text("placeholder")
 
     env = {
         "AGENT_ADDRESS": "0xbuyer",
         "PROVING_SERVICE_URL": "http://unused.invalid",
-        "EREBUS_SETTLEMENT_ROLE": "both",
-        "EREBUS_BACKEND": "seam",
-        "EREBUS_NETWORK": "sepolia",
-        "EREBUS_CLI": str(cli),
+        "STYX_SETTLEMENT_ROLE": "both",
+        "STYX_BACKEND": "seam",
+        "STYX_NETWORK": "sepolia",
+        "STYX_CLI": str(cli),
         "POOL_KEY_FILE": str(pool_key),
         "ACCOUNT_KEY_FILE": str(account_key),
         "STARKNET_RPC_URL": "http://unused.invalid",
-        "EREBUS_STATE_DIR": str(tmp_path / "state"),
+        "STYX_STATE_DIR": str(tmp_path / "state"),
         "TOKEN_ADDRESS": "0x2",
     }
     for key, value in env.items():
@@ -81,7 +81,7 @@ def test_protocol_mismatch_is_a_clear_config_error(seam_env: None, monkeypatch: 
 def test_skip_startup_doctor_env_var_prevents_the_call(
     seam_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("EREBUS_SKIP_STARTUP_DOCTOR", "1")
+    monkeypatch.setenv("STYX_SKIP_STARTUP_DOCTOR", "1")
     holder = _install_fake_seam(monkeypatch, protocol=PROTOCOL)
 
     server_module.build_server()
@@ -105,8 +105,8 @@ def test_main_loads_a_protected_config_before_building_server(
     config.write_text(
         "AGENT_ADDRESS=0xconfigured\n"
         "PROVING_SERVICE_URL=http://unused.invalid\n"
-        "EREBUS_SETTLEMENT_ROLE=both\n"
-        "EREBUS_BACKEND=mock\n"
+        "STYX_SETTLEMENT_ROLE=both\n"
+        "STYX_BACKEND=mock\n"
     )
     config.chmod(0o600)
     ran = {"value": False}
@@ -119,8 +119,8 @@ def test_main_loads_a_protected_config_before_building_server(
     for name in (
         "AGENT_ADDRESS",
         "PROVING_SERVICE_URL",
-        "EREBUS_SETTLEMENT_ROLE",
-        "EREBUS_BACKEND",
+        "STYX_SETTLEMENT_ROLE",
+        "STYX_BACKEND",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -136,8 +136,8 @@ def test_noninteractive_unconfigured_start_explains_marketplace_setup(
     for name in (
         "AGENT_ADDRESS",
         "PROVING_SERVICE_URL",
-        "EREBUS_SETTLEMENT_ROLE",
-        "EREBUS_CONFIG_FILE",
+        "STYX_SETTLEMENT_ROLE",
+        "STYX_CONFIG_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(server_module, "resolve_config_path", lambda _: None)
@@ -151,7 +151,7 @@ def test_noninteractive_unconfigured_start_explains_marketplace_setup(
 
 def test_explicit_config_selects_its_wallet_over_inherited_environment(monkeypatch, tmp_path):
     config = tmp_path / "chosen.env"
-    config.write_text("AGENT_ADDRESS=0xchosen\nEREBUS_NETWORK=sepolia\n")
+    config.write_text("AGENT_ADDRESS=0xchosen\nSTYX_NETWORK=sepolia\n")
     config.chmod(0o600)
     monkeypatch.setenv("AGENT_ADDRESS", "0xother")
     monkeypatch.setenv("STARKNET_CHAIN_ID", "0x534e5f4d41494e")
@@ -171,8 +171,8 @@ def test_terminal_unconfigured_start_triggers_first_run_setup(
     for name in (
         "AGENT_ADDRESS",
         "PROVING_SERVICE_URL",
-        "EREBUS_SETTLEMENT_ROLE",
-        "EREBUS_CONFIG_FILE",
+        "STYX_SETTLEMENT_ROLE",
+        "STYX_CONFIG_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(server_module, "resolve_config_path", lambda _: None)

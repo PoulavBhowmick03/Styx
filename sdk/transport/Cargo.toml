@@ -1,14 +1,14 @@
 [package]
-name = "erebus-transport"
+name = "styx-transport"
 version = "0.1.0"
 edition = "2021"
-description = "Offchain Eleusis transport for Erebus: Noise sessions, authenticated transcripts, and a ciphertext relay"
+description = "Offchain Eleusis transport for Styx: Noise sessions, authenticated transcripts, and a ciphertext relay"
 license = "Apache-2.0"
 
 [dependencies]
 # Canonical encoding and agreement types. Transport hashes retain their own version,
 # independent of the agreement suite selected for settlement.
-erebus-core = { path = "../core" }
+styx-core = { path = "../core" }
 # Noise XX (X25519 / ChaCha20-Poly1305 / BLAKE2s). A maintained implementation of a documented
 # handshake, chosen over hand-rolling X25519 + HKDF + AEAD. Decision DM2-1.
 snow = "0.9"
@@ -36,8 +36,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time",
 tempfile = "3"
 
 [[bin]]
-name = "erebus-relay"
-path = "src/bin/erebus_relay.rs"
+name = "styx-relay"
+path = "src/bin/styx_relay.rs"
 
 [lints.rust]
 missing_docs = "warn"

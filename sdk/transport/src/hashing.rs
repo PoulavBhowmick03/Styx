@@ -21,5 +21,5 @@ pub fn check_version(version: u16) -> Result<(), HashVersionError> {
 
 /// Hashes canonical, domain-separated transport bytes under version 1.
 pub(crate) fn hash(parts: &[&[u8]]) -> [u8; 32] {
-    erebus_core::suite::keccak256(parts)
+    styx_core::suite::keccak256(parts)
 }

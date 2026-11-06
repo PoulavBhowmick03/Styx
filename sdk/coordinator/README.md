@@ -33,7 +33,7 @@ plus a sufficient fee bump against the previous signed transaction.
 The initial plan and all signed bytes remain immutable. A failed signer requires
 a retry with the same replacement plan. The limit is 16 replacements per operation.
 The public-bound EVM integration first reserves a nonce through
-`erebus_evm::chain::SignerJournal`, then stores the returned signing plan here.
+`styx_evm::chain::SignerJournal`, then stores the returned signing plan here.
 That journal permits one unresolved operation per chain and gas-paying signer.
 `EvmChain::reserve_nonce` checks chain identity and account nonce observations first.
 `SignerJournal::release` requires a verified finalized consumed nonce. Supported operator

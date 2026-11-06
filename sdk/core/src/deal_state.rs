@@ -304,10 +304,10 @@ pub fn revision_recovery_action(state: RevisionState) -> RevisionAction {
 /// Callers can inspect classifier-issued evidence through its public accessors:
 ///
 /// ```
-/// use erebus_core::commitment::DealCommitment;
-/// use erebus_core::deal_state::FinalPayment;
-/// use erebus_core::ids::BaseUnits;
-/// use erebus_core::policy::ReservationId;
+/// use styx_core::commitment::DealCommitment;
+/// use styx_core::deal_state::FinalPayment;
+/// use styx_core::ids::BaseUnits;
+/// use styx_core::policy::ReservationId;
 /// fn inspect(payment: &FinalPayment) -> (DealCommitment, BaseUnits, ReservationId) {
 ///     (payment.commitment(), payment.total(), payment.reservation_id())
 /// }
@@ -317,9 +317,9 @@ pub fn revision_recovery_action(state: RevisionState) -> RevisionAction {
 /// fails because the fields are private:
 ///
 /// ```compile_fail
-/// use erebus_core::commitment::DealCommitment;
-/// use erebus_core::deal_state::FinalPayment;
-/// use erebus_core::ids::BaseUnits;
+/// use styx_core::commitment::DealCommitment;
+/// use styx_core::deal_state::FinalPayment;
+/// use styx_core::ids::BaseUnits;
 /// let _forged = FinalPayment {
 ///     commitment: DealCommitment::from_bytes([0; 32]),
 ///     total: BaseUnits::new(1),
@@ -368,8 +368,8 @@ pub enum NoEffectReason {
 /// cannot produce one, because it has no public constructor. The accessors below compile:
 ///
 /// ```
-/// use erebus_core::commitment::DealCommitment;
-/// use erebus_core::deal_state::{NoEffectProof, NoEffectReason};
+/// use styx_core::commitment::DealCommitment;
+/// use styx_core::deal_state::{NoEffectProof, NoEffectReason};
 /// fn inspect(proof: &NoEffectProof) -> (DealCommitment, NoEffectReason) {
 ///     (proof.commitment(), proof.reason())
 /// }
@@ -379,8 +379,8 @@ pub enum NoEffectReason {
 /// check the error code, so the field names here are kept identical to the definition:
 ///
 /// ```compile_fail
-/// use erebus_core::commitment::DealCommitment;
-/// use erebus_core::deal_state::{NoEffectProof, NoEffectReason};
+/// use styx_core::commitment::DealCommitment;
+/// use styx_core::deal_state::{NoEffectProof, NoEffectReason};
 /// let _forged = NoEffectProof {
 ///     commitment: DealCommitment::from_bytes([0; 32]),
 ///     reason: NoEffectReason::Expired,

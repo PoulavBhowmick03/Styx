@@ -80,7 +80,7 @@ Persist rate-limit state if the limit must survive restart. Add concurrent appro
 
 ### 3. Medium: MCP relay transport permits bearer-token disclosure
 
-Locations: `mcp-server/src/erebus_mcp/vault.py:60-66`, `mcp-server/src/erebus_mcp/vault.py:104-110`.
+Locations: `mcp-server/src/styx_mcp/vault.py:60-66`, `mcp-server/src/styx_mcp/vault.py:104-110`.
 
 Configuration accepts remote HTTP. The request uses the default urllib redirect handler with an Authorization header.
 A remote HTTP connection exposes the agent token and pending requests to a network observer.
@@ -315,7 +315,7 @@ The token remains trusted to implement ordinary ERC-20 behavior.
 
 Domain fields, in order:
 `EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)`.
-Name: `ErebusPolicyVault`. Version: `2`. Chain: current `block.chainid`. Contract: this v2 vault.
+Name: `StyxPolicyVault`. Version: `2`. Chain: current `block.chainid`. Contract: this v2 vault.
 
 ```text
 Payment(bytes32 paymentId,address agent,address token,address recipient,uint256 amount,bytes32 evidenceCommitment,uint256 policyVersion,uint256 recipientVersion,uint64 validUntil)
@@ -335,7 +335,7 @@ The following is the single shared vector. It contains public addresses and hash
 ```json
 {
   "domain": {
-    "name": "ErebusPolicyVault",
+    "name": "StyxPolicyVault",
     "version": "2",
     "chainId": "31337",
     "verifyingContract": "0x1111111111111111111111111111111111111111"

@@ -20,13 +20,13 @@ Testnet and test funds only. Not audited.
 
 `sdk/core`, `sdk/journal`, `sdk/coordinator`, `sdk/transport`, `sdk/evm`, `sdk/py`, `mcp-server`, `contracts/evm`, `LICENSE`, `.gitignore`, `.gitleaks.toml`.
 
-The first commit also holds files that did **not** come from that source, written for this build: `docs/mumbai/BUILD_PLAN.md`, `PROVENANCE.md`, `pyproject.toml`, `uv.lock`, `packaging/erebus-cli/pyproject.toml`, `.env.example`, `CLAUDE.md` and `README.md`. Before the import, test keys were removed from some imported tests (the old `PROVENANCE.md` lists each edit). `PROVENANCE.md` itself was deleted later, in `6dd604c`. It is still in git history.
+The first commit also holds files that did **not** come from that source, written for this build: `docs/mumbai/BUILD_PLAN.md`, `PROVENANCE.md`, `pyproject.toml`, `uv.lock`, `packaging/styx-cli/pyproject.toml`, `.env.example`, `CLAUDE.md` and `README.md`. Before the import, test keys were removed from some imported tests (the old `PROVENANCE.md` lists each edit). `PROVENANCE.md` itself was deleted later, in `6dd604c`. It is still in git history.
 
 **What was added after the first commit** (new files only, excluding lock files and generated trial records; 16,228 lines in 118 files):
 
 | Area | New lines | New files |
 | --- | --- | --- |
-| `sdk/evm` (the `arc_vault` module and the `erebus-vault` CLI) | 3,652 | 16 |
+| `sdk/evm` (the `arc_vault` module and the `styx-vault` CLI) | 3,652 | 16 |
 | `owner-page` (the approval page) | 2,629 | 13 |
 | `setup-page` (the owner's setup page) | 2,391 | 17 |
 | `contracts/evm` (the vault contract and its tests) | 1,432 | 5 |
@@ -53,7 +53,7 @@ The vault contract was produced with Arc Studio (see below). **[DECISION or TO F
 | Vault code hash | `0x6da4170f7216064b86985eb843726bb29291bf6bf77016ce5e7e7753d2c83ebd` (keccak of the deployed code) |
 | Arc Studio | https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16 **[check it opens when logged out]** |
 | Build | solc 0.8.24, optimizer on with 200 runs, EVM target cancun |
-| Contract source | `contracts/evm/src/ErebusPolicyVault.sol`, from commit `1e8156c` |
+| Contract source | `contracts/evm/src/StyxPolicyVault.sol`, from commit `1e8156c` |
 | Hosted pages | `https://styxco.xyz` (approval) and `https://styxco.xyz/setup/` (setup), on Vercel. The relay accepts approvals only from this domain |
 | Hosted relay | `https://styx-vault-relay.fly.dev`, on Fly, for this one vault and owner |
 

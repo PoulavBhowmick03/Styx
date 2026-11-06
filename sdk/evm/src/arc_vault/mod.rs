@@ -1,5 +1,5 @@
-//! Client for `ErebusPolicyVault` on Arc: typed payments, EIP-712 digests, transaction building,
-//! event decoding, a durable payment journal and the operations behind the `erebus-vault` CLI.
+//! Client for `StyxPolicyVault` on Arc: typed payments, EIP-712 digests, transaction building,
+//! event decoding, a durable payment journal and the operations behind the `styx-vault` CLI.
 //!
 //! USDC through the ERC-20 interface uses 6 decimals. Amounts here are always integer base
 //! units of that interface; native gas balances never pass through this module.

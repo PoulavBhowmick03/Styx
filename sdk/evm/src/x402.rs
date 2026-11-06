@@ -1,16 +1,16 @@
 //! x402 `exact` payments over Permit2 (decision DM8-13).
 //!
 //! The buyer signs a Permit2 `PermitWitnessTransferFrom` whose spender is the canonical
-//! `x402ExactPermit2Proxy` and whose witness fixes the recipient. Erebus binds the payment to
+//! `x402ExactPermit2Proxy` and whose witness fixes the recipient. Styx binds the payment to
 //! one deal by using the deal nullifier as the Permit2 nonce: Permit2 consumes each
 //! `(owner, nonce)` once, so `nonceBitmap` becomes this rail's consumed-deal flag. The types make
 //! that binding the only way to build an authorization.
 //!
 //! Every byte here is pinned to the reference x402 SDK by `tests/x402_vectors.rs`.
 
-use erebus_core::commitment::{deal_nullifier, DealNullifier};
-use erebus_core::terms::{AgreementTerms, SettlementMode};
-use erebus_transport::identity::AuthorizationIdentity;
+use styx_core::commitment::{deal_nullifier, DealNullifier};
+use styx_core::terms::{AgreementTerms, SettlementMode};
+use styx_transport::identity::AuthorizationIdentity;
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use sha3::{Digest, Keccak256};
 
@@ -304,10 +304,10 @@ pub struct X402ExactEvidence {
 pub enum X402VerificationError {
     /// The agreement terms were invalid.
     #[error(transparent)]
-    Terms(#[from] erebus_core::terms::TermsError),
+    Terms(#[from] styx_core::terms::TermsError),
     /// The deal identity could not be derived.
     #[error(transparent)]
-    Commitment(#[from] erebus_core::commitment::CommitmentError),
+    Commitment(#[from] styx_core::commitment::CommitmentError),
     /// This rail is only for public-bound settlement.
     #[error("x402 exact is a public-bound rail")]
     UnsupportedMode,
@@ -569,10 +569,10 @@ mod tests {
 #[cfg(test)]
 mod verification_tests {
     use super::*;
-    use erebus_core::domain::DeploymentDomain;
-    use erebus_core::ids::{AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes};
-    use erebus_core::service::ServiceRecord;
-    use erebus_core::terms::{FeePolicy, Guarantee, GuaranteeSet, CURRENT_PROTOCOL_VERSION};
+    use styx_core::domain::DeploymentDomain;
+    use styx_core::ids::{AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes};
+    use styx_core::service::ServiceRecord;
+    use styx_core::terms::{FeePolicy, Guarantee, GuaranteeSet, CURRENT_PROTOCOL_VERSION};
 
     const TOKEN: [u8; 20] = [0xaa; 20];
     const SELLER: [u8; 20] = [0x22; 20];

@@ -5,15 +5,15 @@
 //! tests then exercise the failure modes the threat model names: replayed ciphertext, a message
 //! from another session, and a restart that must re-handshake before continuing.
 
-use erebus_core::auth::Role;
-use erebus_core::ids::{AssetId, ChainNamespace};
-use erebus_core::terms::{GuaranteeSet, SettlementMode};
-use erebus_transport::descriptor::{self, Directory, DiscoveryFilter, ServiceDescriptor};
-use erebus_transport::identity::{AuthorizationIdentity, TransportIdentity};
-use erebus_transport::message::{Message, MessageType};
-use erebus_transport::relay::{FileRelay, MailboxId, MemoryRelay, Relay};
-use erebus_transport::session::{self, Session};
-use erebus_transport::store::{FileTranscriptStore, TranscriptStore};
+use styx_core::auth::Role;
+use styx_core::ids::{AssetId, ChainNamespace};
+use styx_core::terms::{GuaranteeSet, SettlementMode};
+use styx_transport::descriptor::{self, Directory, DiscoveryFilter, ServiceDescriptor};
+use styx_transport::identity::{AuthorizationIdentity, TransportIdentity};
+use styx_transport::message::{Message, MessageType};
+use styx_transport::relay::{FileRelay, MailboxId, MemoryRelay, Relay};
+use styx_transport::session::{self, Session};
+use styx_transport::store::{FileTranscriptStore, TranscriptStore};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -494,7 +494,7 @@ fn a_mismatched_capability_prologue_fails_the_handshake() {
     // A substituted descriptor advertises an additional capability.
     let mut forged = seller.descriptor.clone();
     let mut forged_guarantees = GuaranteeSet::empty();
-    forged_guarantees.insert(erebus_core::terms::Guarantee::ScopedDisclosure);
+    forged_guarantees.insert(styx_core::terms::Guarantee::ScopedDisclosure);
     forged.guarantees = forged_guarantees;
     let prologue = session::prologue(
         &buyer.descriptor.digest().expect("buyer digest"),
@@ -577,10 +577,10 @@ fn packaged_http_relay_enforces_auth_and_serves_ciphertext() {
     let probe = TcpListener::bind("127.0.0.1:0").expect("reserve port");
     let port = probe.local_addr().expect("address").port();
     drop(probe);
-    let mut relay = Command::new(env!("CARGO_BIN_EXE_erebus-relay"))
-        .env("EREBUS_RELAY_ROOT", directory.path())
-        .env("EREBUS_RELAY_PORT", port.to_string())
-        .env("EREBUS_RELAY_TOKEN", "test-token")
+    let mut relay = Command::new(env!("CARGO_BIN_EXE_styx-relay"))
+        .env("STYX_RELAY_ROOT", directory.path())
+        .env("STYX_RELAY_PORT", port.to_string())
+        .env("STYX_RELAY_TOKEN", "test-token")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -618,15 +618,15 @@ fn packaged_http_relay_enforces_auth_and_serves_ciphertext() {
 #[test]
 #[ignore = "invoked by the process-level acceptance test"]
 fn subprocess_peer_worker() {
-    let Some(role) = std::env::var("EREBUS_M2_WORKER_ROLE").ok() else {
+    let Some(role) = std::env::var("STYX_M2_WORKER_ROLE").ok() else {
         return;
     };
-    let root = PathBuf::from(std::env::var("EREBUS_M2_WORKER_ROOT").expect("worker root"));
-    let phase: u8 = std::env::var("EREBUS_M2_WORKER_PHASE")
+    let root = PathBuf::from(std::env::var("STYX_M2_WORKER_ROOT").expect("worker root"));
+    let phase: u8 = std::env::var("STYX_M2_WORKER_PHASE")
         .expect("worker phase")
         .parse()
         .expect("numeric phase");
-    let address = std::env::var("EREBUS_M2_WORKER_ADDRESS").expect("worker address");
+    let address = std::env::var("STYX_M2_WORKER_ADDRESS").expect("worker address");
     match role.as_str() {
         "buyer" => run_buyer_worker(&root, phase, &address),
         "seller" => run_seller_worker(&root, phase, &address),
@@ -670,10 +670,10 @@ fn spawn_worker(role: &str, root: &Path, phase: u8, address: &str) -> Child {
             "subprocess_peer_worker",
             "--nocapture",
         ])
-        .env("EREBUS_M2_WORKER_ROLE", role)
-        .env("EREBUS_M2_WORKER_ROOT", root)
-        .env("EREBUS_M2_WORKER_PHASE", phase.to_string())
-        .env("EREBUS_M2_WORKER_ADDRESS", address)
+        .env("STYX_M2_WORKER_ROLE", role)
+        .env("STYX_M2_WORKER_ROOT", root)
+        .env("STYX_M2_WORKER_PHASE", phase.to_string())
+        .env("STYX_M2_WORKER_ADDRESS", address)
         .output_spawn()
 }
 
@@ -817,7 +817,7 @@ fn worker_handshake(stream: &mut TcpStream, role: Role, identity: &TransportIden
 
 fn run_buyer_worker(root: &Path, phase: u8, address: &str) {
     let directory_json = fs::read_to_string(root.join("directory.json")).expect("directory json");
-    let directory = erebus_transport::descriptor::Directory::from_json(&directory_json, NOW)
+    let directory = styx_transport::descriptor::Directory::from_json(&directory_json, NOW)
         .expect("verified directory");
     let namespace = ChainNamespace::new("eip155", "10143").expect("namespace");
     let filter = DiscoveryFilter {

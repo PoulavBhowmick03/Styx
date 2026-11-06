@@ -1,6 +1,6 @@
 //! Circomlib/Anvil-generated M5 note and tree vectors, checked independently in Rust.
 
-use erebus_core::shielded::{
+use styx_core::shielded::{
     note_commitment, note_domain, note_nullifier, note_root_from_path, note_spend_tag,
     note_tree_parent, NOTE_TREE_DEPTH,
 };

@@ -19,7 +19,7 @@ pub use broadcast::{
 
 use std::{io::Read, path::Path, sync::Arc};
 
-use erebus_core::{
+use styx_core::{
     auth::{verify_authorization_signature, Authorization, Role},
     commitment::{commit_agreement, CommitmentBlinding, DealCommitment},
     deal_state::{DealAssessment, DealEvidence, SignedRevision},
@@ -28,7 +28,7 @@ use erebus_core::{
     settlement::{check_capabilities, BackendCapabilities, PreparedSettlement, SettlementContext},
     terms::AgreementTerms,
 };
-use erebus_journal::{FaultHook, NoFaults, Store};
+use styx_journal::{FaultHook, NoFaults, Store};
 
 use record::{Intent, State, StateId, MAX_STATE_BYTES};
 
@@ -181,7 +181,7 @@ impl Coordinator {
         {
             let mut state = State::new(this.buyer.as_bytes().to_vec());
             this.store
-                .write_blob_then_record::<erebus_journal::StoreError<StateId>>(
+                .write_blob_then_record::<styx_journal::StoreError<StateId>>(
                     &mut state,
                     0,
                     &this.initialization_marker(),
@@ -591,7 +591,7 @@ impl Coordinator {
 
     fn initialization_marker(&self) -> Vec<u8> {
         [
-            b"EREBUS_COORDINATOR_STATE_V1".as_slice(),
+            b"STYX_COORDINATOR_STATE_V1".as_slice(),
             self.buyer.as_bytes(),
         ]
         .concat()
@@ -607,7 +607,7 @@ impl Coordinator {
 }
 
 /// Prefix of the initialization marker, before the buyer key bytes.
-const INITIALIZATION_MARKER_PREFIX: &[u8] = b"EREBUS_COORDINATOR_STATE_V1";
+const INITIALIZATION_MARKER_PREFIX: &[u8] = b"STYX_COORDINATOR_STATE_V1";
 
 /// Reads the durable opening and both authorizations for one recorded revision.
 ///

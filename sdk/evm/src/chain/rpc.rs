@@ -7,7 +7,7 @@ use alloy::{
     providers::{DynProvider, Provider, ProviderBuilder},
     transports::RpcError,
 };
-use erebus_core::settlement::PreparedSettlement;
+use styx_core::settlement::PreparedSettlement;
 use std::time::Duration;
 
 /// What the node's broadcast response establishes. Never grounds for releasing a claim.
@@ -61,7 +61,7 @@ impl EvmChain {
     /// No journal lock crosses the await. A failed response write retains uncertainty.
     pub async fn broadcast_journaled(
         &self,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
         now: u64,
     ) -> Result<Broadcast, JournaledBroadcastError> {
@@ -81,7 +81,7 @@ impl EvmChain {
     /// A returned error does not establish nonpayment. Explicit retries use separate APIs.
     pub async fn broadcast_initial_journaled(
         &self,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
         now: u64,
     ) -> Result<Broadcast, JournaledBroadcastError> {
@@ -99,7 +99,7 @@ impl EvmChain {
     /// `expected` must be derived from the accepted agreement, not caller-supplied RPC data.
     pub async fn broadcast_journaled_call(
         &self,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
         now: u64,
         expected: &PreparedSettlement,
@@ -124,7 +124,7 @@ impl EvmChain {
     #[allow(clippy::too_many_arguments)]
     pub async fn broadcast_initial_journaled_call(
         &self,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
         now: u64,
         expected: &PreparedSettlement,
@@ -222,15 +222,15 @@ impl EvmChain {
 
     fn finish_journaled_broadcast(
         &self,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
-        token: &erebus_coordinator::AttemptToken,
+        token: &styx_coordinator::AttemptToken,
         result: Broadcast,
     ) -> Result<(), JournaledBroadcastError> {
         let outcome = match result.outcome {
-            BroadcastOutcome::Acknowledged => erebus_coordinator::BroadcastOutcome::Submitted,
-            BroadcastOutcome::Rejected { .. } => erebus_coordinator::BroadcastOutcome::Rejected,
-            BroadcastOutcome::Unknown => erebus_coordinator::BroadcastOutcome::Unknown,
+            BroadcastOutcome::Acknowledged => styx_coordinator::BroadcastOutcome::Submitted,
+            BroadcastOutcome::Rejected { .. } => styx_coordinator::BroadcastOutcome::Rejected,
+            BroadcastOutcome::Unknown => styx_coordinator::BroadcastOutcome::Unknown,
         };
         coordinator.finish_broadcast_attempt(operation_ref, token, outcome)?;
         Ok(())
@@ -431,7 +431,7 @@ impl EvmChain {
 pub enum JournaledBroadcastError {
     /// The record remains held for reconciliation.
     #[error(transparent)]
-    Coordinator(#[from] erebus_coordinator::Error),
+    Coordinator(#[from] styx_coordinator::Error),
     /// Validation or chain preflight failed; earlier attempts may still pay.
     #[error(transparent)]
     Evm(#[from] EvmError),

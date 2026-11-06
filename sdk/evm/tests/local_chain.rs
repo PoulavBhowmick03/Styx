@@ -26,34 +26,34 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use k256::ecdsa::SigningKey;
 
-use erebus_coordinator::{Coordinator, Stage};
-use erebus_core::auth::{authorization_digest, Authorization, Role};
-use erebus_core::commitment::{commit_agreement, CommitmentBlinding, DealNullifier};
-use erebus_core::deal_state::{DealEvidence, DealState};
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{
+use styx_coordinator::{Coordinator, Stage};
+use styx_core::auth::{authorization_digest, Authorization, Role};
+use styx_core::commitment::{commit_agreement, CommitmentBlinding, DealNullifier};
+use styx_core::deal_state::{DealEvidence, DealState};
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{
     AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes, SignatureBytes,
 };
-use erebus_core::policy::{ReservationState, SpendingPolicy};
-use erebus_core::service::ServiceRecord;
-use erebus_core::settlement::{BackendCapabilities, PreparedSettlement, SettlementContext};
-use erebus_core::terms::{
+use styx_core::policy::{ReservationState, SpendingPolicy};
+use styx_core::service::ServiceRecord;
+use styx_core::settlement::{BackendCapabilities, PreparedSettlement, SettlementContext};
+use styx_core::terms::{
     AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode, CURRENT_PROTOCOL_VERSION,
 };
-use erebus_evm::backend::EvmSettlementBackend;
-use erebus_evm::chain::{
+use styx_evm::backend::EvmSettlementBackend;
+use styx_evm::chain::{
     BroadcastOutcome, Eip1559Fees, EvmChain, ObservationLimits, SignerJournal, SigningPlan,
     TransactionKey,
 };
-use erebus_evm::deployment::EvmDeployment;
-use erebus_evm::error::EvmError;
-use erebus_evm::evidence::SettlementEvidence;
-use erebus_evm::{abi, backend::SettlementEstimate};
+use styx_evm::deployment::EvmDeployment;
+use styx_evm::error::EvmError;
+use styx_evm::evidence::SettlementEvidence;
+use styx_evm::{abi, backend::SettlementEstimate};
 
 /// Anvil's default dev key for account `index`, read at runtime so no key is stored in this repo.
-/// Set `EREBUS_TEST_ANVIL_KEY_<index>` to the hex key anvil prints at startup.
+/// Set `STYX_TEST_ANVIL_KEY_<index>` to the hex key anvil prints at startup.
 fn anvil_key(index: u8) -> [u8; 32] {
-    let name = format!("EREBUS_TEST_ANVIL_KEY_{index}");
+    let name = format!("STYX_TEST_ANVIL_KEY_{index}");
     let value = std::env::var(&name).unwrap_or_else(|_| panic!("{name} must be set"));
     hex::decode(value.trim_start_matches("0x"))
         .expect("hex key")
@@ -221,7 +221,7 @@ async fn token_balance(provider: &DynProvider, token: Address, account: &[u8; 20
 fn authorization(
     role: Role,
     terms: &AgreementTerms,
-    commitment: &erebus_core::commitment::DealCommitment,
+    commitment: &styx_core::commitment::DealCommitment,
     key: &SigningKey,
 ) -> Authorization {
     let digest = authorization_digest(&terms.domain, role, commitment, terms.suite_id)
@@ -314,7 +314,7 @@ async fn fixture() -> Fixture {
 
     let settlement = deploy(
         &deployer,
-        "ErebusSettlement",
+        "StyxSettlement",
         abi::encode_settlement_constructor(31_337, 1),
     )
     .await;
@@ -497,12 +497,12 @@ async fn a_replay_is_rejected_on_chain() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn auditor_opens_one_grant_and_verifies_final_payment_from_chain() {
-    use erebus_evm::disclosure::{verify_public_bound_disclosure, DisclosureVerificationError};
-    use erebus_transport::disclosure::{DisclosureGrant, SelectedAgreement};
-    use erebus_transport::hashing::TRANSCRIPT_HASH_VERSION;
-    use erebus_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
-    use erebus_transport::message::{Message, MessageType};
-    use erebus_transport::transcript::Transcript;
+    use styx_evm::disclosure::{verify_public_bound_disclosure, DisclosureVerificationError};
+    use styx_transport::disclosure::{DisclosureGrant, SelectedAgreement};
+    use styx_transport::hashing::TRANSCRIPT_HASH_VERSION;
+    use styx_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
+    use styx_transport::message::{Message, MessageType};
+    use styx_transport::transcript::Transcript;
 
     let mut fixture = fixture().await;
     let message = Message::new(
@@ -631,11 +631,11 @@ async fn auditor_opens_one_grant_and_verifies_final_payment_from_chain() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn an_independent_auditor_process_verifies_without_participant_keys_or_relay() {
-    use erebus_transport::disclosure::{DisclosureGrant, SelectedAgreement};
-    use erebus_transport::hashing::TRANSCRIPT_HASH_VERSION;
-    use erebus_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
-    use erebus_transport::message::{Message, MessageType};
-    use erebus_transport::transcript::Transcript;
+    use styx_transport::disclosure::{DisclosureGrant, SelectedAgreement};
+    use styx_transport::hashing::TRANSCRIPT_HASH_VERSION;
+    use styx_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
+    use styx_transport::message::{Message, MessageType};
+    use styx_transport::transcript::Transcript;
     use std::io::Write;
 
     let mut fixture = fixture().await;
@@ -696,15 +696,15 @@ async fn an_independent_auditor_process_verifies_without_participant_keys_or_rel
         .arg("--exact")
         .arg("disclosure_subprocess_worker")
         .arg("--nocapture")
-        .env("EREBUS_DISCLOSURE_WORKER", "1")
-        .env("EREBUS_DISCLOSURE_GRANT", &grant_file)
-        .env("EREBUS_DISCLOSURE_KEY", &auditor_key)
-        .env("EREBUS_DISCLOSURE_RPC", &fixture.rpc_url)
+        .env("STYX_DISCLOSURE_WORKER", "1")
+        .env("STYX_DISCLOSURE_GRANT", &grant_file)
+        .env("STYX_DISCLOSURE_KEY", &auditor_key)
+        .env("STYX_DISCLOSURE_RPC", &fixture.rpc_url)
         .env(
-            "EREBUS_DISCLOSURE_CONTRACT",
+            "STYX_DISCLOSURE_CONTRACT",
             hex::encode(fixture.settlement),
         )
-        .env("EREBUS_DISCLOSURE_ISSUER", hex::encode(issuer.address()))
+        .env("STYX_DISCLOSURE_ISSUER", hex::encode(issuer.address()))
         .output()
         .unwrap();
     assert!(
@@ -714,8 +714,8 @@ async fn an_independent_auditor_process_verifies_without_participant_keys_or_rel
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("disclosure_subprocess_worker ... ok"));
 
-    let binary = std::env::var_os("EREBUS_TEST_DISCLOSURE_BIN")
-        .unwrap_or_else(|| env!("CARGO_BIN_EXE_erebus-disclosure").into());
+    let binary = std::env::var_os("STYX_TEST_DISCLOSURE_BIN")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_styx-disclosure").into());
     let request = serde_json::json!({
         "method": "verify_payment",
         "grant_file": "deal.grant",
@@ -808,21 +808,21 @@ async fn an_independent_auditor_process_verifies_without_participant_keys_or_rel
 
 #[tokio::test(flavor = "multi_thread")]
 async fn disclosure_subprocess_worker() {
-    use erebus_evm::disclosure::verify_public_bound_disclosure;
-    use erebus_transport::disclosure::DisclosureGrant;
-    use erebus_transport::identity::DisclosureIdentity;
+    use styx_evm::disclosure::verify_public_bound_disclosure;
+    use styx_transport::disclosure::DisclosureGrant;
+    use styx_transport::identity::DisclosureIdentity;
 
-    if std::env::var_os("EREBUS_DISCLOSURE_WORKER").is_none() {
+    if std::env::var_os("STYX_DISCLOSURE_WORKER").is_none() {
         return;
     }
-    let key = DisclosureIdentity::load(std::env::var("EREBUS_DISCLOSURE_KEY").unwrap()).unwrap();
+    let key = DisclosureIdentity::load(std::env::var("STYX_DISCLOSURE_KEY").unwrap()).unwrap();
     let grant =
-        DisclosureGrant::load_backup(std::env::var("EREBUS_DISCLOSURE_GRANT").unwrap()).unwrap();
-    let contract: [u8; 20] = hex::decode(std::env::var("EREBUS_DISCLOSURE_CONTRACT").unwrap())
+        DisclosureGrant::load_backup(std::env::var("STYX_DISCLOSURE_GRANT").unwrap()).unwrap();
+    let contract: [u8; 20] = hex::decode(std::env::var("STYX_DISCLOSURE_CONTRACT").unwrap())
         .unwrap()
         .try_into()
         .unwrap();
-    let issuer: [u8; 20] = hex::decode(std::env::var("EREBUS_DISCLOSURE_ISSUER").unwrap())
+    let issuer: [u8; 20] = hex::decode(std::env::var("STYX_DISCLOSURE_ISSUER").unwrap())
         .unwrap()
         .try_into()
         .unwrap();
@@ -830,7 +830,7 @@ async fn disclosure_subprocess_worker() {
         ChainNamespace::new("eip155", "31337").unwrap(),
         contract,
         1,
-        std::env::var("EREBUS_DISCLOSURE_RPC").unwrap(),
+        std::env::var("STYX_DISCLOSURE_RPC").unwrap(),
     )
     .unwrap();
     let chain = EvmChain::connect(deployment, Duration::from_secs(5))
@@ -897,7 +897,7 @@ async fn an_unrelated_successful_receipt_is_not_settlement_evidence() {
     let unrelated = send(&relayer, Address::from(RECIPIENT), Vec::new()).await;
     assert!(matches!(
         chain.observe(unrelated).await.unwrap(),
-        erebus_evm::chain::TxStatus::Included(inclusion) if inclusion.success
+        styx_evm::chain::TxStatus::Included(inclusion) if inclusion.success
     ));
     mine_blocks(&read_only_provider(&fixture.rpc_url), 3).await;
     let evidence = chain
@@ -943,7 +943,7 @@ async fn the_rpc_chain_must_match_the_configured_chain() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn prepared_routing_fields_must_match_the_evidence() {
-    use erebus_evm::chain::TransactionParams;
+    use styx_evm::chain::TransactionParams;
     let fixture = fixture().await;
     let prepared = PreparedSettlement {
         deal_nullifier: DealNullifier::from_bytes([0xFF; 32]),
@@ -1222,7 +1222,7 @@ async fn coordinated_setup_with_key(
 /// Successful payments use durable signing/broadcast and paired finalized evidence.
 /// The two test URLs share Anvil; this checks mechanics, not provider independence.
 async fn settle_coordinated(fixture: &Fixture, signing_key: &[u8; 32]) -> DealEvidence {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
 
     let root = tempfile::tempdir().unwrap();
     let (coordinator, signer_journal, prepared, _) =
@@ -1352,7 +1352,7 @@ async fn coordinated_settlement_finalizes_commits_and_releases_the_signer() {
         .expect("reconcile");
     assert!(matches!(
         assessment.state,
-        erebus_core::deal_state::DealState::PaidFinalized { .. }
+        styx_core::deal_state::DealState::PaidFinalized { .. }
     ));
 
     assert_eq!(
@@ -1412,7 +1412,7 @@ async fn a_foreign_winner_resolves_an_unknown_attempt_and_holds_the_unconsumed_n
         .finish_broadcast_attempt(
             operation_ref,
             &attempt.token,
-            erebus_coordinator::BroadcastOutcome::Unknown,
+            styx_coordinator::BroadcastOutcome::Unknown,
         )
         .expect("unknown outcome");
 
@@ -1454,7 +1454,7 @@ async fn a_foreign_winner_resolves_an_unknown_attempt_and_holds_the_unconsumed_n
         .expect("finalized nonce");
     assert!(matches!(
         journal.release(&finalized),
-        Err(erebus_evm::chain::NonceError::NotConsumed)
+        Err(styx_evm::chain::NonceError::NotConsumed)
     ));
     assert!(journal
         .resume(&deployment, &prepared)
@@ -1471,7 +1471,7 @@ async fn relayed_settlement_pays_the_published_fee_recipient() {
     let evidence = SettlementEvidence::decode(&prepared.backend_evidence).expect("evidence");
     let now = now();
 
-    let policy = erebus_evm::relay::RelayPolicy::new(
+    let policy = styx_evm::relay::RelayPolicy::new(
         deployment.clone(),
         FEE_RECIPIENT,
         [(address_bytes(fixture.token), FEE)].into_iter().collect(),
@@ -1502,7 +1502,7 @@ async fn relayed_settlement_pays_the_published_fee_recipient() {
 
     // The fee and its recipient are committed terms. A relayer that publishes a different fee
     // or a different recipient cannot admit the same signed deal, so it cannot redirect value.
-    let wrong_recipient = erebus_evm::relay::RelayPolicy::new(
+    let wrong_recipient = styx_evm::relay::RelayPolicy::new(
         deployment.clone(),
         [0x99; 20],
         [(address_bytes(fixture.token), FEE)].into_iter().collect(),
@@ -1511,9 +1511,9 @@ async fn relayed_settlement_pays_the_published_fee_recipient() {
     .expect("policy");
     assert_eq!(
         wrong_recipient.admit(&evidence.encode(), now),
-        Err(erebus_evm::relay::RelayError::Fee)
+        Err(styx_evm::relay::RelayError::Fee)
     );
-    let wrong_fee = erebus_evm::relay::RelayPolicy::new(
+    let wrong_fee = styx_evm::relay::RelayPolicy::new(
         deployment,
         FEE_RECIPIENT,
         [(address_bytes(fixture.token), FEE + 1)]
@@ -1524,7 +1524,7 @@ async fn relayed_settlement_pays_the_published_fee_recipient() {
     .expect("policy");
     assert_eq!(
         wrong_fee.admit(&evidence.encode(), now),
-        Err(erebus_evm::relay::RelayError::Fee)
+        Err(styx_evm::relay::RelayError::Fee)
     );
 }
 
@@ -1639,7 +1639,7 @@ async fn crashes_at_durable_boundaries_yield_one_payment_and_recoverable_state()
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn the_relayer_fails_over_providers_and_reports_funding_shortfall() {
-    use erebus_evm::relay::{AccessLimits, RelayPolicy, RelayService};
+    use styx_evm::relay::{AccessLimits, RelayPolicy, RelayService};
 
     let fixture = fixture().await;
     let deployment = deployment(&fixture);
@@ -2036,7 +2036,7 @@ async fn each_observation_rpc_timeout_holds_until_honest_evidence_recovers() {
         coordinator
             .reconcile(
                 prepared.operation_ref,
-                &erebus_core::deal_state::DealEvidence::Unknown,
+                &styx_core::deal_state::DealEvidence::Unknown,
                 now(),
             )
             .unwrap();
@@ -2220,7 +2220,7 @@ async fn a_timed_out_broadcast_stays_unknown_and_reconciles_from_chain() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn journaled_relayer_failover_never_resigns_an_uncertain_payment() {
-    use erebus_evm::relay::{AccessLimits, RelayPolicy, RelayService};
+    use styx_evm::relay::{AccessLimits, RelayPolicy, RelayService};
     use std::collections::BTreeMap;
 
     for fault in [
@@ -2257,7 +2257,7 @@ async fn journaled_relayer_failover_never_resigns_an_uncertain_payment() {
             .signed_transaction(prepared.operation_ref)
             .unwrap()
             .unwrap();
-        let expected = erebus_evm::chain::SignedTransaction::from_raw(stored.raw())
+        let expected = styx_evm::chain::SignedTransaction::from_raw(stored.raw())
             .unwrap()
             .hash();
         let sent = service
@@ -2309,7 +2309,7 @@ async fn journaled_relayer_failover_never_resigns_an_uncertain_payment() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn rejected_relay_admission_does_not_record_a_broadcast_attempt() {
-    use erebus_evm::relay::{AccessLimits, RelayPolicy, RelayService};
+    use styx_evm::relay::{AccessLimits, RelayPolicy, RelayService};
     use std::collections::BTreeMap;
 
     let fixture = fixture().await;
@@ -2356,7 +2356,7 @@ async fn rejected_relay_admission_does_not_record_a_broadcast_attempt() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn historical_observation_resumes_logs_and_old_ancestry_across_restarts() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let root = tempfile::tempdir().unwrap();
     let (coordinator, _, prepared, _) = coordinated_setup(&fixture, root.path()).await;
@@ -2466,7 +2466,7 @@ async fn historical_observation_resumes_logs_and_old_ancestry_across_restarts() 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn historical_observation_restarts_nonfinal_work_after_a_reorg() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let root = tempfile::tempdir().unwrap();
     let (coordinator, _, prepared, plan) = coordinated_setup(&fixture, root.path()).await;
@@ -2552,7 +2552,7 @@ async fn historical_observation_restarts_nonfinal_work_after_a_reorg() {
     }
     let evidence = completed.unwrap();
     assert!(
-        matches!(evidence, erebus_core::deal_state::DealEvidence::Observed(ref reads) if !reads.consumed_at_head && reads.winner.is_none())
+        matches!(evidence, styx_core::deal_state::DealEvidence::Observed(ref reads) if !reads.consumed_at_head && reads.winner.is_none())
     );
     coordinator
         .reconcile(prepared.operation_ref, &evidence, now())
@@ -2567,7 +2567,7 @@ async fn historical_observation_restarts_nonfinal_work_after_a_reorg() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn historical_pair_keeps_completed_anchors_while_its_peer_is_pending() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let prepared = prepared(&fixture);
     settle_coordinated(&fixture, &anvil_relayer_key()).await;
@@ -2631,7 +2631,7 @@ async fn historical_pair_keeps_completed_anchors_while_its_peer_is_pending() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn paired_observation_uses_a_shared_snapshot_despite_honest_finality_lag() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let provider = read_only_provider(&fixture.rpc_url);
     mine_blocks(&provider, 20).await;
@@ -2704,7 +2704,7 @@ async fn paired_observation_uses_a_shared_snapshot_despite_honest_finality_lag()
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn concurrent_history_scan_matches_a_sequential_scan() {
-    use erebus_evm::chain::{
+    use styx_evm::chain::{
         HistoricalObservation, ObservationJournal, MAX_CONCURRENT_LOG_QUERIES,
     };
     let fixture = fixture().await;
@@ -2785,7 +2785,7 @@ async fn concurrent_history_scan_matches_a_sequential_scan() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn interrupted_concurrent_scan_does_not_advance_its_checkpoint() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let root = tempfile::tempdir().unwrap();
     let (coordinator, _, prepared, _) = coordinated_setup(&fixture, root.path()).await;
@@ -2864,7 +2864,7 @@ async fn interrupted_concurrent_scan_does_not_advance_its_checkpoint() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn observation_rpc_retries_a_rate_limited_log_query() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let root = tempfile::tempdir().unwrap();
     let (coordinator, _, prepared, _) = coordinated_setup(&fixture, root.path()).await;
@@ -2912,7 +2912,7 @@ async fn observation_rpc_retries_a_rate_limited_log_query() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn long_ancestry_catch_up_walks_concurrently_and_matches_sequential() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let root = tempfile::tempdir().unwrap();
     let (coordinator, _, prepared, _) = coordinated_setup(&fixture, root.path()).await;
@@ -2988,7 +2988,7 @@ async fn long_ancestry_catch_up_walks_concurrently_and_matches_sequential() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn interrupted_ancestry_keeps_its_completed_checkpoint() {
-    use erebus_evm::chain::{HistoricalObservation, ObservationJournal};
+    use styx_evm::chain::{HistoricalObservation, ObservationJournal};
     let fixture = fixture().await;
     let root = tempfile::tempdir().unwrap();
     let (coordinator, _, prepared, _) = coordinated_setup(&fixture, root.path()).await;
@@ -3081,7 +3081,7 @@ async fn packaged_relayer_never_downgrades_verification_when_a_backup_is_healthy
         held["error"],
         "relayer chain observation unavailable; retain the operation"
     );
-    let service_prepared = erebus_evm::relay::RelayPolicy::new(
+    let service_prepared = styx_evm::relay::RelayPolicy::new(
         deployment(&fixture),
         FEE_RECIPIENT,
         [(address_bytes(fixture.token), FEE)].into_iter().collect(),
@@ -3186,9 +3186,9 @@ async fn packaged_relayer_continues_history_before_allocating_or_sending() {
     let proxy =
         FaultProxy::start(fixture.rpc_url.strip_prefix("http://").unwrap().to_owned()).await;
     let budget = [
-        ("EREBUS_RELAYER_LOG_BLOCK_RANGE", "1"),
-        ("EREBUS_RELAYER_LOG_QUERIES", "1"),
-        ("EREBUS_RELAYER_ANCESTRY_LINKS", "1"),
+        ("STYX_RELAYER_LOG_BLOCK_RANGE", "1"),
+        ("STYX_RELAYER_LOG_QUERIES", "1"),
+        ("STYX_RELAYER_ANCESTRY_LINKS", "1"),
     ];
     let first = relayer_process_config(
         &fixture,
@@ -3338,7 +3338,7 @@ async fn packaged_relayer_recovers_a_dropped_response_after_process_restart() {
     );
     let journal = SignerJournal::open(root.path().join("signer"), 31337, signer).unwrap();
     // The service derives its own operation reference from the agreement, not the client's.
-    let service_prepared = erebus_evm::relay::RelayPolicy::new(
+    let service_prepared = styx_evm::relay::RelayPolicy::new(
         deployment(&fixture),
         FEE_RECIPIENT,
         [(address_bytes(fixture.token), FEE)].into_iter().collect(),
@@ -3417,7 +3417,7 @@ async fn packaged_relayer_expiry_releases_accounting_but_holds_unused_nonce() {
     );
     assert_eq!(token_balance(&provider, fixture.token, &RECIPIENT).await, 0);
     let journal = SignerJournal::open(root.path().join("signer"), 31337, signer).unwrap();
-    let service_prepared = erebus_evm::relay::RelayPolicy::new(
+    let service_prepared = styx_evm::relay::RelayPolicy::new(
         deployment(&fixture),
         FEE_RECIPIENT,
         [(address_bytes(fixture.token), FEE)].into_iter().collect(),
@@ -3472,34 +3472,34 @@ fn relayer_process_config(
     extra: &[(&str, &str)],
 ) -> serde_json::Value {
     use std::io::Write;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-tx-relayer"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_styx-tx-relayer"))
         .env_clear()
-        .env("EREBUS_RELAYER_NAMESPACE", "eip155:31337")
+        .env("STYX_RELAYER_NAMESPACE", "eip155:31337")
         .env(
-            "EREBUS_RELAYER_SETTLEMENT",
+            "STYX_RELAYER_SETTLEMENT",
             format!("0x{}", hex::encode(address_bytes(fixture.settlement))),
         )
-        .env("EREBUS_RELAYER_VERIFIER_VERSION", "1")
-        .env("EREBUS_RELAYER_KEY", hex::encode(anvil_relayer_key()))
+        .env("STYX_RELAYER_VERIFIER_VERSION", "1")
+        .env("STYX_RELAYER_KEY", hex::encode(anvil_relayer_key()))
         .env(
-            "EREBUS_RELAYER_FEE_RECIPIENT",
+            "STYX_RELAYER_FEE_RECIPIENT",
             format!("0x{}", hex::encode(FEE_RECIPIENT)),
         )
         .env(
-            "EREBUS_RELAYER_FEES",
+            "STYX_RELAYER_FEES",
             format!("0x{}={fee}", hex::encode(address_bytes(fixture.token))),
         )
-        .env("EREBUS_RELAYER_RPC_URLS", rpc_url)
+        .env("STYX_RELAYER_RPC_URLS", rpc_url)
         .env(
-            "EREBUS_RELAYER_VERIFICATION_RPC_URL",
+            "STYX_RELAYER_VERIFICATION_RPC_URL",
             &fixture.verification_proxy.url,
         )
-        .env("EREBUS_RELAYER_STATE_ROOT", root)
-        .env("EREBUS_RELAYER_MAX_FEE_PER_GAS", "2000000000")
-        .env("EREBUS_RELAYER_PRIORITY_FEE_PER_GAS", "1000000000")
-        .env("EREBUS_RELAYER_GAS_LIMIT", "1000000")
-        .env("EREBUS_RELAYER_RPC_TIMEOUT_SECONDS", "2")
-        .env("EREBUS_RELAYER_MAX_REQUESTS", "1")
+        .env("STYX_RELAYER_STATE_ROOT", root)
+        .env("STYX_RELAYER_MAX_FEE_PER_GAS", "2000000000")
+        .env("STYX_RELAYER_PRIORITY_FEE_PER_GAS", "1000000000")
+        .env("STYX_RELAYER_GAS_LIMIT", "1000000")
+        .env("STYX_RELAYER_RPC_TIMEOUT_SECONDS", "2")
+        .env("STYX_RELAYER_MAX_REQUESTS", "1")
         .envs(extra.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -3531,7 +3531,7 @@ fn relayer_process_config(
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn funding_timeout_uses_backup_without_broadcasting() {
-    use erebus_evm::relay::{AccessLimits, RelayPolicy, RelayService};
+    use styx_evm::relay::{AccessLimits, RelayPolicy, RelayService};
 
     let fixture = fixture().await;
     let prepared = prepared(&fixture);
@@ -3576,7 +3576,7 @@ async fn funding_timeout_uses_backup_without_broadcasting() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn invalid_relayer_signer_or_deadline_preserves_durable_state_without_sending() {
-    use erebus_evm::relay::{
+    use styx_evm::relay::{
         AccessLimits, DurableRelayError, RelayError, RelayPolicy, RelayService,
     };
     use std::collections::BTreeMap;
@@ -3671,7 +3671,7 @@ async fn invalid_relayer_signer_or_deadline_preserves_durable_state_without_send
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires anvil from a Foundry install"]
 async fn a_reorged_payment_keeps_its_reservation_and_reuses_the_signed_transaction() {
-    use erebus_evm::chain::TxStatus;
+    use styx_evm::chain::TxStatus;
 
     let fixture = fixture().await;
     let root = tempfile::tempdir().expect("state dir");
@@ -3909,13 +3909,13 @@ async fn the_settle_cli_reports_funding_for_a_funded_buyer() {
         "evidence": hex::encode(evidence.encode()),
     });
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-settle"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_styx-settle"))
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn erebus-settle");
+        .expect("spawn styx-settle");
     child
         .stdin
         .take()
@@ -3987,13 +3987,13 @@ async fn the_settle_cli_reports_a_finalized_receipt_after_settlement() {
     let mut pending = 0;
     let mut response = None;
     for _ in 0..100 {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-settle"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_styx-settle"))
             .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("spawn erebus-settle");
+            .expect("spawn styx-settle");
         child
             .stdin
             .take()

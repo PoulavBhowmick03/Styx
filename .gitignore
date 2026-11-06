@@ -13,7 +13,7 @@ target/
 
 # The packaged binary is a build output copied in from sdk/rs/target. 5 MB per platform,
 # rebuilt by CI for each wheel.
-packaging/erebus-cli/bin/
+packaging/styx-cli/bin/
 .venv/
 __pycache__/
 *.pyc
