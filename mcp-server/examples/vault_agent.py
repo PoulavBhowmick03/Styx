@@ -9,6 +9,12 @@ submitted. A rerun looks up each kept ID on the chain before it proposes anythin
 under the same ID, and proposes nothing while the chain cannot be read, because an unreadable answer never means
 unpaid. The state file belongs to one pair of invoices: delete it only after checking the chain yourself.
 
+Safety of that state: one run at a time holds an exclusive lock on the vault directory's state for the whole run,
+and a second run is refused at once, so two runs cannot propose different IDs for one invoice. The state file and
+its folder are fsynced before the first submit, so a power loss after a submit cannot forget the ID. One gap
+remains: a crash between the tool returning a payment ID and the state write can still lose that ID. The vault's
+own journal has it, but this example does not look there. POSIX only (it uses `flock`).
+
 Environment: the STYX_VAULT_* settings the server needs, including STYX_VAULT_DIR, which must hold the
 invoice files. Usage: vault_agent.py <vendor-address> [--wait-seconds N]
 """
@@ -16,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import json
 import os
 import sys
@@ -29,6 +36,7 @@ ROUTINE = ("250000", "routine-invoice.txt", "INV-ROUTINE")
 OVERSIZED = ("6000000", "oversized-invoice.txt", "INV-OVERSIZED")
 UNKNOWN_RETRIES = 5
 STATE_FILE = "vault_agent_state.json"
+LOCK_FILE = "vault_agent_state.lock"
 
 
 def emit(event: str, **fields) -> None:
@@ -39,13 +47,51 @@ class StateError(Exception):
     """The state file exists but cannot be trusted. Carrying on would mean minting a new payment ID."""
 
 
+class StateLock:
+    """An exclusive lock on the example's state, held for a whole run and refused at once if another run has it.
+
+    It is released when the run ends, and by the operating system if the process dies.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        self.path = directory / LOCK_FILE
+        self.descriptor: int | None = None
+
+    def __enter__(self) -> "StateLock":
+        descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(descriptor)
+            raise StateError(f"another run is using the state in {self.path.parent}. Nothing was proposed. "
+                             "Wait for it to finish, or stop it, then try again.") from None
+        self.descriptor = descriptor
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        if self.descriptor is not None:
+            os.close(self.descriptor)  # closing the descriptor releases the lock
+            self.descriptor = None
+
+
+def sync(descriptor: int) -> None:
+    """Forces a file or folder to disk. On macOS a plain fsync leaves the drive's own cache, so that is flushed too."""
+    os.fsync(descriptor)
+    full = getattr(fcntl, "F_FULLFSYNC", None)
+    if full is not None:
+        try:
+            fcntl.fcntl(descriptor, full)
+        except OSError:
+            pass  # not every file system supports it. The fsync above has still run
+
+
 class Agent:
     def __init__(self, session: ClientSession, vendor: str, directory: Path) -> None:
         self.session = session
         self.vendor = vendor
         self.directory = directory
         self.state_path = directory / STATE_FILE
-        self.state = self._load_state()
+        self.state: dict = {}  # loaded in run(), under the lock
 
     def _load_state(self) -> dict:
         try:
@@ -62,13 +108,20 @@ class Agent:
         return state
 
     def keep(self, step: str, **fields) -> None:
-        """Writes the state atomically and privately. Called before a payment is first submitted."""
+        """Writes the state atomically, privately and durably. Called before a payment is first submitted."""
         self.state[step] = {**self.state.get(step, {}), **fields}
         temporary = self.state_path.with_suffix(".tmp")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "w") as output:
             json.dump(self.state, output)
+            output.flush()
+            sync(output.fileno())  # the contents reach the disk before the name does
         os.replace(temporary, self.state_path)
+        folder = os.open(self.directory, os.O_RDONLY)
+        try:
+            sync(folder)  # and the rename itself reaches the disk
+        finally:
+            os.close(folder)
 
     async def tool(self, name: str, **arguments) -> dict:
         emit("call", tool=name, arguments=arguments)
@@ -197,9 +250,11 @@ class Agent:
         return False
 
     async def run(self, wait_seconds: int) -> bool:
-        if not await self.pay_routine():
-            return False
-        return await self.pay_oversized(wait_seconds)
+        with StateLock(self.directory):  # held for the whole run, and taken before the state is read
+            self.state = self._load_state()
+            if not await self.pay_routine():
+                return False
+            return await self.pay_oversized(wait_seconds)
 
 
 async def main() -> int:
@@ -218,11 +273,10 @@ async def main() -> int:
             tools = sorted(tool.name for tool in (await session.list_tools()).tools)
             emit("tools", tools=tools)
             try:
-                agent = Agent(session, args.vendor, directory)
+                return 0 if await Agent(session, args.vendor, directory).run(args.wait_seconds) else 1
             except StateError as error:
-                emit("failed", step="state file", detail=str(error))
+                emit("failed", step="state", detail=str(error))
                 return 2
-            return 0 if await agent.run(args.wait_seconds) else 1
 
 
 if __name__ == "__main__":
