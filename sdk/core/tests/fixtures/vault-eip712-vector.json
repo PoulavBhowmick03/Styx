@@ -1,0 +1,31 @@
+{
+  "source": "cast abi-encode and cast keccak, independent of the contract",
+  "domain": {
+    "name": "ErebusPolicyVault",
+    "version": "1",
+    "chainId": "5042002",
+    "verifyingContract": "0x1000000000000000000000000000000000000001"
+  },
+  "payment": {
+    "paymentId": "0x20995b12e209b5a2cd1948723df0d35bbbe1d7e7b91d8a2cb5f008094510dacd",
+    "agent": "0x2000000000000000000000000000000000000002",
+    "token": "0x3600000000000000000000000000000000000000",
+    "recipient": "0x4000000000000000000000000000000000000004",
+    "amount": "6000000",
+    "evidenceCommitment": "0x609019714627aa500a0f2736b6f579d504fcc9b909903c3b66d4e8ea39815cdf",
+    "policyVersion": "3",
+    "validUntil": "1800000000"
+  },
+  "authorization": {
+    "approvalNonce": "7",
+    "authorizationExpiry": "1800000600"
+  },
+  "expected": {
+    "domainSeparator": "0xcd3acec86be3c7c092f6e59d0fda5638b5f81676bafa6e8a8a133ea991200f0c",
+    "paymentTypeHash": "0x54d1b3857ca85c48ece64062865af6c750b23f63416915b045268f9781d8c0ad",
+    "authorizationTypeHash": "0x97e91ca0e46f5f0dc5ff615694876282fce03b65ce6a9b81e79e02488474d12d",
+    "paymentHash": "0xaae447e0b3cc6969bb2f8f1b79060834eab3fd46cbc408515b626590cc6120f0",
+    "authorizationHash": "0x803e30ef2fd62e9d2d1731231bc5648c5861582701341fdb1f4865ead4e93f53",
+    "approvalDigest": "0xc9ae5e823c90e84fd5c469919001cb9a0cf2789c6451c3b9ef5efd325f5c851b"
+  }
+}
