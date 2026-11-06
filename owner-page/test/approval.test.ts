@@ -22,6 +22,9 @@ import {
   typedDataRequest,
   type OwnerConfig,
   type Pending,
+  configFromChain,
+  parseTrust,
+  relayForFirstUse,
 } from "../src/approval";
 
 const vector = JSON.parse(
@@ -272,5 +275,57 @@ describe("where a signature may go", () => {
 
   it("refuses a config with another scheme", () => {
     expect(() => withRelay("javascript:alert(1)")).toThrow(ApprovalError);
+  });
+});
+
+describe("approving with no config file", () => {
+  const pending = () => parsePending(pendingJson());
+  const vault = () => pending().vault;
+  const trust = (relay?: string) => ({ chainId: pending().chainId, vault: vault(), ...(relay ? { relay } : {}) });
+  const facts = (recipientAllowed = true) => ({
+    owner: getAddress("0x00000000000000000000000000000000000000aa"),
+    token: pending().payment.token,
+    recipientAllowed,
+  });
+
+  it("gives reviewPending the same config shape, from the chain", () => {
+    const config = configFromChain(pending(), facts(), trust("https://relay.example"), {});
+    expect(config.owner).toBe(facts().owner);
+    expect(config.relay).toBe("https://relay.example");
+    expect(config.vendors.get(pending().payment.recipient)).toMatch(/Allowed by the vault/);
+    expect(reviewPending(pending(), config, NOW).recipient).toBe(pending().payment.recipient);
+  });
+
+  it("refuses a recipient the vault does not allow", () => {
+    const config = configFromChain(pending(), facts(false), trust(), {});
+    expect(() => reviewPending(pending(), config, NOW)).toThrow(/allowlist/);
+  });
+
+  it("refuses a token other than the vault's", () => {
+    const other = { ...facts(), token: getAddress("0x00000000000000000000000000000000000000bb") };
+    expect(() => reviewPending(pending(), configFromChain(pending(), other, trust(), {}), NOW)).toThrow(/another token/);
+  });
+
+  it("refuses a request for a vault the owner did not confirm", () => {
+    const wrong = { ...trust(), vault: getAddress("0x00000000000000000000000000000000000000cc") };
+    expect(() => configFromChain(pending(), facts(), wrong, {})).toThrow(/did not confirm/);
+  });
+
+  it("uses the owner's own saved label, matched in lower case", () => {
+    const recipient = pending().payment.recipient;
+    const config = configFromChain(pending(), facts(), trust(), { [recipient.toLowerCase()]: "Acme" });
+    expect(config.vendors.get(recipient)).toBe("Acme");
+  });
+
+  it("lets a build's own relay override the one in a link", () => {
+    const link = { relay: "https://attacker.example", request: "a".repeat(16) };
+    expect(relayForFirstUse(link, "https://relay.example/")).toBe("https://relay.example");
+    expect(relayForFirstUse(link, undefined)).toBe("https://attacker.example");
+  });
+
+  it("drops a damaged saved record", () => {
+    expect(parseTrust("not json")).toBeUndefined();
+    expect(parseTrust(JSON.stringify({ chainId: 1, vault: "x" }))).toBeUndefined();
+    expect(parseTrust(JSON.stringify({ chainId: "1", vault: vault() }))?.vault).toBe(vault());
   });
 });
