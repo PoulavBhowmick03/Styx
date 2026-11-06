@@ -507,7 +507,7 @@ async function openVault(address: Address, fromLink = false): Promise<void> {
       if (pinned && hash !== pinned) codeMatches = false;
       setText(
         "v2-code",
-        `${built ? (matchesBuild(code, built) ? "Matches this repository's version 2 build (owner and token addresses and the compiler's metadata trailer ignored). " : "DIFFERS from this repository's version 2 build. ") : "Build not compared: artifact missing. "}Code hash ${hash}${pinned ? (hash === pinned ? ", the pinned hash for this vault." : `, which is NOT the pinned hash ${pinned}. Do not fund this vault.`) : ", with no pinned hash for this vault."}`,
+        `${built ? (matchesBuild(code, built) ? "Matches this repository's build (owner and token addresses and the compiler's metadata trailer ignored). " : "DIFFERS from this repository's version 2 build. ") : "Build not compared: artifact missing. "}Code hash ${hash}${pinned ? (hash === pinned ? ", the pinned hash for this vault." : `, which is NOT the pinned hash ${pinned}. Do not fund this vault.`) : ", with no pinned hash for this vault."}`,
       );
     }
     setText(

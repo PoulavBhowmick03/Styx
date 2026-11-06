@@ -8,8 +8,11 @@ Run it with `docs/mumbai/RUNBOOK.md`. `scripts/local_demo.sh` rehearses the whol
 
 ## Live on Arc testnet
 
-- **Vault:** [`0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1`](https://explorer.testnet.arc.io/address/0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1), deployed from [Arc Studio](https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16). Not audited. Test funds only.
-- **Evidence:** the routine payment, the owner-approved exception and attacks A1 to A4 ran as real transactions. Hashes are in `docs/mumbai/STATUS.md`.
+- **Vault:** [`0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8`](https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8), deployed from [Arc Studio](https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16)
+- **Set up and approve:** [styxco.xyz/setup](https://styxco.xyz/setup/) and [styxco.xyz](https://styxco.xyz)
+- **What it does:** one vault holds an organization's USDC. Each agent has its own limits and off switch. A payment over an agent's limit needs a signature over that exact payment, from the owner or from an approver using their own wallet. A reviewer can check one disclosed record against the chain and cannot read any other
+- **Evidence:** routine payments from two agents, an exception approved from a phone wallet, and attacks A1 to A4 ran as real transactions. Hashes are in `docs/mumbai/STATUS.md`
+- **Limits:** testnet only and not audited. Approvers must be plain wallets: the contract accepts contract wallets such as a Safe, but these pages do not. Amounts and recipients are public on chain
 
 ## Arkiv
 
@@ -27,7 +30,7 @@ npm run fetch-grant -- <lookup-tag> <writer-address> fetched.grant
 
 ```bash
 cd arkiv && npm install --legacy-peer-deps
-npm run fetch-grant -- 2da3058148c284654bd85b1a670a3ce9 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
+npm run fetch-grant -- 32d6d9b6f1b63d3e8856ed1bc23eee2b 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
 ```
 
 It is sealed to one reviewer, so only that reviewer's key can open it. Arkiv's public endpoint is rate limited and can stall, in which case the command exits 4 after 45 seconds. Retry, or set `ARKIV_ACCESS_KEY` to a free key from the Arkiv Hub.

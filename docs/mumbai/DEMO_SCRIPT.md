@@ -84,10 +84,10 @@ The grants and the key must be mode 600. The script stops if the issuer differs 
 
 ```bash
 cd arkiv && npm install --legacy-peer-deps
-npm run fetch-grant -- 2da3058148c284654bd85b1a670a3ce9 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
+npm run fetch-grant -- 32d6d9b6f1b63d3e8856ed1bc23eee2b 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
 ```
 
-Writer `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258`, lookup tag `2da3058148c284654bd85b1a670a3ce9`. It needs no key, and the public endpoint is rate limited. After the grant expires on 12 November 2026 this returns nothing.
+Writer `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258`, lookup tag `32d6d9b6f1b63d3e8856ed1bc23eee2b`. It needs no key, and the public endpoint is rate limited. After the grant expires on 12 November 2026 this returns nothing.
 
 ## The fallback route
 

@@ -84,9 +84,9 @@ The code hash the reviewer read from Arc, `0x6da4...3ebd`, also came back the sa
 
 **Caveat:** this is a second Mac with its own key and RPC, but it also holds the repo and some unfunded local test keys. None of the real owner, agent or issuer keys has been on it. Poulav decided this counts as the second machine.
 
-## Live v2 run on Arc testnet
+## The vault
 
-The organization vault, deployed from Arc Studio, in the same workspace as v1. **Whether v2 ships is decided at 05:30 IST. v1 stays live as the fallback.**
+The current vault, deployed from Arc Studio. An earlier single-agent vault is listed below as "Deployment", and the runs described after this section used it.
 
 | | |
 | --- | --- |
@@ -112,11 +112,11 @@ Codex also deployed the same source with Forge at `0x8b1D755B5e6957a7384d676baFE
 
 Balance after the attacks: 37.70 USDC in the vault, unchanged by them, and 0 at vendor B. The revert reasons were not read from these receipts.
 
-**Reviewer on this Mac:** all checks verified, a wrong key and a wrong issuer refused. Not yet run on a second machine for v2.
+**Reviewer on this Mac:** all checks verified, a wrong key and a wrong issuer refused. Not yet run on a second machine for this vault.
 
 **Arkiv:** entity `0x820414b5f660a6b6df5c56c84f69d4a15c03203b1c3dcaa4c971e3bc06f9ba0a`, transaction `0xbb21cfcc2b4d0c5323b123793d92404de79d3ba039d1cba56de6d0a734d1f0f9`, lookup tag `32d6d9b6f1b63d3e8856ed1bc23eee2b`. Bytes matched, verified against Arc, another writer returned nothing, tampered copy refused, on this Mac. The no-key endpoint stalled on several attempts before answering, while a fetch with an access key took a second.
 
-**Not shown:** a Safe or other contract-wallet approver, because the page and relay support plain wallets only. Removing an approver or switching off an agent on Arc, which has only run on a local chain. On the phone, the page failed once with "could not be read" before working on retry, and the cause was not established. Reads now run one at a time with retries and a fallback. The page does not check daily caps or spent nonces, so a request it accepts can still revert. Poulav's review of `StyxVault.sol` is owed before this counts as reviewed. None of this is audited.
+**Not shown:** a Safe or other contract-wallet approver, because the page and relay support plain wallets only. Removing an approver or switching off an agent on Arc, which has only run on a local chain. On the phone, the page failed once with "could not be read" before working on retry, and the cause was not established. Reads now run one at a time with retries and a fallback. The page does not check daily caps or spent nonces, so a request it accepts can still revert. Poulav reports reviewing it. None of this is audited.
 
 ## Under the Styx name
 
