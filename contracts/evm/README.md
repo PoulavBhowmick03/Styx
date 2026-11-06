@@ -1,47 +1,13 @@
-# Styx EVM settlement contracts
+# Contracts
 
-Public-bound settlement for one authorized Styx agreement (Metropolis M3). The Rust
-adapter that drives these contracts is [sdk/evm](../../sdk/evm).
+`src/StyxPolicyVault.sol` is the vault deployed on Arc testnet at `0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1`. It keeps the EIP-712 domain name `ErebusPolicyVault`, because the deployed code hashes that exact string, and signatures must match it.
 
-## What `StyxSettlement` does
+The deployed build used solc 0.8.24, the optimizer on with 200 runs, and EVM target cancun. `foundry.toml` builds with the optimizer off, so its local bytecode differs.
 
-`settle(terms, blinding, buyerSignature, sellerSignature, token)`:
-
-1. Decodes the canonical agreement terms strictly (truncation, trailing bytes, unknown tags,
-   out-of-range lengths, and invalid values all revert).
-2. Requires the configured chain id to equal `block.chainid` and derives the chain namespace.
-3. Requires the decoded domain to match the namespace, contract, and verifier version.
-4. Requires `block.timestamp < expiry`.
-5. Recomputes `Cdeal = keccak256("STYX_DEAL_COMMITMENT_V1" || terms || blinding)` and verifies
-   both role authorizations against it with `ecrecover`, requiring raw recovery ids and low-`s`.
-6. Recomputes `Ndeal`, requires it unused, and marks it consumed **before** any external call.
-7. Resolves the token from the asset identifier, requires it to match the supplied address, and
-   transfers `amount` and `fee` from the buyer with an exact balance-delta check.
-
-Payment amount, asset, payer, recipient, and fee are public. This is not shielded settlement.
-
-## Layout
-
-| Path | Purpose |
-|---|---|
-| `src/StyxCodec.sol` | Canonical decoder and the three digests |
-| `src/StyxSettlement.sol` | The settlement contract |
-| `src/MockERC20.sol` | Test token, with a fee-on-transfer mode for the negative test |
-| `src/MockReentrantERC20.sol` | Token that re-enters `settle` during `transferFrom` |
-| `test/StyxVectors.t.sol` | Known-answer test against the Rust agreement vectors |
-| `test/StyxSettlement.t.sol` | Happy path and adversarial matrix |
-
-There are no git submodules and no forge-std dependency; the tests declare a minimal `Vm`
-cheatcode interface.
-
-## Commands
+`script/attacks.sh` sends attacks A1 to A4 as real transactions. Every one must revert.
 
 ```bash
-forge build
-forge test -vvv
-forge fmt --check
+forge test
 ```
 
-The known-answer test reads
-`../../sdk/core/tests/fixtures/agreement-v1-vectors.json` in place, so regenerate the vectors in
-`sdk/core` rather than copying them here.
+The other contracts in `src/` are test tokens.

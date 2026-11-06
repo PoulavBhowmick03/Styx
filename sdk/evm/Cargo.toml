@@ -2,15 +2,13 @@
 name = "styx-evm"
 version = "0.1.0"
 edition = "2021"
-description = "EVM public-bound settlement adapter for Styx: authorized agreement to on-chain payment"
+description = "The Styx vault client and disclosure tool"
 license = "Apache-2.0"
 
 [dependencies]
 # Chain-neutral agreement core: canonical terms encoding, commitment, authorizations, and the
 # settlement capability types this adapter fills in. The adapter must not duplicate any of it.
-styx-core = { path = "../core" }
 styx-journal = { path = "../journal" }
-styx-coordinator = { path = "../coordinator" }
 styx-transport = { path = "../transport" }
 # The Rust EVM client: JSON-RPC, local transaction signing, nonce and gas filling, receipts.
 # Selected as the maintained successor to ethers-rs.
@@ -30,7 +28,7 @@ serde_json = "1"
 # Function selectors and the digest the contract recomputes.
 sha3 = "0.10"
 hex = "0.4"
-# x402 Permit2: recovers the buyer from a payment signature before the seller submits it.
+# Recovers the signer of an owner approval.
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 zeroize = "1"
 # Payment IDs, salts and approval nonces for the vault client.
@@ -41,20 +39,8 @@ name = "styx-vault"
 path = "src/bin/styx_vault.rs"
 
 [[bin]]
-name = "styx-tx-relayer"
-path = "src/bin/styx_tx_relayer.rs"
-
-[[bin]]
-name = "styx-settle"
-path = "src/bin/styx_settle.rs"
-
-[[bin]]
 name = "styx-disclosure"
 path = "src/bin/styx_disclosure.rs"
-
-[[bin]]
-name = "styx-network-check"
-path = "src/bin/styx_network_check.rs"
 
 [dev-dependencies]
 tempfile = "3"
