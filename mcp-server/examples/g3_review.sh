@@ -13,8 +13,9 @@
 #   DISCLOSURE_BIN   the reviewer tool                   (default sdk/evm/target/debug/erebus-disclosure)
 #   OUT              where this run keeps its files      (default ~/styx-g3-reviewer/run-<time>)
 #
-# Exit 0 only if every outcome was the expected one. That is still not G3: the gate also needs a machine that has
-# never held a Styx key, and the code hash compared with the one the team recorded.
+# Exit 0 only if every outcome was the expected one. That is still not G3: the gate also needs the reviewer to have their
+# own key and RPC and no access to the issuer's machine or the real vault's keys, and the code hash compared with the
+# one the team recorded. Say plainly what else the machine holds.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -112,7 +113,7 @@ r4="$(verify "$GRANT1" "http://127.0.0.1:1")";   judge "first grant, RPC unreach
 say; say "== Result"
 if [ "$fails" -eq 0 ]; then
   say "Every outcome was the expected one on this machine."
-  say "That is not the same as G3 passing. G3 also needs: a machine or profile that has never held a Styx key, and the code hash compared with the team's record. Report both honestly."
+  say "That is not the same as G3 passing. G3 also needs the reviewer to have their own key and RPC and no access to the issuer's machine or the real vault's keys, and the code hash compared with the team's record. Report any caveat about the machine honestly."
   exit 0
 fi
 say "$fails outcome(s) DIFFERED from what was expected. Do not claim G3 passed."
