@@ -41,9 +41,6 @@ export function relayServer(relay: Relay, config: RelayConfig): Server {
       });
       response.end(JSON.stringify(body));
     };
-    const requireAgent = () => {
-      if (!tokenMatches(bearer(request), config.agentToken)) throw new RelayError(401, "unauthorized");
-    };
 
     if (request.method === "OPTIONS") {
       response.writeHead(204, {
@@ -57,9 +54,9 @@ export function relayServer(relay: Relay, config: RelayConfig): Server {
     }
     const parts = url.pathname.split("/").filter(Boolean);
     if (request.method === "POST" && url.pathname === "/requests") {
-      requireAgent();
+      // Checked inside: a v2 token belongs to one agent, which only the request can name.
       const body = (await readJson(request)) as { pending?: unknown };
-      reply(200, await relay.submit(body?.pending));
+      reply(200, await relay.submit(body?.pending, bearer(request)));
     } else if (request.method === "POST" && url.pathname === "/alerts") {
       if (!tokenMatches(bearer(request), config.watcherToken)) throw new RelayError(401, "unauthorized");
       reply(200, await relay.notice(await readJson(request)));
@@ -70,8 +67,7 @@ export function relayServer(relay: Relay, config: RelayConfig): Server {
       await relay.sign(parts[1]!, await readJson(request));
       reply(200, { accepted: true });
     } else if (parts[0] === "requests" && parts[2] === "signature" && parts.length === 3 && request.method === "GET") {
-      requireAgent();
-      reply(200, relay.signature(parts[1]!));
+      reply(200, relay.signature(parts[1]!, bearer(request)));
     } else {
       throw new RelayError(404, "not found");
     }

@@ -63,6 +63,16 @@ try {
   send(vault, "configurePolicy(address,uint256,uint256,uint64)", agent, "1000000", "1000000000", String(now + 86400)); // A high daily limit: this test proposes many payments.
   send(vault, "setRecipient(address,bool)", VENDOR, "true");
   send(token, "mint(address,uint256)", vault, "100000000");
+  // A v2 vault beside v1, with the third key as an approver holding only their own wallet.
+  const vaultV2 = create("src/StyxVault.sol:StyxVault", owner, token);
+  const approver = stranger;
+  const outsiderKey = keys[3], outsider = addr(outsiderKey);
+  send(vaultV2, "setVaultDailyLimit(uint256)", "1000000000");
+  send(vaultV2, "configureAgent(address,uint256,uint256,uint64,bool)", agent, "1000000", "1000000000", String(now + 86400), "true");
+  send(vaultV2, "setRecipient(address,bool)", VENDOR, "true");
+  send(vaultV2, "setApprover(address,bool)", approver, "true");
+  send(token, "mint(address,uint256)", vaultV2, "100000000");
+  const codeHashV2 = sh("cast", ["keccak", sh("cast", ["code", vaultV2, "--rpc-url", RPC])]);
   const agentFile = join(WORK, "agent.key");
   writeFileSync(agentFile, agentKey, { mode: 0o600 });
   const invoice = join(WORK, "invoice");
@@ -244,10 +254,12 @@ try {
   await new Promise((r) => telegram.listen(TELEGRAM_PORT, "127.0.0.1", r));
   const RELAY = `http://127.0.0.1:${RELAY_PORT}`;
   const agentToken = randomBytes(24).toString("hex");
+  const agentTokenV2 = randomBytes(32).toString("hex");
   start(join(ROOT, "relay/node_modules/.bin/tsx"), ["src/main.ts"], {
     cwd: join(ROOT, "relay"),
     env: { ...process.env, RELAY_PORT: String(RELAY_PORT), RELAY_CHAIN_ID: "31337", RELAY_VAULT: vault, RELAY_OWNER: owner, RELAY_TOKEN: token,
       RELAY_PAGE_URL: `http://127.0.0.1:${PAGE_PORT}/`, RELAY_PUBLIC_URL: RELAY, RELAY_AGENT_TOKEN: agentToken, RELAY_MAX_ALERTS_PER_HOUR: "100",
+      RELAY_V2_VAULT: vaultV2, RELAY_V2_AGENT_TOKENS: JSON.stringify({ [agent]: agentTokenV2 }),
       TELEGRAM_BOT_TOKEN: "1:fake", TELEGRAM_CHAT_ID: "42", TELEGRAM_API_BASE: `http://127.0.0.1:${TELEGRAM_PORT}` },
   });
   await waitFor(async () => (await fetch(`${RELAY}/requests/nope`)).status === 404, "relay");
@@ -366,6 +378,135 @@ try {
     await page.goto(hostedLink(link));
     await page.locator("#first-use").waitFor({ state: "visible" });
     assert.match(await page.locator("#first-use-warning").textContent(), /already knows a different vault/);
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    await context.close();
+  });
+  // ---- v2: an approver with their own wallet, through the real CLI, relay and page ----
+  const cliV2 = (request) => {
+    const r = spawnSync(CLI, [], {
+      input: JSON.stringify(request), encoding: "utf8",
+      env: { STYX_VAULT_VERSION: "2", STYX_VAULT_CHAIN_ID: "31337", STYX_VAULT_RPC_URLS: RPC, STYX_VAULT_ADDRESS: vaultV2, STYX_VAULT_TOKEN: token,
+        STYX_VAULT_CODE_HASH: codeHashV2, STYX_VAULT_STATE_ROOT: join(WORK, "journal-v2"), STYX_VAULT_AGENT_KEY_FILE: agentFile },
+    });
+    return JSON.parse(r.stdout);
+  };
+  let counterV2 = 0;
+  const askApprover = async (signer = approver) => {
+    const proposed = cliV2({ method: "propose", recipient: VENDOR, amount: "6000000", invoice_file: invoice, invoice_reference: XSS, valid_until: now + 3000 });
+    assert.equal(proposed.path, "exception_required", JSON.stringify(proposed));
+    const pendingFile = join(WORK, `pending-v2-${counterV2++}.json`);
+    const asked = cliV2({ method: "request_approval", payment_id: proposed.payment_id, authorization_expiry: now + 600, pending_file: pendingFile, signer });
+    assert.equal(asked.status, "ok", JSON.stringify(asked));
+    const response = await fetch(`${RELAY}/requests`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${agentTokenV2}` },
+      body: JSON.stringify({ pending: JSON.parse(readFileSync(pendingFile, "utf8")) }),
+    });
+    const result = await response.json();
+    assert.equal(result.alerted, true, JSON.stringify(result));
+    const link = /https?:\/\/\S+/.exec(alerts.at(-1).text.split("\n").at(-1))[0];
+    return { id: proposed.payment_id, requestId: result.requestId, link: hostedLink(link), text: alerts.at(-1).text };
+  };
+  const balance = (who) => BigInt(sh("cast", ["call", token, "balanceOf(address)(uint256)", who, "--rpc-url", RPC]).split(" ")[0]);
+  await scenario("v2: an approver signs from their own wallet, and the payment settles with no file carried", async () => {
+    const before = balance(VENDOR);
+    const { id, requestId, link, text } = await askApprover();
+    assert.match(text, new RegExp(agent, "i"));
+    const { page, context, errors, prompts } = await openPage(HOSTED_PORT, { account: approver });
+    await allowHosted(page);
+    await page.goto(link);
+    await page.locator("#sign").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#first-use").isVisible(), false);
+    assert.equal(await page.locator("#amount").textContent(), "6 USDC");
+    assert.match(await page.locator("#signer").textContent(), /Approver/);
+    assert.match(await page.locator("#rule").textContent(), /limit of 1 USDC, read from the chain/);
+    assert.equal(await page.locator("#invoice").textContent(), XSS);
+    assert.equal(await page.locator("#invoice img").count(), 0);
+    await shot(page, "v2-approver");
+    await page.click("#sign");
+    await waitFor(async () => /relay accepted it/.test(await status(page)), "relay confirmation");
+    assert.equal(prompts.includes("eth_signTypedData_v4"), true);
+    const signed = await (await fetch(`${RELAY}/requests/${requestId}/signature`, { headers: { authorization: `Bearer ${agentTokenV2}` } })).json();
+    assert.equal(signed.status, "signed");
+    assert.equal(signed.signature.schema, "vault-approver-signature/2");
+    const file = join(WORK, `v2-signature-${counterV2}.json`);
+    writeFileSync(file, JSON.stringify(signed.signature), { mode: 0o600 });
+    const paid = cliV2({ method: "submit", payment_id: id, signature_file: file });
+    assert.equal(paid.state, "settled", JSON.stringify(paid));
+    assert.equal(balance(VENDOR) - before, 6000000n);
+    assert.equal(errors.length, 0, errors.join());
+    await context.close();
+  });
+  await scenario("v2: the owner can also sign when named", async () => {
+    const { link } = await askApprover(owner);
+    const { page, context } = await openPage(HOSTED_PORT);
+    await allowHosted(page);
+    await page.goto(link);
+    await page.locator("#sign").waitFor({ state: "visible" });
+    assert.match(await page.locator("#signer").textContent(), /Owner/);
+    await context.close();
+  });
+  await scenario("v2: a wallet other than the named approver never gets a sign button", async () => {
+    const { link } = await askApprover();
+    const { page, context, prompts } = await openPage(HOSTED_PORT, { account: outsider });
+    await allowHosted(page);
+    await page.goto(link);
+    await waitFor(async () => /as the approver/.test(await status(page)), "refusal");
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal(prompts.includes("eth_signTypedData_v4"), false);
+    await context.close();
+  });
+  await scenario("v2: an approver who was removed gets no sign button, and re-adding them does not revive the request", async () => {
+    const { link } = await askApprover();
+    send(vaultV2, "setApprover(address,bool)", approver, "false");
+    const first = await openPage(HOSTED_PORT, { account: approver });
+    await allowHosted(first.page);
+    await first.page.goto(link);
+    await waitFor(async () => /does not list this wallet/.test(await status(first.page)), "removed");
+    assert.equal(await first.page.locator("#sign").isVisible(), false);
+    await first.context.close();
+    send(vaultV2, "setApprover(address,bool)", approver, "true");
+    const second = await openPage(HOSTED_PORT, { account: approver });
+    await allowHosted(second.page);
+    await second.page.goto(link);
+    await waitFor(async () => /access changed/.test(await status(second.page)), "stale version");
+    assert.equal(await second.page.locator("#sign").isVisible(), false);
+    await second.context.close();
+  });
+  await scenario("v2: adding another approver leaves a pending request signable", async () => {
+    const { link } = await askApprover();
+    send(vaultV2, "setApprover(address,bool)", outsider, "true");
+    const { page, context } = await openPage(HOSTED_PORT, { account: approver });
+    await allowHosted(page);
+    await page.goto(link);
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await context.close();
+    send(vaultV2, "setApprover(address,bool)", outsider, "false");
+  });
+  await scenario("v2: a link naming another relay gets no signature posted to it", async () => {
+    const { link, requestId } = await askApprover();
+    const crafted = new URL(link);
+    crafted.searchParams.set("relay", "http://attacker.invalid");
+    const { page, context } = await openPage(HOSTED_PORT, { account: approver });
+    const posted = [];
+    await page.route("http://attacker.invalid/**", async (route) => {
+      if (route.request().method() === "POST") posted.push(route.request().url());
+      const genuine = await (await fetch(`${RELAY}/requests/${requestId}`)).json();
+      await route.fulfill({ json: genuine, headers: { "access-control-allow-origin": "*" } });
+    });
+    await page.goto(crafted.toString());
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await page.click("#sign");
+    await waitFor(async () => /not sent/.test(await status(page)), "refusal to post");
+    assert.equal(posted.length, 0);
+    await context.close();
+  });
+  await scenario("v2: with no wallet in the browser, the page offers to open the request in MetaMask", async () => {
+    const { link } = await askApprover();
+    const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
+    const page = await context.newPage();
+    await allowHosted(page);
+    await page.goto(link);
+    await page.locator("#wallet-help").waitFor({ state: "visible" });
     assert.equal(await page.locator("#sign").isVisible(), false);
     await context.close();
   });

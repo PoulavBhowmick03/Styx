@@ -35,14 +35,14 @@ class VaultSeam:
     _parameters = {
         "version": set(),
         "propose": {"recipient", "amount", "invoice_file", "invoice_reference", "valid_until"},
-        "request_approval": {"payment_id", "authorization_expiry", "pending_file"},
+        "request_approval": {"payment_id", "authorization_expiry", "pending_file", "signer"},
         "submit": {"payment_id", "signature_file"},
         "status": {"payment_id"},
         "export_record": {"payment_id", "record_file"},
     }
     _public_fields = {
         "status", "protocol", "payment_id", "payment_hash", "path", "pending_file",
-        "approval_digest", "tx_hash", "state", "record_file",
+        "approval_digest", "tx_hash", "state", "record_file", "contract_version",
     }
 
     def __init__(self, binary: str | Path | None = None, timeout: int = 180) -> None:
