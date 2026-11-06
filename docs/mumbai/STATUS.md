@@ -34,7 +34,7 @@ Each is a real transaction on the deployed vault, with its receipt read back fro
 
 Balances after: vault 53.75 USDC, vendor A 6.25 USDC, vendor B 0. A1 to A3 were also sent again in reruns, and those reverted too.
 
-The reviewer, on this same machine, verified all four results for the record, refused a tampered copy and a record sealed to someone else, and reported "unavailable" with its RPC unreachable. That is not yet G3, which needs a second machine.
+The reviewer, on this same machine, verified all four results for the record, refused a tampered copy and a record sealed to someone else, and reported "unavailable" with its RPC unreachable. That run was on one machine. For the second, see "Reviewer on a second machine".
 
 Not shown by this run: an audit, any wallet besides MetaMask, or the reasons for the reverts from the receipts. The revert reason for A4 was confirmed separately by simulation: `PaymentAlreadyUsed`.
 
@@ -69,6 +69,21 @@ Balances after: vault 50.30 USDC, vendor A 9.70 USDC, and 9.70 of today's 10 USD
 
 The Blockdaemon RPC returned a string JSON-RPC `id` and, to `cast`, undecodable bytes when tested. Use the primary RPC for the watcher.
 
+## Reviewer on a second machine
+
+Run by Ishita's Claude on Ishita's Mac (macOS 26.6.2, Apple Silicon), with its own reviewer key and its own connection to `https://rpc.testnet.arc.io`. The issuer ran `export_vault_payment` on the issuer's machine and sent two grants.
+
+| Run | Result |
+| --- | --- |
+| First grant, the 6 USDC exception, sealed to this reviewer | Record integrity, authorization, settlement and policy at execution all verified, with no reasons |
+| Same grant with one bit changed | `cannot open vault payment grant` |
+| Second grant, another payment sealed to another reviewer | `cannot open vault payment grant` |
+| First grant with the RPC unreachable | Integrity verified. The other three read unavailable, and nothing read as failed or unpaid |
+
+The code hash the reviewer read from Arc, `0x6da4...3ebd`, also came back the same from dRPC. It equals the value in this file. The reviewer read that hash before this file listed it.
+
+**Caveat:** this is a second Mac with its own key and RPC, but it also holds the repo and some unfunded local test keys. None of the real owner, agent or issuer keys has been on it. Poulav decided this counts as the second machine.
+
 ## Hosting
 
 | | |
@@ -88,7 +103,7 @@ Owners no longer need a config file to approve from an alert. The page confirms 
 | G0 | **Team says: fresh project, not Continuity. Conflict open, see below** | Arc Studio project: not confirmed |
 | G1 | **Passed on Arc testnet** | See "Live run" below |
 | G2 | **Passed on Arc testnet** | Signed in MetaMask. See "Live run" below |
-| G3 | Passed on one machine, not yet on a second | The gate needs a second machine or clean profile with its own RPC |
+| G3 | **Passed on a second Mac, with a caveat** | See "Reviewer on a second machine" below |
 | G4 | Not run | Access key set. Publisher `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258` reads a balance of 0 on Rabdi, so it cannot publish yet. `scripts/arkiv_gate.sh` is ready |
 | G5 | Not run | Needs a World client |
 
