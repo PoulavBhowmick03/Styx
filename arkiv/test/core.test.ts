@@ -8,6 +8,7 @@ import {
   ArkivAdapterError,
   assertLookupTag,
   exitCodeFor,
+  withinTime,
   redacted,
   EXIT_MALFORMED,
   EXIT_NOTHING_FOUND,
@@ -137,5 +138,18 @@ describe("telling failures apart", () => {
 describe("error text", () => {
   it("never carries the access key", () => {
     expect(redacted(new Error("POST https://host/rpc/abc123 failed"), "abc123")).not.toContain("abc123");
+  });
+});
+
+describe("a stalled endpoint", () => {
+  it("gives up as unreachable instead of hanging, and that is never read as nothing found", async () => {
+    const stalled = new Promise<string>(() => {});
+    const error = await withinTime(stalled, 10).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(exitCodeFor(error)).toBe(EXIT_UNAVAILABLE);
+  });
+
+  it("passes a timely answer through", async () => {
+    await expect(withinTime(Promise.resolve("answer"), 1000)).resolves.toBe("answer");
   });
 });

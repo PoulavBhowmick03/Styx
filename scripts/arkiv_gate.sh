@@ -34,14 +34,27 @@ else
 fi
 
 echo "== fetch as a reviewer, with no access key and nothing of ours running"
-env -u ARKIV_ACCESS_KEY -u ARKIV_PUBLISHER_KEY_FILE npm run --silent fetch-grant -- "$TAG" "$WRITER" "$RUN/fetched.grant"
+# Exit 4 means Arkiv did not answer. It says nothing about the grant, so it is asked again.
+for attempt in 1 2 3 4; do
+  set +e
+  env -u ARKIV_ACCESS_KEY -u ARKIV_PUBLISHER_KEY_FILE npm run --silent fetch-grant -- "$TAG" "$WRITER" "$RUN/fetched.grant"
+  code=$?
+  set -e
+  [ "$code" -ne 4 ] && break
+  sleep $((attempt * 5))
+done
+[ "$code" -eq 0 ] || { echo "FAIL: the fetch exited $code"; exit 1; }
 cmp "$GRANT_FILE" "$RUN/fetched.grant"
 echo "fetched bytes match the local grant"
 
 echo "== another writer's answer is not accepted"
 set +e
-env -u ARKIV_ACCESS_KEY npm run --silent fetch-grant -- "$TAG" 0x0000000000000000000000000000000000000001 "$RUN/wrong-writer.grant"
-code=$?
+for attempt in 1 2 3 4; do
+  env -u ARKIV_ACCESS_KEY npm run --silent fetch-grant -- "$TAG" 0x0000000000000000000000000000000000000001 "$RUN/wrong-writer.grant"
+  code=$?
+  [ "$code" -ne 4 ] && break
+  sleep $((attempt * 5))
+done
 set -e
 [ "$code" -eq 3 ] || { echo "FAIL: wrong writer exited $code, expected 3"; exit 1; }
 [ ! -e "$RUN/wrong-writer.grant" ] || { echo "FAIL: wrong writer produced a file"; exit 1; }

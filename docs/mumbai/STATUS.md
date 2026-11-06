@@ -84,6 +84,21 @@ The code hash the reviewer read from Arc, `0x6da4...3ebd`, also came back the sa
 
 **Caveat:** this is a second Mac with its own key and RPC, but it also holds the repo and some unfunded local test keys. None of the real owner, agent or issuer keys has been on it. Poulav decided this counts as the second machine.
 
+## Under the Styx name
+
+After the rename and the removal of unused code, on Arc through the `styx_*` tools and `styx-vault`, with the hosted relay and `styxco.xyz`:
+
+| Step | Transaction |
+| --- | --- |
+| 0.1 USDC routine payment settled | `0xf4bb6ff4a11e69a20b5afc5d9208b148c13b84968ecd807f27f6601c0e67c65e` |
+| 1.1 USDC exception, signed by the owner, settled | `0x1c888feb6a4cfa68f190794559930e218d81f6c3ba595f591f58493a0597126d` |
+
+Balances after: vault 45.60 USDC, vendor A 14.40 USDC. Earlier transactions in this file ran before the rename, on the same deployed vault. The reviewer's run on a second machine used grants from before the rename, and its rerun is pending.
+
+## Entry type
+
+The team reports that ETHGlobal said the project can target the fresh track. Written confirmation, and whether ETHGlobal saw the first commit's import, are not recorded here.
+
 ## Arkiv
 
 Run with `scripts/arkiv_gate.sh` on Rabdi, chain ID 7794095.
@@ -91,13 +106,13 @@ Run with `scripts/arkiv_gate.sh` on Rabdi, chain ID 7794095.
 | | |
 | --- | --- |
 | **Writer** | `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258` |
-| **Entity** | `0xc4169c3f52bd75373fbe868933ed1a49f650813ec0d5722d95cfe021c17b2fba` |
-| **Transaction** | `0x4bce932d04a11fae91e5b5e73175277fbf582419789dc2d885277b6ed25454c4` |
-| **Lookup tag** | `ffa18dd008d8a0e8ebc14d2d1424a861` |
+| **Entity** | `0x12eb4d51f91c96ec9e8e8bb6ae4f92cc9c1353425f386e90a961d72cc5a60cfc` |
+| **Transaction** | `0x3e1c61b653f50c5b0dd033f89c3088bb1ae15a4f241dc8f764bcb71885c1943b` |
+| **Lookup tag** | `2da3058148c284654bd85b1a670a3ce9` |
 
 With no project process running locally and no access key, the fetch returned 1,762 bytes identical to the local grant. The verifier then reported record integrity, authorization, settlement and policy at execution as verified against Arc. Another writer's address returned nothing, and a copy with one changed bit was refused.
 
-The first verify attempt read unavailable because the RPC did not answer, so it is retried, and it passed on the next attempt. The grant expires on 12 November 2026, and the entity about a day later.
+This is the grant reissued after the rename to Styx, on the code after the unused modules were removed. An earlier grant from before the rename is also on Rabdi and no longer opens. The verifier retries when the RPC does not answer. A no-key fetch also stalled once with no answer, so a fetch now gives up after 45 seconds with its own exit code, and the gate retries that. The grant expires on 12 November 2026, and the entity about a day later.
 
 **Not shown:** this fetch ran on the issuer's Mac with a reviewer key made there, so it was not a separate reviewer's machine. Nobody outside the team has used it.
 
@@ -325,7 +340,7 @@ Pushed to `main` at `34a5d56`. Version 1 only. No transaction was sent to Arc an
 - **G3 as recorded above.** The code hash `0x6da4170f...3ebd` and the issuer `0x35879a31...4a4e` in this file match what I computed and read from the grants. The four results match what I saw. One difference: this file calls the second grant "another payment sealed to another reviewer". I saw only that it cannot be opened, and the tool gives the same message for a corrupt grant, so I could not confirm that description.
 - **Arkiv, reproduced from a second Mac.** The public fetch worked with no key (1,762 bytes, writer and tag as recorded), and a wrong writer address returned nothing. That grant is **not** the one sealed to my reviewer key: it shares the 22-byte issuer header with my grant and then differs, so my key cannot open it, which is the design. So G4's verify step is still shown only on the issuer's machine.
 - **The live domain.** `https://styxco.xyz/` and `/setup/` answer, and the site sends `X-Frame-Options: DENY`, a `frame-ancestors 'none'` policy, `Referrer-Policy: no-referrer`, `nosniff` and HSTS. The relay's CORS answer names only `https://styxco.xyz`, so approvals from the earlier `styx-approve.vercel.app` (which still serves pages) would not reach it.
-- **Hosted approval.** The recorded 2 USDC approval ran at the earlier address. **No approval through `styxco.xyz` is recorded yet.**
+- **Hosted approval.** The 2 USDC approval ran at the earlier address. A 1.5 USDC approval on `styxco.xyz` was recorded after I wrote this (`0xee613790...`, above), so the earlier line saying none was recorded no longer holds.
 
 ### What was built
 
