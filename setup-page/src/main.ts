@@ -494,8 +494,15 @@ function setControls(isOwner = ownerFlag): void {
   for (const button of document.querySelectorAll<HTMLButtonElement>("#vendors button, #recent button")) button.disabled = button.closest("#recent") ? busy : off;
 }
 
-/** Pages used when the vault's creation block cannot be found: roughly the last 120,000 blocks. */
-const FALLBACK_PAGES = 12;
+/**
+ * Pages read when the vault's creation block cannot be found: 12 pages is roughly the last 120,000 blocks.
+ * A build can lower it with VITE_LOG_FALLBACK_PAGES, which the browser test does so it does not have to mine
+ * 120,000 blocks to leave a vendor outside the window. A bad value falls back to 12.
+ */
+const FALLBACK_PAGES = (() => {
+  const raw = Number(import.meta.env.VITE_LOG_FALLBACK_PAGES ?? 12);
+  return Number.isInteger(raw) && raw >= 1 && raw <= 400 ? raw : 12;
+})();
 
 /**
  * The block the vault was created in: remembered, else a hint checked on-chain (the page's address ?created=
