@@ -341,3 +341,23 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
     finally:
         anvil.kill()
         anvil.wait()
+
+
+def test_models_can_leave_the_timestamps_out(tmp_path):
+    directory = private_dir(tmp_path / "vault")
+    binary = scripted_binary(tmp_path, {
+        "propose": [{"status": "ok", "payment_id": "0x" + "ab" * 32, "path": "exception_required"}, 0],
+        "request_approval": [{"status": "ok", "pending_file": "/x", "approval_digest": "0x" + "ef" * 32}, 0],
+    })
+
+    async def body(session):
+        await session.call_tool("erebus_propose_payment", {
+            "recipient": "0x" + "a1" * 20, "amount": "1", "invoice_name": "i.txt", "invoice_reference": "x",
+        })
+        await session.call_tool("erebus_request_owner_approval", {"payment_id": "0x" + "ab" * 32})
+
+    before = int(time.time())
+    run_session({"EREBUS_VAULT_DIR": str(directory), "EREBUS_VAULT_CLI": str(binary)}, body)
+    requests = {json.loads(line)["method"]: json.loads(line) for line in (tmp_path / "requests.log").read_text().splitlines()}
+    assert before + 3500 < requests["propose"]["valid_until"] < before + 3700
+    assert before + 3500 < requests["request_approval"]["authorization_expiry"] < before + 3700
