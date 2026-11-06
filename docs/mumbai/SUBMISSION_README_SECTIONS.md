@@ -54,7 +54,7 @@ The vault contract was produced with Arc Studio (see below). **[DECISION or TO F
 | Arc Studio | https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16 **[check it opens when logged out]** |
 | Build | solc 0.8.24, optimizer on with 200 runs, EVM target cancun |
 | Contract source | `contracts/evm/src/ErebusPolicyVault.sol`, from commit `1e8156c` |
-| Hosted pages | `https://styx-approve.vercel.app` (approval) and `/setup/` (setup). **[The page domain is moving: update this when it lands on `main`.]** |
+| Hosted pages | `https://styxco.xyz` (approval) and `https://styxco.xyz/setup/` (setup), on Vercel. The relay accepts approvals only from this domain |
 | Hosted relay | `https://styx-vault-relay.fly.dev`, on Fly, for this one vault and owner |
 
 ## Roles and trust boundaries
@@ -85,7 +85,7 @@ Each claim is here only with the evidence that exists. A claim with no evidence 
 | A routine payment settles | [`0x41cf5742...`](https://explorer.testnet.arc.io/tx/0x41cf57420722e3492f50a0552b23b3047ec8f322385c003d9c489a59be61b58f), and through the tools | Shown |
 | An owner-signed exception settles | In MetaMask [`0x32cc0ccc...`](https://explorer.testnet.arc.io/tx/0x32cc0ccc5092830eaaa0796a8d964b9453cf52a4eeb2a13138ff4bda0dd982f2). Through the tools [`0xbfaf884f...`](https://explorer.testnet.arc.io/tx/0xbfaf884fd68aa72d4043a8bdf812c55f41bcda7c92c5d42788b4a90818fc1450) | Shown |
 | The owner is alerted and the signature returns with no file | A real Telegram bot and MetaMask: [`0x3b9558c3...`](https://explorer.testnet.arc.io/tx/0x3b9558c3c381af00ee12286ceb6c8bf6fd08f65449d8595e4032d1dea8428073) (1.2 USDC) | Shown |
-| The owner approves through the hosted pages and relay | A 2 USDC exception: [`0xde1c50dc...`](https://explorer.testnet.arc.io/tx/0xde1c50dc5d6312ea536319554e3008561f24a50fac2c7e2a822006a12a90b1a0) | Shown, with the owner's wallet in a browser on a Mac |
+| The owner approves through the hosted pages and relay | A 2 USDC exception, made while the pages were at their earlier address, `styx-approve.vercel.app`: [`0xde1c50dc...`](https://explorer.testnet.arc.io/tx/0xde1c50dc5d6312ea536319554e3008561f24a50fac2c7e2a822006a12a90b1a0) | Shown, with the owner's wallet in a browser on a Mac. **Not yet recorded: an approval through `styxco.xyz`** |
 | The owner signs on a phone | An alert has opened in a phone wallet's browser, as far as the first-use check, and a wallet that is not the owner was refused | **Not yet:** no signature by the owner on a phone |
 | The reviewer verifies settlement independently | On a second Mac with its own key and RPC, all four results verified for the exception [`0x32cc0ccc...`](https://explorer.testnet.arc.io/tx/0x32cc0ccc5092830eaaa0796a8d964b9453cf52a4eeb2a13138ff4bda0dd982f2) | Shown, with a caveat: that Mac also holds the repo and some unfunded local test keys. No reviewer outside the team has used it |
 | One-record disclosure: a second record does not open | On that second Mac, a one-bit-changed copy and another grant were refused | Shown, with the same caveat |
