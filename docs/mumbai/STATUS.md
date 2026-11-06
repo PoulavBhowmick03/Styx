@@ -313,3 +313,35 @@ A 3 minute 45 second shot list around `scripts/run_gates.sh` that shows Arc Stud
 | Codex | Add `mcp-server/examples` to the test paths and CI. Review my work. Check the watcher against Arc's rate limit |
 
 **Housekeeping:** every commit in this round is authored by ishitab02 with no co-author line. No keys, tokens or `.env` files were committed.
+
+## Claude 2 report, round 3 (Ishita), 7 November 2026, about 01:40 IST
+
+Pushed to `main` at `34a5d56`. Version 1 only. No transaction was sent to Arc and no one's keys were used. The only chain activity was read-only calls to Arc's public RPC and Arkiv's public fetch.
+
+### What was checked
+
+- **G3 as recorded above.** The code hash `0x6da4170f...3ebd` and the issuer `0x35879a31...4a4e` in this file match what I computed and read from the grants. The four results match what I saw. One difference: this file calls the second grant "another payment sealed to another reviewer". I saw only that it cannot be opened, and the tool gives the same message for a corrupt grant, so I could not confirm that description.
+- **Arkiv, reproduced from a second Mac.** The public fetch worked with no key (1,762 bytes, writer and tag as recorded), and a wrong writer address returned nothing. That grant is **not** the one sealed to my reviewer key: it shares the 22-byte issuer header with my grant and then differs, so my key cannot open it, which is the design. So G4's verify step is still shown only on the issuer's machine.
+- **The live domain.** `https://styxco.xyz/` and `/setup/` answer, and the site sends `X-Frame-Options: DENY`, a `frame-ancestors 'none'` policy, `Referrer-Policy: no-referrer`, `nosniff` and HSTS. The relay's CORS answer names only `https://styxco.xyz`, so approvals from the earlier `styx-approve.vercel.app` (which still serves pages) would not reach it.
+- **Hosted approval.** The recorded 2 USDC approval ran at the earlier address. **No approval through `styxco.xyz` is recorded yet.**
+
+### What was built
+
+- **Setup page, section 7.** It tells the owner what happens when an alert arrives and sets this browser up for it on a build with a relay. Poulav's earlier silent write trusted any vault that named the connected wallet as owner, which a look-alike contract can do. It now records the vault only when the wallet is the owner **and** the vault's code matches the build, shows what the browser trusts, and lets the owner undo it. The record is the one the approval page reads (checked with the approval page's own parser).
+- **Setup-page tests:** 26 browser scenarios and 37 unit tests pass, including the production build served under `/setup/` the way the hosted site serves it. The "stops at 110,000 blocks" problem noted under Hosting is fixed: the test now mines about 25,000 blocks.
+- **Docs, v1 only:** `ARCHITECTURE.md`, `DEMO_SCRIPT.md` (the alert-to-approval flow with no file, the attacks, the second-Mac reviewer, the Arkiv fetch, Studio, with commands), `SUBMISSION_README_SECTIONS.md` (every claim cites a transaction here or says "not yet"), and `ai-usage.md` (filled from git and the repo; 10 TO FILL items remain for people).
+- **Agent configs.** Claude Code's ran. Codex 0.154.0 accepted every key and found the four tools, but its non-interactive mode blocks MCP calls unless `default_tools_approval_mode` is set, and with it set two sessions did not finish: **no payment completed through Codex.** Claude Desktop is installed but was not loaded (it needs its live config edited). Cursor is not installed. See `mcp-server/examples/INSTALL_TEST.md`.
+
+### Findings for others
+
+1. **`scripts/build_site.sh` does not make the setup page's contract build.** The page needs `setup-page/public/vault-artifact.json`, which `npm run prepare-artifact` creates and which needs Foundry. The script only works on a machine that already has the file.
+2. **The MetaMask phishing warning** was seen on the earlier address. Check it on `styxco.xyz` before filming.
+3. **`PROVENANCE.md` was deleted in `6dd604c`.** It is on the unpushed branch `claude2/restore-provenance`, exactly as it was in the first commit. Poulav decides.
+4. **v2 is not started.** `V2_REVIEW.md` is not on `main` and no interface exists yet. When it lands, the setup-page work goes on `claude2/v2` and nothing merges until Poulav says v2 ships.
+
+### Needs a person
+
+- Rehearse the no-file demo once, including pausing the agent after the signature arrives and running attacks A1 to A3 with the files its tools saved. **That sequence has not been run.** `run_gates.sh` is the rehearsed fallback.
+- Try section 7 with a real wallet on `styxco.xyz`.
+- Check the Studio link opens when logged out.
+- Fill the TO FILL items in `ai-usage.md` (Ishita and Poulav), and decide the entry type and partner picks (Poulav).
