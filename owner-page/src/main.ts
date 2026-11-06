@@ -215,6 +215,8 @@ async function sign(): Promise<void> {
     download.href = URL.createObjectURL(new Blob([file], { type: "application/json" }));
     download.download = `signature-${pending.payment.paymentId.slice(2, 14)}.json`;
     output.hidden = false;
+    signButton.hidden = true;
+    worldButton.hidden = true;
     showStatus("Signed. Give this file to the agent's erebus_submit_payment tool.");
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "The wallet did not sign.", true);
