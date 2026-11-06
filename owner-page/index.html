@@ -3,91 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Owner approval</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #fafaf9;
-        --fg: #1c1917;
-        --muted: #57534e;
-        --line: #d6d3d1;
-        --error: #b91c1c;
-        --accent: #1d4ed8;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #1c1917;
-          --fg: #fafaf9;
-          --muted: #a8a29e;
-          --line: #44403c;
-          --error: #fca5a5;
-          --accent: #93c5fd;
-        }
-      }
-      body {
-        margin: 0 auto;
-        max-width: 42rem;
-        padding: 2rem 1rem;
-        background: var(--bg);
-        color: var(--fg);
-        font: 16px/1.5 system-ui, sans-serif;
-      }
-      h1 { font-size: 1.5rem; margin: 0 0 1.5rem; }
-      [hidden] { display: none !important; }
-      label { display: block; margin-bottom: 1rem; font-weight: 600; }
-      input[type="file"] { display: block; margin-top: 0.25rem; font-weight: 400; max-width: 100%; }
-      dl { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); gap: 0.5rem 1rem; margin: 1.5rem 0; }
-      dt { color: var(--muted); }
-      dl .row { display: contents; }
-      dd { margin: 0; overflow-wrap: anywhere; }
-      .value { font-weight: 600; }
-      .mono { font-family: ui-monospace, monospace; font-size: 0.875rem; }
-      .note { color: var(--muted); font-size: 0.875rem; font-weight: 400; }
-      button {
-        padding: 0.625rem 1.25rem;
-        border: 0;
-        border-radius: 0.375rem;
-        background: var(--accent);
-        color: var(--bg);
-        font: inherit;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      button:disabled { opacity: 0.6; cursor: wait; }
-      a.button {
-        display: inline-block;
-        padding: 0.625rem 1.25rem;
-        border-radius: 0.375rem;
-        background: var(--accent);
-        color: var(--bg);
-        font-weight: 600;
-        text-decoration: none;
-      }
-      h2 { font-size: 1.125rem; margin: 1rem 0 0.5rem; }
-      p.error { color: var(--error); font-weight: 600; }
-      p.error:empty { display: none; }
-      details { margin-bottom: 1rem; }
-      summary { color: var(--muted); cursor: pointer; margin-bottom: 0.5rem; }
-      #status { min-height: 1.5rem; margin: 1rem 0; overflow-wrap: anywhere; }
-      #status.error { color: var(--error); font-weight: 600; }
-      textarea {
-        box-sizing: border-box;
-        width: 100%;
-        height: 9rem;
-        margin: 0.5rem 0;
-        border: 1px solid var(--line);
-        background: transparent;
-        color: inherit;
-        font: 0.875rem ui-monospace, monospace;
-      }
-    </style>
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0908" />
+    <title>Styx: approve a payment</title>
+    <link rel="stylesheet" href="/src/styx.css" />
   </head>
   <body>
-    <h1>Owner approval</h1>
+    <div class="wrap">
+    <header class="top">
+      <span class="brand">Styx</span>
+      <span class="net">Arc testnet. Unaudited.</span>
+    </header>
+
+    <section id="landing" class="landing" hidden>
+      <h1>A vault that pays an agent's invoices within your rules</h1>
+      <p>Styx holds USDC in a vault on Arc testnet. An AI agent can pay routine invoices up to the limits you set. For anything above a limit, the vault needs a signature from you or from an approver, over the exact payment. A reviewer can check one disclosed record against the chain.</p>
+      <p class="note">Testnet only, and not audited. Approvers sign from a plain wallet; a smart-contract wallet such as a Safe cannot approve through these pages.</p>
+      <p>This page is where you review and sign an exception. You normally arrive here from an alert link that carries the request, so there is nothing to sign yet.</p>
+      <div class="links">
+        <a class="button" href="/setup/">Set up a vault</a>
+        <a class="button secondary" href="https://github.com/PoulavBhowmick03/Styx">Source code</a>
+        <a class="button secondary" href="https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8">Demo vault on Arc</a>
+      </div>
+    </section>
+
+    <h1 id="page-title">Approve an exception</h1>
     <section id="first-use" hidden>
       <h2>Is this your vault?</h2>
       <p>You only confirm this once in this browser. Everything else is read from the vault.</p>
-      <dl>
+      <dl class="facts">
         <dt>Vault</dt>
         <dd id="first-use-vault" class="mono"></dd>
         <dt>Owner</dt>
@@ -99,7 +43,7 @@
       <button id="trust-vault" type="button">This is my vault</button>
     </section>
     <section id="wallet-help" hidden>
-      <p>This browser has no wallet.</p>
+      <p><strong>This browser has no wallet.</strong> Open this same link inside your wallet's own browser to review and sign.</p>
       <a id="open-wallet" class="button">Open in MetaMask</a>
     </section>
     <button id="switch-chain" type="button" hidden>Switch to Arc testnet</button>
@@ -117,9 +61,11 @@
     </label>
 
     <section id="review" hidden>
-      <dl>
+      <dl class="facts">
         <dt>Amount</dt>
-        <dd id="amount" class="value"></dd>
+        <dd id="amount" class="value key"></dd>
+        <dt>Recipient (full address)</dt>
+        <dd id="recipient" class="mono key-address"></dd>
         <dt id="vendor-label">Vendor</dt>
         <dd>
           <span id="vendor" class="value"></span>
@@ -129,14 +75,12 @@
           <dt>Signing as</dt>
           <dd id="signer" class="mono"></dd>
         </div>
-        <dt>Recipient</dt>
-        <dd id="recipient" class="mono"></dd>
         <dt>Rule exceeded</dt>
         <dd id="rule"></dd>
         <dt>Invoice reference</dt>
-        <dd>
+        <dd class="untrusted">
           <span id="invoice"></span>
-          <div class="note">Written by the agent, not verified</div>
+          <span class="tagline">Written by the agent, not verified</span>
         </dd>
         <dt>Approval expires</dt>
         <dd id="expiry"></dd>
@@ -153,8 +97,9 @@
     <section id="output" hidden>
       <label for="output-text">Signature file</label>
       <textarea id="output-text" readonly></textarea>
-      <a id="download">Download signature file</a>
+      <p><a id="download" class="button secondary">Download signature file</a></p>
     </section>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

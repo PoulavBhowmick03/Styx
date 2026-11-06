@@ -72,6 +72,8 @@ let currentDigest: Hex | undefined;
 function showStatus(message: string, isError = false): void {
   statusLine.textContent = message;
   statusLine.classList.toggle("error", isError);
+  // Display only: a finished signature reads differently from a plain progress message.
+  statusLine.classList.toggle("done", !isError && message.startsWith("Signed"));
 }
 
 function resetReview(): void {
@@ -740,3 +742,8 @@ try {
   showStatus(error instanceof ApprovalError ? error.message : "This approval link is malformed.", true);
 }
 if (relayLink) void openFromLink(relayLink);
+// The landing text shows only when the URL carries no approval link at all.
+{
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("relay") && !params.has("request")) element("landing").hidden = false;
+}
