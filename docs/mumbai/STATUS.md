@@ -115,7 +115,9 @@ Owners no longer need a config file to approve from an alert. The page confirms 
 
 **A limit this exposed:** the approver must hold the owner key. Someone at an institution cannot approve from their own wallet. Approver roles and multisig owners need a contract change and are not built.
 
-**Not yet shown:** a signature by the owner on a phone. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
+**Through the hosted pages and relay:** a 2 USDC exception settled on Arc. The agent used the MCP tools, the alert came through the hosted relay, the owner confirmed the vault and signed in MetaMask on a Mac with no file, and the page posted the signature back. Transaction `0xde1c50dc5d6312ea536319554e3008561f24a50fac2c7e2a822006a12a90b1a0`. Balances after: vault 48.30 USDC, vendor A 11.70 USDC. The daily limit was raised to 20 USDC for this test, policy version 7.
+
+**Not yet shown:** a signature by the owner on a phone. MetaMask showed a phishing warning for the hosted address on the Mac, and the reason is not known. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
 
 ## Gates
 
