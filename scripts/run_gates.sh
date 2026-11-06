@@ -20,7 +20,7 @@ mkdir -p "$OUT"; chmod 700 "$OUT"
 OUT="$(cd "$OUT" && pwd -P)"
 export EREBUS_VAULT_STATE_ROOT="${EREBUS_VAULT_STATE_ROOT:-$OUT/journal}"
 LOG="$OUT/results.txt"
-: > "$LOG"
+[ -n "${RESUME_EXCEPTION:-}" ] || : > "$LOG"
 
 say() { printf '%s\n' "$*" | tee -a "$LOG"; }
 step() { say ""; say "== $*"; }
@@ -41,6 +41,14 @@ balances
 printf 'routine invoice: 0.25 USDC\n' > "$OUT/routine-invoice.txt"
 printf 'oversized invoice: 6 USDC\n' > "$OUT/oversized-invoice.txt"
 
+# Resuming keeps the same payment IDs, so a run that stopped for the owner never mints a new payment.
+# Set RESUME_ROUTINE, RESUME_EXCEPTION and PENDING_FILE, with the signature already at $OUT/signature.json.
+if [ -n "${RESUME_EXCEPTION:-}" ]; then
+  ROUTINE="${RESUME_ROUTINE:?}"; EXCEPTION="$RESUME_EXCEPTION"
+  export PENDING_FILE="${PENDING_FILE:?}" OWNER_SIGNATURE_FILE="$OUT/signature.json"
+  [ -s "$OWNER_SIGNATURE_FILE" ] || die "no signature at $OWNER_SIGNATURE_FILE"
+  say "resuming payment $EXCEPTION"
+else
 step "G1: routine 0.25 USDC payment"
 R="$(vault "{\"method\":\"propose\",\"recipient\":\"$VENDOR_A\",\"amount\":\"250000\",\"invoice_file\":\"$OUT/routine-invoice.txt\",\"invoice_reference\":\"INV-ROUTINE\",\"valid_until\":$(( $(now) + 3600 ))}")"
 ROUTINE="$(get "$R" payment_id)"; [ -n "$ROUTINE" ] || die "propose failed: $R"
@@ -65,19 +73,25 @@ say "  $OWNER_SIGNATURE_FILE"
 for _ in $(seq 1 "$WAIT_SECONDS"); do [ -s "$OWNER_SIGNATURE_FILE" ] && break; sleep 1; done
 [ -s "$OWNER_SIGNATURE_FILE" ] || die "no owner signature arrived"
 say "owner signature received"
+fi
 
-step "Attacks A1, A2, A3, as real transactions. Each costs the agent gas."
 export RPC_URL="$FIRST_RPC" VAULT="$EREBUS_VAULT_ADDRESS" AGENT_KEY_FILE="$EREBUS_VAULT_AGENT_KEY_FILE" VENDOR_B
-SETTLED=0 bash "$ROOT/contracts/evm/script/attacks.sh" | tee -a "$LOG"
+ALREADY="$(get "$(vault "{\"method\":\"status\",\"payment_id\":\"$EXCEPTION\"}")" state)"
+if [ "$ALREADY" = settled ]; then
+  say "the exception already settled, so the earlier attacks are not repeated"
+else
+  step "Attacks A1, A2, A3, as real transactions. Each costs the agent gas."
+  SETTLED=0 bash "$ROOT/contracts/evm/script/attacks.sh" | tee -a "$LOG"
 
-step "G2: owner-approved exception"
-R="$(vault "{\"method\":\"submit\",\"payment_id\":\"$EXCEPTION\",\"signature_file\":\"$OWNER_SIGNATURE_FILE\"}")"
-say "state $(get "$R" state), tx $(get "$R" tx_hash)"
-[ "$(get "$R" state)" = settled ] || die "the exception did not settle: $R. Retry with the same ID: $EXCEPTION"
-balances
+  step "G2: owner-approved exception"
+  R="$(vault "{\"method\":\"submit\",\"payment_id\":\"$EXCEPTION\",\"signature_file\":\"$OWNER_SIGNATURE_FILE\"}")"
+  say "state $(get "$R" state), tx $(get "$R" tx_hash)"
+  [ "$(get "$R" state)" = settled ] || die "the exception did not settle: $R. Retry with the same ID: $EXCEPTION"
+  balances
+fi
 
 step "Attack A4: resubmit the settled exception"
-SETTLED=1 bash "$ROOT/contracts/evm/script/attacks.sh" | grep -E 'A4' | tee -a "$LOG"
+SETTLED=1 bash "$ROOT/contracts/evm/script/attacks.sh" | tee -a "$LOG"
 balances
 
 step "G3: reviewer"
