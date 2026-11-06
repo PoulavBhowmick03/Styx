@@ -555,6 +555,48 @@ try {
     await context.close();
   });
 
+  await scenario("the page says what the daily limit means, and it is true: six 1 USDC payments pass with no signature", async () => {
+    const { page, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    const meaning = await page.locator("#daily-meaning").textContent();
+    assert.match(meaning, /The daily limit is the most the agent can pay in a day without your signature/);
+    assert.match(meaning, /does not stop splitting/);
+    assert.match(await page.locator('label[for="policy-daily"]').textContent(), /most the agent can pay in a day without your signature/);
+    assert.match(await page.locator("#daily-meaning").locator("xpath=..").textContent(), /accept losing in a day/);
+    assert.equal(await page.locator("#daily-meaning").isVisible(), true);
+    assert.match(await page.locator("#dashboard").textContent(), /most the agent can pay in a day without a signature/);
+    await shot(page, "daily-limit-meaning");
+    await context.close();
+
+    // The claim, on the contract: limit 1 USDC per payment and 10 per day. Six 1 USDC payments settle with no
+    // owner signature, and a single 6 USDC payment is refused.
+    // Earlier scenarios mined many blocks, so the chain's clock is ahead of the real one. Use the chain's.
+    const chainNow = Number(sh("cast", ["block", "latest", "--field", "timestamp", "--rpc-url", RPC]));
+    const split = forgeVault();
+    send(ownerKey, split, "configurePolicy(address,uint256,uint256,uint64)", agent, "1000000", "10000000", String(chainNow + 86400));
+    send(ownerKey, split, "setRecipient(address,bool)", VENDOR, "true");
+    send(ownerKey, token, "mint(address,uint256)", split, "12000000"); // more than the daily limit, so the limit is what stops payments
+    const version = call(split, "policyVersion()(uint256)");
+    const pay = (key, id, amount) => spawnSync("cast", ["send", split, "pay((bytes32,address,address,address,uint256,bytes32,uint256,uint64))",
+      `(0x${id.toString(16).padStart(64, "0")},${agent},${token},${VENDOR},${amount},0x${"00".repeat(32)},${version},${chainNow + 3600})`,
+      "--rpc-url", RPC, "--private-key", key], { encoding: "utf8" });
+    const vendorBefore = BigInt(call(token, "balanceOf(address)(uint256)", VENDOR));
+    const refused = pay(agentKey, 900, "6000000");
+    assert.notEqual(refused.status, 0, "one 6 USDC payment must be refused");
+    assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", VENDOR)), vendorBefore);
+    for (let i = 1; i <= 6; i++) {
+      const done = pay(agentKey, 900 + i, "1000000");
+      assert.equal(done.status, 0, `payment ${i} of 1 USDC should settle: ${done.stderr}`);
+    }
+    assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", VENDOR)) - vendorBefore, 6_000_000n);
+    // The daily limit is what finally stops it: the next payments past 10 USDC in total are refused.
+    for (let i = 7; i <= 10; i++) assert.equal(pay(agentKey, 900 + i, "1000000").status, 0);
+    assert.notEqual(pay(agentKey, 911, "1000000").status, 0, "the 11th USDC in a day must be refused");
+    assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", VENDOR)) - vendorBefore, 10_000_000n); // exactly the daily limit, never signed for
+  });
+
   await scenario("a non-owner can read the vault but every change is disabled", async () => {
     const { page, context, prompts } = await openPage({ account: stranger });
     await connect(page, token);
