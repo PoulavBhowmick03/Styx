@@ -199,3 +199,34 @@ A 3 minute 45 second shot list around `scripts/run_gates.sh` that shows Arc Stud
 1. Add `mcp-server/examples` to the pytest test paths and CI.
 2. Review Claude 2's work, including `setup-page/src/logs.ts`, `setup-page/src/build.ts` and `mcp-server/examples/vault_agent.py`.
 3. Check the watcher against Arc's public rate limit. I saw 429s after about 27 quick requests, and the watcher reads historical state. I did not test the watcher.
+
+### Round 2 in plain words (for Ishita, Poulav and anyone reading quickly)
+
+**What was wrong, and what I did about it**
+
+1. **An owner ended up working on the wrong vault.** The setup page now shows, at the top of the screen at all times, which vault every button acts on and whether you own it. Deploying a new vault now asks "are you sure?" and warns if you already have one. You can open a specific vault from a link (`?vault=0x...`) and switch between vaults without reloading. Switching wipes whatever you had typed, so nothing meant for one vault can be saved on another.
+2. **An owner lost gas sending money straight to the vault.** The vault cannot receive a normal transfer. The page now says so next to the vault address and in the funding section, and tells owners to use the "Move into vault" button instead.
+3. **The vendor list said "Could not list vendors" on Arc.** Arc's public server refuses to return more than 10,000 blocks of history at once, and it also cuts you off if you ask too fast. The page now asks in small pieces, waits and tries again when it is told to slow down, and says clearly when a list is only partial. Checking an address always works.
+4. **Owners may think the per-payment limit caps an invoice. It does not.** The page now says the daily limit is the most the agent can pay in a day without a signature, because six small payments each stay under the per-payment limit. We proved this on the contract: six 1 USDC payments went through with no signature, and the daily limit stopped the 11th. This is wording only. The contract was not changed.
+5. **The example agent could pay twice after a restart.** If it crashed or timed out and was started again, it made a brand-new payment instead of checking the old one. It now saves each payment's ID before sending and checks the old one first after a restart.
+6. **Two documents Arc's prizes need:** `ARCHITECTURE.md` (diagrams and who is trusted with what) and `DEMO_SCRIPT.md` (a shot list for the video, with each step marked as run or not yet run on Arc).
+
+**One new safety rule I added.** A link can now name any contract, so the page switches off funding for a vault whose code differs from the build the page knows. The owner can unlock it on purpose.
+
+**What I could not check**
+- None of the setup-page changes has been tried with a real wallet. They were tested in a browser against a local test chain only.
+- I tested only Arc's main public server, not the other providers.
+- I could not check that the Arc Studio link opens for someone who is not logged in.
+- The "payment lands later after an unknown result" case was tested with a fake, not on a real chain.
+- I did not review the Arc Studio contract. That review is a person's job.
+
+**What people need to do**
+
+| Who | What |
+| --- | --- |
+| Ishita | Try the setup page on Arc with a real wallet. Connect to `0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1` and do not deploy. Check the Studio link when logged out. Run the reviewer on a second machine (G3). Ask the two Arc booth questions. Try the Cursor, Claude Desktop and Codex configs |
+| Poulav | Review the Arc Studio contract. Decide about the splitting loophole. Decide G0 and the prize picks. Add the daily-limit wording to the approval page if you agree with it |
+| Claude 1 | Optional: cap how many open requests the relay allows per hour |
+| Codex | Add `mcp-server/examples` to the test paths and CI. Review my work. Check the watcher against Arc's rate limit |
+
+**Housekeeping:** every commit in this round is authored by ishitab02 with no co-author line. No keys, tokens or `.env` files were committed.
