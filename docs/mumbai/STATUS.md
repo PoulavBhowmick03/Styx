@@ -270,7 +270,7 @@ A 3 minute 45 second shot list around `scripts/run_gates.sh` that shows Arc Stud
 2. **A human review of the Arc Studio contract (`1e8156c`).** I did not review it.
 3. **G3 on a second machine,** and the reviewer shot in the demo.
 4. **Check the Studio URL opens for a logged-out viewer.** I could not.
-5. **The Arc booth question** (do pages outside Studio meet "connect them to a web or mobile app without leaving Studio"?) and the World question (does OIDC step-up count as Agent Pass?).
+5. **The Arc booth question** (do pages outside Studio meet "connect them to a web or mobile app without leaving Studio"?).
 6. **Try the Cursor, Claude Desktop and Codex configs** in the real apps. Only Claude Code's was run.
 7. **G0.**
 
