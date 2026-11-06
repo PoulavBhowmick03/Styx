@@ -33,6 +33,12 @@ hex = "0.4"
 # x402 Permit2: recovers the buyer from a payment signature before the seller submits it.
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 zeroize = "1"
+# Payment IDs, salts and approval nonces for the vault client.
+getrandom = "0.2"
+
+[[bin]]
+name = "erebus-vault"
+path = "src/bin/erebus_vault.rs"
 
 [[bin]]
 name = "erebus-tx-relayer"
