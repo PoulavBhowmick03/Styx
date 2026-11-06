@@ -8,6 +8,7 @@ COPY relay/src relay/src
 COPY relay/tsconfig.json relay/tsconfig.json
 COPY owner-page/package.json owner-page/package.json
 COPY owner-page/src/approval.ts owner-page/src/approval.ts
+COPY owner-page/src/approval-v2.ts owner-page/src/approval-v2.ts
 # approval.ts imports viem, resolved from the parent directory.
 RUN ln -s /app/relay/node_modules /app/node_modules
 WORKDIR /app/relay

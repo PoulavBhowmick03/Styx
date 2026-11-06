@@ -5,4 +5,5 @@
 !relay/tsconfig.json
 !relay/src
 !owner-page/src/approval.ts
+!owner-page/src/approval-v2.ts
 !owner-page/package.json
