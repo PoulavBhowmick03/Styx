@@ -340,7 +340,7 @@ Pushed to `main` at `34a5d56`. Version 1 only. No transaction was sent to Arc an
 - **G3 as recorded above.** The code hash `0x6da4170f...3ebd` and the issuer `0x35879a31...4a4e` in this file match what I computed and read from the grants. The four results match what I saw. One difference: this file calls the second grant "another payment sealed to another reviewer". I saw only that it cannot be opened, and the tool gives the same message for a corrupt grant, so I could not confirm that description.
 - **Arkiv, reproduced from a second Mac.** The public fetch worked with no key (1,762 bytes, writer and tag as recorded), and a wrong writer address returned nothing. That grant is **not** the one sealed to my reviewer key: it shares the 22-byte issuer header with my grant and then differs, so my key cannot open it, which is the design. So G4's verify step is still shown only on the issuer's machine.
 - **The live domain.** `https://styxco.xyz/` and `/setup/` answer, and the site sends `X-Frame-Options: DENY`, a `frame-ancestors 'none'` policy, `Referrer-Policy: no-referrer`, `nosniff` and HSTS. The relay's CORS answer names only `https://styxco.xyz`, so approvals from the earlier `styx-approve.vercel.app` (which still serves pages) would not reach it.
-- **Hosted approval.** The recorded 2 USDC approval ran at the earlier address. **No approval through `styxco.xyz` is recorded yet.**
+- **Hosted approval.** The 2 USDC approval ran at the earlier address. A 1.5 USDC approval on `styxco.xyz` was recorded after I wrote this (`0xee613790...`, above), so the earlier line saying none was recorded no longer holds.
 
 ### What was built
 

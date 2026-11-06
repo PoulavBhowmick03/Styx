@@ -1,6 +1,6 @@
 # Submission README: draft sections
 
-**A draft for Poulav.** `README.md` is Poulav's, and nothing here has been merged into it. The sections follow `BUILD_PLAN.md`, section 14. Every number and hash was read from git or `STATUS.md` on 7 November 2026 (git figures at commit `f9b5f0f`), and the commands to check them are in the notes at the end. It describes version 1 only.
+**A draft for Poulav.** `README.md` is Poulav's, and nothing here has been merged into it. The sections follow `BUILD_PLAN.md`, section 14. Every number and hash was read from git or `STATUS.md` on 7 November 2026 (git figures at commit `d89a1f1`), and the commands to check them are in the notes at the end. It describes version 1 only.
 
 Anything marked **[DECISION]** is for the humans. The entry type (G0) and the partner picks are not decided in this file, and nothing in it says they are. Do not write that the whole project was built at the event.
 
@@ -22,23 +22,40 @@ Testnet and test funds only. Not audited.
 
 The first commit also holds files that did **not** come from that source, written for this build: `docs/mumbai/BUILD_PLAN.md`, `PROVENANCE.md`, `pyproject.toml`, `uv.lock`, `packaging/styx-cli/pyproject.toml`, `.env.example`, `CLAUDE.md` and `README.md`. Before the import, test keys were removed from some imported tests (the old `PROVENANCE.md` lists each edit). `PROVENANCE.md` itself was deleted later, in `6dd604c`. It is still in git history.
 
-**What was added after the first commit** (new files only, excluding lock files and generated trial records; 16,228 lines in 118 files):
+**What remains of the imported code.** After the unused code was removed (`12319c0` and `55fe561`), 145 of the imported files are gone, among them the settlement, shielded-pool and x402 code, the coordinator crate and the other MCP backends, and a project rename touched many of the lines that stayed. Measured with `git diff --numstat -M20%` between `b28d8d6` and `HEAD`, over the imported paths only and excluding lock files:
+
+| | Lines | Files |
+| --- | --- | --- |
+| Imported paths at the first commit | 62,967 | 190 |
+| Removed or changed since (an edited line counts as changed) | 57,392 | 145 deleted, 33 modified, 3 renamed |
+| Of the first commit's lines, still present and unchanged | about 5,575 | |
+| Imported paths at `HEAD` | 14,303 | 104 |
+| Of those, added after the first commit | 8,728 | 7,611 of them in 44 new files, 1,117 in changed files |
+
+The figures measure text. They say nothing about provenance, effort or who or what wrote it, and an identifier rename counts as a changed line.
+
+**What was added after the first commit, by area.** New files inside the imported paths (excluding lock files and generated trial records):
 
 | Area | New lines | New files |
 | --- | --- | --- |
-| `sdk/evm` (the `arc_vault` module and the `styx-vault` CLI) | 3,652 | 16 |
-| `owner-page` (the approval page) | 2,629 | 13 |
-| `setup-page` (the owner's setup page) | 2,391 | 17 |
+| `sdk/evm` (the `arc_vault` module and the `styx-vault` CLI) | 3,658 | 17 |
 | `contracts/evm` (the vault contract and its tests) | 1,432 | 5 |
-| `docs/mumbai` | 1,399 | 10 |
-| `mcp-server/examples` | 1,026 | 11 |
-| `relay` | 910 | 10 |
+| `mcp-server/examples` | 1,229 | 11 |
 | `mcp-server/tests` | 703 | 3 |
+| `mcp-server/src` (the vault and reviewer tools) | 389 | 4 |
+| `sdk/py` and `sdk/core` | 200 | 4 |
+
+Outside the imported paths, what is in the repository now (all text files, excluding lock files; includes the 520 lines of files written for the first commit):
+
+| Area | Lines | Files |
+| --- | --- | --- |
+| `setup-page` (the owner's setup page) | 2,636 | 17 |
+| `owner-page` (the approval page) | 2,629 | 13 |
+| `docs` | 2,365 | 12 |
+| `relay` | 910 | 10 |
 | `watcher` | 684 | 3 |
 | `arkiv` | 435 | 12 |
-| Everything else (scripts, packaging, CI, hosting, small files) | 967 | 18 |
-
-Existing files were also changed: 22 files, 575 lines added and 100 removed. They include the disclosure code in `sdk/evm`, `sdk/transport` and `sdk/py`, and the MCP server.
+| `scripts`, `packaging`, `.github` and small files | 755 | 21 |
 
 The vault contract was produced with Arc Studio (see below). **[DECISION or TO FILL: what that means for the entry, and how the imported code was written. See `ai-usage.md`.]**
 
@@ -85,15 +102,17 @@ Each claim is here only with the evidence that exists. A claim with no evidence 
 | A routine payment settles | [`0x41cf5742...`](https://explorer.testnet.arc.io/tx/0x41cf57420722e3492f50a0552b23b3047ec8f322385c003d9c489a59be61b58f), and through the tools | Shown |
 | An owner-signed exception settles | In MetaMask [`0x32cc0ccc...`](https://explorer.testnet.arc.io/tx/0x32cc0ccc5092830eaaa0796a8d964b9453cf52a4eeb2a13138ff4bda0dd982f2). Through the tools [`0xbfaf884f...`](https://explorer.testnet.arc.io/tx/0xbfaf884fd68aa72d4043a8bdf812c55f41bcda7c92c5d42788b4a90818fc1450) | Shown |
 | The owner is alerted and the signature returns with no file | A real Telegram bot and MetaMask: [`0x3b9558c3...`](https://explorer.testnet.arc.io/tx/0x3b9558c3c381af00ee12286ceb6c8bf6fd08f65449d8595e4032d1dea8428073) (1.2 USDC) | Shown |
-| The owner approves through the hosted pages and relay | A 2 USDC exception, made while the pages were at their earlier address, `styx-approve.vercel.app`: [`0xde1c50dc...`](https://explorer.testnet.arc.io/tx/0xde1c50dc5d6312ea536319554e3008561f24a50fac2c7e2a822006a12a90b1a0) | Shown, with the owner's wallet in a browser on a Mac. **Not yet recorded: an approval through `styxco.xyz`** |
+| The owner approves through the hosted pages and relay | A 2 USDC exception, made while the pages were at their earlier address, `styx-approve.vercel.app`: [`0xde1c50dc...`](https://explorer.testnet.arc.io/tx/0xde1c50dc5d6312ea536319554e3008561f24a50fac2c7e2a822006a12a90b1a0). A 1.5 USDC exception, signed from the page on `styxco.xyz`: [`0xee613790...`](https://explorer.testnet.arc.io/tx/0xee613790a5a05e34ab459286cf1f0e13c90a3363f461e42ead62bd4a90797458) | Shown, with the owner's wallet in a browser on a Mac, at both addresses |
 | The owner signs on a phone | An alert has opened in a phone wallet's browser, as far as the first-use check, and a wallet that is not the owner was refused | **Not yet:** no signature by the owner on a phone |
-| The reviewer verifies settlement independently | On a second Mac with its own key and RPC, all four results verified for the exception [`0x32cc0ccc...`](https://explorer.testnet.arc.io/tx/0x32cc0ccc5092830eaaa0796a8d964b9453cf52a4eeb2a13138ff4bda0dd982f2) | Shown, with a caveat: that Mac also holds the repo and some unfunded local test keys. No reviewer outside the team has used it |
-| One-record disclosure: a second record does not open | On that second Mac, a one-bit-changed copy and another grant were refused | Shown, with the same caveat |
-| The policy was enforced at execution | Event fields checked against the pinned code hash `0x6da4170f...`, on that second Mac | Shown, with the same caveat |
-| An unreachable chain reads "unavailable", never "unpaid" | Same run: integrity verified, the other three unavailable | Shown |
-| A sealed record can be fetched from Arkiv with no Styx process running | Arkiv entity `0xc4169c3f...`, transaction `0x4bce932d...`, writer `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258`, lookup tag `ffa18dd008d8a0e8ebc14d2d1424a861`. The verifier then reported all four results verified against Arc | Shown on one machine, the issuer's, with a reviewer key made there. The grant expires on 12 November 2026 |
+| The reviewer verifies settlement independently | On a second Mac with its own key and RPC, all four results verified for the exception [`0x32cc0ccc...`](https://explorer.testnet.arc.io/tx/0x32cc0ccc5092830eaaa0796a8d964b9453cf52a4eeb2a13138ff4bda0dd982f2) | Shown, with a caveat: that Mac also holds the repo and some unfunded local test keys. No reviewer outside the team has used it (the earlier run: a rerun with reissued grants is pending and not cited) |
+| One-record disclosure: a second record does not open | On that second Mac, a one-bit-changed copy and another grant were refused | Shown, with the same caveat (the earlier run: a rerun with reissued grants is pending and not cited) |
+| The policy was enforced at execution | Event fields checked against the pinned code hash `0x6da4170f...`, on that second Mac | Shown, with the same caveat (the earlier run: a rerun with reissued grants is pending and not cited) |
+| An unreachable chain reads "unavailable", never "unpaid" | Same run: integrity verified, the other three unavailable | Shown (the earlier run: a rerun with reissued grants is pending and not cited) |
+| A sealed record can be fetched from Arkiv with no Styx process running | Arkiv entity `0xc4169c3f...`, transaction `0x4bce932d...`, writer `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258`, lookup tag `ffa18dd008d8a0e8ebc14d2d1424a861`. The verifier then reported all four results verified against Arc | Shown on one machine, the issuer's, with a reviewer key made there. The grant expires on 12 November 2026 (the earlier run: a rerun with reissued grants is pending and not cited) |
 | A watcher reports reverts and daily spend | Two Telegram notices reached the owner, for daily spend at block 71059172 and a revert at block 71059279 | Shown. **It is stopped now and not pointed at the hosted relay** |
 | Several agents, approver roles, a multisig owner | | **Not in version 1** |
+
+**G3 and Arkiv are being rerun with reissued grants, because the grant domain string changed in the rename.** The rows above cite the earlier runs, which `STATUS.md` records. The reruns are not cited until they are recorded.
 
 Never claim: audited, production-ready, regulatory compliance, prompt-injection prevention, private payments, exactly-once payment across all routes, or support for all wallets. Only MetaMask has been used.
 
@@ -118,6 +137,6 @@ Apache-2.0. See `LICENSE`.
 3. **Check the numbers.** From the repository root:
    - `git diff --shortstat $(git hash-object -t tree /dev/null) b28d8d6` (first commit; includes lock files)
    - `git diff --numstat --diff-filter=A b28d8d6 HEAD` (new files, by area)
-   - `git diff --numstat --diff-filter=M b28d8d6 HEAD` (existing files changed)
+   - `git diff --numstat -M20% b28d8d6 HEAD` (what changed in the imported paths, with renames followed)
 4. Line counts measure size, not effort or quality, and they say nothing about who or what wrote the code.
 5. The root `README.md` has moved on since this draft was first written. Take from this file only what the README does not already say.
