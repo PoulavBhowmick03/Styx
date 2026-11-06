@@ -22,13 +22,14 @@ The exact interface, generated ABI, schemas, configuration, and shared vector ar
 
 | Check | Result | Evidence and limits |
 | --- | --- | --- |
-| Full default contract suite | 123 passed | Includes 39 v2 tests and all 84 existing tests |
+| Full default contract suite | 83 passed | Includes 39 v2 tests and all 44 retained v1 tests |
 | V2 optimized Cancun contract suite | 39 passed | solc 0.8.24, optimizer 200 runs, Cancun |
 | Optimized budget fuzz tests | 4,096 cases each | Two properties. One executes 32 policy/payment operations per case |
-| Full normal Rust SDK suite | 107 passed, 61 ignored | Includes four v2 unit tests. Selected ignored tests run separately below |
+| Full normal Rust SDK suite | 22 passed, 14 ignored | Includes four v2 unit tests. All fourteen ignored Anvil tests run explicitly |
+| Rust core, transport, and durable journal | 13, 8, and 29 passed | Includes the retained storage and crash-recovery tests |
 | V2 real CLI on Anvil | 7 passed | Repeated against both default and optimized Cancun deployments |
 | Existing v1 Anvil suite | 7 passed | A1–A4, timeout recovery, disclosure, independent verification, and RPC failover |
-| Vault Python and MCP regressions | All 19 tests passed across two checkouts | The scripted agent ran in a clean checkout. Relay integration ran with installed dependencies in the shared checkout |
+| Full Python SDK and MCP suite | 40 passed | Includes the scripted agent, relay integration, and disclosure adapter |
 | Rust clippy | Passed | Library and tests, with warnings denied |
 | Rust formatting and diff whitespace | Passed | The changed Rust module and repository diff |
 | Generated ABI | Matches fresh compilation | Includes function signatures, tuples, errors, and event indexing |
@@ -37,8 +38,8 @@ The exact interface, generated ABI, schemas, configuration, and shared vector ar
 | Targeted mutation checks | 3 detected | Removing the reentrancy guard, removing the agent cap, or changing the domain causes its targeted test to fail |
 | Gitleaks | Passed before commits | Staged changes scanned with the repository configuration |
 
-The normal Rust suite's ignored count includes the fourteen Anvil tests that ran explicitly.
-Other ignored integrations did not run.
+The normal Rust suite's fourteen ignored tests all ran explicitly: seven v1 cases and seven v2 cases.
+Results refer to current main after its project rename and removal of unused subsystems.
 
 ## Contract coverage
 
@@ -89,11 +90,7 @@ It preserves the exact payment and payment ID, and clears the old retained signa
 Identical live requests keep their original authorization.
 Once a transaction exists, reconciliation takes precedence over authorization refresh.
 
-The shared checkout also contains deletions of example files outside this branch's changes.
-Those deletions caused one scripted-agent run to fail before it emitted an event.
-The same test passed in an isolated checkout of the committed branch.
-The isolated checkout skipped relay integration because it lacked Node dependencies. That integration passed in the shared checkout.
-No example deletion or other worker's change is included in these commits.
+Validation ran in an isolated integration worktree. The shared checkout's local changes were preserved.
 
 ## Commands
 
@@ -104,6 +101,10 @@ FOUNDRY_FUZZ_RUNS=4096 FOUNDRY_OPTIMIZER=true FOUNDRY_OPTIMIZER_RUNS=200 FOUNDRY
 cargo build --manifest-path sdk/evm/Cargo.toml --bins --locked
 cargo test --manifest-path sdk/evm/Cargo.toml --locked --no-fail-fast
 cargo test --manifest-path sdk/evm/Cargo.toml --locked --test vault_local_chain -- --ignored
+cargo test --manifest-path sdk/core/Cargo.toml --locked
+cargo test --manifest-path sdk/transport/Cargo.toml --locked
+cargo test --manifest-path sdk/journal/Cargo.toml --locked
+uv run --frozen pytest mcp-server/tests sdk/py/tests -q
 cargo clippy --manifest-path sdk/evm/Cargo.toml --lib --tests --locked -- -D warnings
 cargo fmt --manifest-path sdk/evm/Cargo.toml --check
 ```

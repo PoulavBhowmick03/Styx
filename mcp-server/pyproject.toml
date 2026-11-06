@@ -1,16 +1,15 @@
 [project]
-name = "erebus-mcp-server"
+name = "styx-mcp-server"
 version = "0.3.0"
-description = "MCP server exposing Erebus tools to any agent framework"
+description = "MCP server exposing Styx tools to any agent framework"
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=2.0.0,<3.0.0",
-    "erebus-sdk==0.3.0",
+    "styx-sdk==0.3.0",
 ]
 
 [project.scripts]
-erebus-mcp-server = "erebus_mcp.server:main"
-erebus-init = "erebus_mcp.onboarding:init_main"
+styx-mcp-server = "styx_mcp.server:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
@@ -20,7 +19,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/erebus_mcp"]
+packages = ["src/styx_mcp"]
 
 [tool.uv.sources]
-erebus-sdk = { workspace = true }
+styx-sdk = { workspace = true }

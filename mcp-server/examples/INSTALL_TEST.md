@@ -8,7 +8,7 @@ Followed on 6 November 2026, step by step, from a fresh clone of this repository
 
 | Guide step | Result |
 | --- | --- |
-| Part 1: clone, `cargo build --bins`, `uv sync --all-packages`, `forge build`, `npm install` in `owner-page` | All worked. `erebus-mcp-server` found on `PATH` after the `export PATH` line |
+| Part 1: clone, `cargo build --bins`, `uv sync --all-packages`, `forge build`, `npm install` in `owner-page` | All worked. `styx-mcp-server` found on `PATH` after the `export PATH` line |
 | Part 2: `local_vault.py` | Printed the `env.sh` path and the owner config path. Exits 0 on Ctrl-C and deletes its folder, and no Anvil process is left |
 | Part 2: first payment, allowed | Agent proposed and submitted 0.25 USDC. Settled |
 | Part 2: first payment, refused | Agent proposed 6 USDC, was told it needs an exception, wrote `pending-<id>.json`. Nothing paid |
@@ -20,7 +20,7 @@ Followed on 6 November 2026, step by step, from a fresh clone of this repository
 
 ## What failed, and what changed in the guide
 
-1. **The first payment did not happen.** The original prompt said only "pay `inv-1.txt`". The agent cannot read invoice files, and `erebus_propose_payment` needs an invoice reference and a `valid_until` time. The agent said it would not guess either and stopped, which was the right behaviour. The guide now gives the reference and a computed `valid_until` in every prompt.
+1. **The first payment did not happen.** The original prompt said only "pay `inv-1.txt`". The agent cannot read invoice files, and `styx_propose_payment` needs an invoice reference and a `valid_until` time. The agent said it would not guess either and stopped, which was the right behaviour. The guide now gives the reference and a computed `valid_until` in every prompt.
 2. **The refused payment had no approval expiry.** With no one to ask, a non-interactive agent has nothing to give. The guide's prompt now carries `authorization_expiry`.
 3. **A fresh agent session does not remember the payment ID.** The guide now says to paste it.
 4. **`cast` prints `6250000 [6.25e6]`.** The guide now says so.
@@ -28,7 +28,7 @@ Followed on 6 November 2026, step by step, from a fresh clone of this repository
 ## Deviations from the guide, to be fair about what was tested
 
 - I used a scratch folder instead of `~/styx-agent`, so nothing was created in a home directory. The Part 3 key step ran with `HOME` pointed at the scratch folder.
-- I used `claude -p` with the guide's prompts, not an interactive `claude` session. Because Claude Code skips the project-server approval prompt in `-p` runs, the approval step the guide mentions ("approve the erebus-vault server when asked") was not exercised.
+- I used `claude -p` with the guide's prompts, not an interactive `claude` session. Because Claude Code skips the project-server approval prompt in `-p` runs, the approval step the guide mentions ("approve the styx-vault server when asked") was not exercised.
 - The owner "signed" through `sign_with_rpc.mts`, with the local chain standing in for a wallet. That runs the owner page's review and signing code, but no browser wallet was involved.
 - The machine already had Rust, uv, Foundry, Node, Chrome and Claude Code installed, and a warm Cargo cache. Installing those from nothing was not tested.
 

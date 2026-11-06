@@ -10,9 +10,9 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = resolve(HERE, "../../contracts/evm");
 const OUT = resolve(HERE, "../.build/out");
-const SOURCE = join(OUT, "ErebusPolicyVault.sol/ErebusPolicyVault.json");
+const SOURCE = join(OUT, "StyxPolicyVault.sol/StyxPolicyVault.json");
 
-const build = spawnSync("forge", ["build", "src/ErebusPolicyVault.sol", "--out", OUT, "--cache-path", resolve(HERE, "../.build/cache"),
+const build = spawnSync("forge", ["build", "src/StyxPolicyVault.sol", "--out", OUT, "--cache-path", resolve(HERE, "../.build/cache"),
   "--optimize", "--optimizer-runs", "200", "--evm-version", "cancun"], { cwd: CONTRACTS, encoding: "utf8" });
 if (build.status !== 0) {
   console.error(`forge build failed. Install Foundry (getfoundry.sh).\n${(build.stderr || build.stdout).slice(-600)}`);

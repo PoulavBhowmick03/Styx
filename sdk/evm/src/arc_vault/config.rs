@@ -1,4 +1,4 @@
-//! Vault configuration, read from `EREBUS_VAULT_*` variables.
+//! Vault configuration, read from `STYX_VAULT_*` variables.
 //!
 //! No key material is held here: a key's file path is resolved only by the operation that needs it.
 
@@ -55,30 +55,30 @@ fn address(name: &str) -> Result<[u8; 20], VaultError> {
 impl VaultConfig {
     /// Reads the configuration from the environment.
     pub fn from_env() -> Result<Self, VaultError> {
-        let rpc_urls: Vec<String> = required("EREBUS_VAULT_RPC_URLS")?
+        let rpc_urls: Vec<String> = required("STYX_VAULT_RPC_URLS")?
             .split(',')
             .map(|url| url.trim().to_owned())
             .filter(|url| !url.is_empty())
             .collect();
         if rpc_urls.is_empty() {
             return Err(VaultError::invalid(
-                "EREBUS_VAULT_RPC_URLS names no endpoint",
+                "STYX_VAULT_RPC_URLS names no endpoint",
             ));
         }
         Ok(Self {
-            chain_id: required("EREBUS_VAULT_CHAIN_ID")?
+            chain_id: required("STYX_VAULT_CHAIN_ID")?
                 .parse()
-                .map_err(|_| VaultError::invalid("EREBUS_VAULT_CHAIN_ID must be an integer"))?,
+                .map_err(|_| VaultError::invalid("STYX_VAULT_CHAIN_ID must be an integer"))?,
             rpc_urls,
-            vault: address("EREBUS_VAULT_ADDRESS")?,
-            token: address("EREBUS_VAULT_TOKEN")?,
-            state_root: PathBuf::from(required("EREBUS_VAULT_STATE_ROOT")?),
+            vault: address("STYX_VAULT_ADDRESS")?,
+            token: address("STYX_VAULT_TOKEN")?,
+            state_root: PathBuf::from(required("STYX_VAULT_STATE_ROOT")?),
             receipt_timeout: optional_seconds(
-                "EREBUS_VAULT_RECEIPT_TIMEOUT_SECONDS",
+                "STYX_VAULT_RECEIPT_TIMEOUT_SECONDS",
                 DEFAULT_RECEIPT_TIMEOUT_SECONDS,
             )?,
             rpc_timeout: optional_seconds(
-                "EREBUS_VAULT_RPC_TIMEOUT_SECONDS",
+                "STYX_VAULT_RPC_TIMEOUT_SECONDS",
                 DEFAULT_RPC_TIMEOUT_SECONDS,
             )?,
         })
@@ -86,6 +86,6 @@ impl VaultConfig {
 
     /// The agent key's file path. Only operations that sign or identify the agent read it.
     pub fn agent_key_file() -> Result<PathBuf, VaultError> {
-        Ok(PathBuf::from(required("EREBUS_VAULT_AGENT_KEY_FILE")?))
+        Ok(PathBuf::from(required("STYX_VAULT_AGENT_KEY_FILE")?))
     }
 }

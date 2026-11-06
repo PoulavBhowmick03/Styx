@@ -10,7 +10,7 @@ Everything here uses Arc testnet and test funds only. Keep every key outside thi
 scripts/local_demo.sh                                               # full rehearsal on a local chain
 ```
 
-If the contract came from Arc Studio, put it at `contracts/evm/src/ErebusPolicyVault.sol` first. These checks then test Studio's version, and a changed interface shows up here rather than on stage.
+If the contract came from Arc Studio, put it at `contracts/evm/src/StyxPolicyVault.sol` first. These checks then test Studio's version, and a changed interface shows up here rather than on stage.
 
 ## 1. Keys and funds
 
@@ -55,10 +55,10 @@ To get a Telegram alert instead of carrying files by hand, run the relay. See `r
 ## 4. Run G1, G2 and the attacks
 
 ```bash
-export EREBUS_VAULT_CHAIN_ID=5042002
-export EREBUS_VAULT_RPC_URLS=https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io,https://rpc.quicknode.testnet.arc.io
-export EREBUS_VAULT_ADDRESS="$VAULT" EREBUS_VAULT_TOKEN="$USDC"
-export EREBUS_VAULT_AGENT_KEY_FILE=~/keys/agent.key   # owner-only, hex key
+export STYX_VAULT_CHAIN_ID=5042002
+export STYX_VAULT_RPC_URLS=https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io,https://rpc.quicknode.testnet.arc.io
+export STYX_VAULT_ADDRESS="$VAULT" STYX_VAULT_TOKEN="$USDC"
+export STYX_VAULT_AGENT_KEY_FILE=~/keys/agent.key   # owner-only, hex key
 export ISSUER_KEY_FILE=~/keys/issuer.key              # owner-only, 32 raw bytes
 export VENDOR_A VENDOR_B OUT=~/styx-gate-run
 scripts/run_gates.sh
@@ -66,11 +66,11 @@ scripts/run_gates.sh
 
 The script pauses for the owner. Load the pending file it names into the page, sign, and save the output to the signature path it prints. `results.txt` in `OUT` keeps every transaction hash for the README.
 
-**If a step reports `unknown`:** a missing receipt is not a failure. Run `erebus-vault` `submit` again with the same payment ID, or check the explorer at `https://explorer.testnet.arc.io`. Never propose a new payment to retry.
+**If a step reports `unknown`:** a missing receipt is not a failure. Run `styx-vault` `submit` again with the same payment ID, or check the explorer at `https://explorer.testnet.arc.io`. Never propose a new payment to retry.
 
 ## 5. G3 on a second machine
 
-The script's reviewer section runs on one machine, which does not pass G3. On a second machine or clean profile, with only `sdk/evm`'s `erebus-disclosure` binary:
+The script's reviewer section runs on one machine, which does not pass G3. On a second machine or clean profile, with only `sdk/evm`'s `styx-disclosure` binary:
 
 1. The reviewer runs `{"method":"keygen","key_file":"..."}` and sends back their public key.
 2. The issuer runs `export_vault_payment` with that key, using the record in `OUT`, and sends the grant.
@@ -103,4 +103,4 @@ The first attempt shows your subject. Set it as `WORLD_OWNER_SUBJECT`, restart, 
 
 ## Using a model as the agent
 
-`mcp-server/examples/vault_agent.py` is a scripted agent with no model. To use a real one, point its MCP client at `erebus-mcp-server` with `EREBUS_BACKEND=vault`, `EREBUS_VAULT_DIR`, `EREBUS_VAULT_CLI` and the `EREBUS_VAULT_*` settings above. Never put an owner key in that environment. The server refuses to start if `EREBUS_VAULT_OWNER_KEY`, `EREBUS_VAULT_OWNER_KEY_FILE` or `EREBUS_DISCLOSURE_KEY_FILE` is set, but it cannot detect a key under another name.
+`mcp-server/examples/vault_agent.py` is a scripted agent with no model. To use a real one, point its MCP client at `styx-mcp-server` with `STYX_BACKEND=vault`, `STYX_VAULT_DIR`, `STYX_VAULT_CLI` and the `STYX_VAULT_*` settings above. Never put an owner key in that environment. The server refuses to start if `STYX_VAULT_OWNER_KEY`, `STYX_VAULT_OWNER_KEY_FILE` or `STYX_DISCLOSURE_KEY_FILE` is set, but it cannot detect a key under another name.

@@ -1,8 +1,8 @@
 [package]
-name = "erebus-journal"
+name = "styx-journal"
 version = "0.1.0"
 edition = "2021"
-description = "Durable operation-journal storage for Erebus settlement backends: chain-neutral, no chain dependency"
+description = "Durable operation-journal storage for Styx settlement backends: chain-neutral, no chain dependency"
 license = "Apache-2.0"
 
 [dependencies]

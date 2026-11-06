@@ -13,7 +13,7 @@ target/
 
 # The packaged binary is a build output copied in from sdk/rs/target. 5 MB per platform,
 # rebuilt by CI for each wheel.
-packaging/erebus-cli/bin/
+packaging/styx-cli/bin/
 .venv/
 __pycache__/
 *.pyc
@@ -29,8 +29,6 @@ contracts/evm/cache/
 circuits/m4/build/
 circuits/m5/build/
 
-# Operator-local Metropolis keys, witnesses, caches and qualification outputs.
-.local/metropolis/
 
 # Editor / local agent tooling. Skills are reproducible from skills-lock.json.
 .vscode/
@@ -49,3 +47,6 @@ reference/
 
 # Local video/audio masters and generated decks. Large, regenerable, not part of the submission.
 artifacts/
+
+# Test reports
+*-results.xml

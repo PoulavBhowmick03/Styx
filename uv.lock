@@ -9,9 +9,9 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "erebus-cli",
-    "erebus-mcp-server",
-    "erebus-sdk",
+    "styx-cli",
+    "styx-mcp-server",
+    "styx-sdk",
     "styx",
 ]
 
@@ -241,16 +241,16 @@ wheels = [
 ]
 
 [[package]]
-name = "erebus-cli"
+name = "styx-cli"
 version = "0.3.0"
-source = { editable = "packaging/erebus-cli" }
+source = { editable = "packaging/styx-cli" }
 
 [[package]]
-name = "erebus-mcp-server"
+name = "styx-mcp-server"
 version = "0.3.0"
 source = { editable = "mcp-server" }
 dependencies = [
-    { name = "erebus-sdk" },
+    { name = "styx-sdk" },
     { name = "mcp", extra = ["cli"] },
 ]
 
@@ -261,7 +261,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "erebus-sdk", editable = "sdk/py" },
+    { name = "styx-sdk", editable = "sdk/py" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.0.0,<3.0.0" },
 ]
 
@@ -269,11 +269,11 @@ requires-dist = [
 dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
-name = "erebus-sdk"
+name = "styx-sdk"
 version = "0.3.0"
 source = { editable = "sdk/py" }
 dependencies = [
-    { name = "erebus-cli" },
+    { name = "styx-cli" },
 ]
 
 [package.dev-dependencies]
@@ -282,7 +282,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "erebus-cli", editable = "packaging/erebus-cli" }]
+requires-dist = [{ name = "styx-cli", editable = "packaging/styx-cli" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]

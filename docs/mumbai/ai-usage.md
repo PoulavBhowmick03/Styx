@@ -11,8 +11,8 @@
 | **Claude 2**: Claude Code (version 2.1.319 when checked on 6 November), model `claude-sonnet-5-5` as the tool reported it, working for Ishita | Wrote and tested the setup page, the example agent tooling, and several documents. Reviewed other agents' code read-only | git history (`git log --author=ishitab02`, 24 commits) and the file list below |
 | **Claude 1**: an AI agent working for Poulav | Relay, approval page, the vault MCP tools, Arkiv, the live Arc product run | `REMAINING_WORK.md`, "Who does what". **TO FILL** by Poulav |
 | **Codex**: an AI agent working for Poulav | Packaging, CI, the watcher, `SECURITY_REVIEW.md`, bug fixes in `sdk/evm/src/arc_vault/` | `REMAINING_WORK.md`, "Who does what". **TO FILL** by Poulav |
-| **Arc Studio**: Arc's tool | The deployed `ErebusPolicyVault.sol` (`1e8156c`, 6 November 21:02), which `STATUS.md` says comes from Studio. It replaced a local version written earlier that day (`26ac813`, 10:23) | `STATUS.md`, "Deployment", and git history. `BUILD_PLAN.md`, section 5, describes Studio as driven by prompts (`arc-studio run "<prompt>"`) and says the vault would be written in Studio, either by prompting it with section 4 of the plan or in its editor. **TO FILL**: which of those was done, the prompt, and any hand edits. Who or what wrote the local version `26ac813` |
-| **`BUILD_PLAN.md`** | The plan every other file follows | Its own first paragraph says it "starts from GPT's `Erebus_Implementation_Roadmap.docx`" and makes six changes to it, so an AI wrote the roadmap it grew from. **TO FILL**: who or what wrote the plan itself |
+| **Arc Studio**: Arc's tool | The deployed `StyxPolicyVault.sol` (`1e8156c`, 6 November 21:02), which `STATUS.md` says comes from Studio. It replaced a local version written earlier that day (`26ac813`, 10:23) | `STATUS.md`, "Deployment", and git history. `BUILD_PLAN.md`, section 5, describes Studio as driven by prompts (`arc-studio run "<prompt>"`) and says the vault would be written in Studio, either by prompting it with section 4 of the plan or in its editor. **TO FILL**: which of those was done, the prompt, and any hand edits. Who or what wrote the local version `26ac813` |
+| **`BUILD_PLAN.md`** | The plan every other file follows | Its own first paragraph says it "starts from GPT's `Styx_Implementation_Roadmap.docx`" and makes six changes to it, so an AI wrote the roadmap it grew from. **TO FILL**: who or what wrote the plan itself |
 | **`CLAUDE.md`**, in the repository since the first commit | Standing instructions for Claude Code, read by every Claude Code session here | Evidence that Claude Code was used in this repository, by more than Claude 2. **TO FILL**: by whom and for what |
 | **The earlier Erebus code** imported in the first commit (`b28d8d6`, from `d56c777`, about 62,000 lines) | Pre-existing | `STATUS.md`, "Open conflict on G0". **TO FILL**: how it was written, whether AI helped, and by whom. This matters for the entry type |
 | **Humans** | Direction, accounts, keys, funds, the MetaMask signatures, every real-wallet and Telegram step, and the decisions that are theirs (entry type, prize picks) | |
@@ -51,9 +51,9 @@ These are the team's own records, from `REMAINING_WORK.md`. Each owner should co
 
 | Paths | Owner per `REMAINING_WORK.md` | TO FILL by Poulav |
 | --- | --- | --- |
-| `relay/`, `owner-page/`, `arkiv/`, `mcp-server/src/erebus_mcp/vault.py`, `sdk/py/src/erebus/_vault.py`, `mcp-server/tests/test_vault*.py` | Claude 1 | Which tool and model; what was hand-written; what was reviewed |
+| `relay/`, `owner-page/`, `arkiv/`, `mcp-server/src/styx_mcp/vault.py`, `sdk/py/src/styx/_vault.py`, `mcp-server/tests/test_vault*.py` | Claude 1 | Which tool and model; what was hand-written; what was reviewed |
 | `packaging/`, `.github/`, `watcher/`, `docs/mumbai/SECURITY_REVIEW.md`, `sdk/evm/src/arc_vault/` | Codex | The same |
-| `contracts/evm/src/ErebusPolicyVault.sol` | Arc Studio, per `STATUS.md` | The Studio prompt, the model if it is shown, and any hand edits |
+| `contracts/evm/src/StyxPolicyVault.sol` | Arc Studio, per `STATUS.md` | The Studio prompt, the model if it is shown, and any hand edits |
 | `sdk/evm/src/arc_vault/` (first version), the earlier local contract, `BUILD_PLAN.md` | Not stated anywhere in the repo | Who or what wrote them |
 | The 62,000 imported lines | Pre-existing | How they were written |
 

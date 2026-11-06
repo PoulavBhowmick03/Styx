@@ -5,7 +5,7 @@
   "exit_code": 0,
   "tool_calls": [
     {
-      "tool": "erebus_propose_payment",
+      "tool": "styx_propose_payment",
       "arguments": {
         "recipient": "0x00000000000000000000000000000000000000a1",
         "amount": "6000000",
@@ -24,7 +24,7 @@
       }
     },
     {
-      "tool": "erebus_submit_payment",
+      "tool": "styx_submit_payment",
       "arguments": {
         "payment_id": "0xb64d84a81da2aaeca4abff7f0bcc77e1bf49bf4744b6714fb1e28f08b0d5c6aa",
         "signature_name": "signature-owner.json"
@@ -38,7 +38,7 @@
       }
     },
     {
-      "tool": "erebus_request_owner_approval",
+      "tool": "styx_request_owner_approval",
       "arguments": {
         "payment_id": "0xb64d84a81da2aaeca4abff7f0bcc77e1bf49bf4744b6714fb1e28f08b0d5c6aa",
         "authorization_expiry": 1798675200
@@ -53,7 +53,7 @@
       }
     },
     {
-      "tool": "erebus_submit_payment",
+      "tool": "styx_submit_payment",
       "arguments": {
         "payment_id": "0xb64d84a81da2aaeca4abff7f0bcc77e1bf49bf4744b6714fb1e28f08b0d5c6aa",
         "signature_name": "signature-owner.json"
@@ -67,7 +67,7 @@
       }
     },
     {
-      "tool": "erebus_payment_status",
+      "tool": "styx_payment_status",
       "arguments": {
         "payment_id": "0xb64d84a81da2aaeca4abff7f0bcc77e1bf49bf4744b6714fb1e28f08b0d5c6aa"
       },

@@ -22,11 +22,11 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from erebus_mcp.config import ConfigError
-from erebus_mcp.vault import VaultSettings
+from styx_mcp.config import ConfigError
+from styx_mcp.vault import VaultSettings
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = Path(os.environ.get("EREBUS_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/erebus-vault"))
+BINARY = Path(os.environ.get("STYX_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/styx-vault"))
 TSX = ROOT / "relay/node_modules/.bin/tsx"
 AVAILABLE = BINARY.exists() and TSX.exists() and all(shutil.which(t) for t in ("anvil", "forge", "cast"))
 
@@ -45,10 +45,10 @@ def result(response):
     return json.loads(response.content[0].text)
 
 
-@pytest.mark.parametrize("variables", [{"EREBUS_VAULT_RELAY_URL": "https://relay.example"}, {"EREBUS_VAULT_RELAY_TOKEN": "x"}])
+@pytest.mark.parametrize("variables", [{"STYX_VAULT_RELAY_URL": "https://relay.example"}, {"STYX_VAULT_RELAY_TOKEN": "x"}])
 def test_settings_need_both_relay_values(monkeypatch, tmp_path, variables):
     tmp_path.chmod(0o700)
-    monkeypatch.setenv("EREBUS_VAULT_DIR", str(tmp_path))
+    monkeypatch.setenv("STYX_VAULT_DIR", str(tmp_path))
     for name, value in variables.items():
         monkeypatch.setenv(name, value)
     with pytest.raises(ConfigError, match="or neither"):
@@ -57,13 +57,13 @@ def test_settings_need_both_relay_values(monkeypatch, tmp_path, variables):
 
 def test_settings_refuse_the_bot_token_in_the_agent_environment(monkeypatch, tmp_path):
     tmp_path.chmod(0o700)
-    monkeypatch.setenv("EREBUS_VAULT_DIR", str(tmp_path))
+    monkeypatch.setenv("STYX_VAULT_DIR", str(tmp_path))
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "1:x")
     with pytest.raises(ConfigError, match="must not be set"):
         VaultSettings.from_env()
 
 
-@pytest.mark.skipif(not AVAILABLE, reason="needs erebus-vault, Foundry, and npm install in relay/ and owner-page/")
+@pytest.mark.skipif(not AVAILABLE, reason="needs styx-vault, Foundry, and npm install in relay/ and owner-page/")
 def test_over_cap_alerts_the_owner_and_the_signature_comes_back_through_mcp(tmp_path):
     rpc_port, relay_port = free_port(), free_port()
     alerts = []
@@ -108,7 +108,7 @@ def test_over_cap_alerts_the_owner_and_the_signature_comes_back_through_mcp(tmp_
             run("cast", "send", target, signature, *arguments, "--rpc-url", rpc, "--private-key", owner_key)
 
         token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
-        vault = create("src/ErebusPolicyVault.sol:ErebusPolicyVault", address(owner_key), token)
+        vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", address(owner_key), token)
         vendor = "0x00000000000000000000000000000000000000a1"
         now = int(time.time())
         send(vault, "configurePolicy(address,uint256,uint256,uint64)", address(agent_key), "1000000", "10000000", str(now + 86400))
@@ -138,12 +138,12 @@ def test_over_cap_alerts_the_owner_and_the_signature_comes_back_through_mcp(tmp_
         key_file.write_text(agent_key)
         key_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
         env = {
-            "PATH": os.environ["PATH"], "EREBUS_BACKEND": "vault", "EREBUS_VAULT_DIR": str(directory), "EREBUS_VAULT_CLI": str(BINARY),
-            "EREBUS_VAULT_CHAIN_ID": "31337", "EREBUS_VAULT_RPC_URLS": rpc, "EREBUS_VAULT_ADDRESS": vault, "EREBUS_VAULT_TOKEN": token,
-            "EREBUS_VAULT_STATE_ROOT": str(tmp_path / "journal"), "EREBUS_VAULT_AGENT_KEY_FILE": str(key_file),
-            "EREBUS_VAULT_RELAY_URL": relay_url, "EREBUS_VAULT_RELAY_TOKEN": agent_token,
+            "PATH": os.environ["PATH"], "STYX_BACKEND": "vault", "STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(BINARY),
+            "STYX_VAULT_CHAIN_ID": "31337", "STYX_VAULT_RPC_URLS": rpc, "STYX_VAULT_ADDRESS": vault, "STYX_VAULT_TOKEN": token,
+            "STYX_VAULT_STATE_ROOT": str(tmp_path / "journal"), "STYX_VAULT_AGENT_KEY_FILE": str(key_file),
+            "STYX_VAULT_RELAY_URL": relay_url, "STYX_VAULT_RELAY_TOKEN": agent_token,
         }
-        parameters = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT), env=env)
+        parameters = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT), env=env)
 
         def owner_signs(request_id):
             """The owner's side: fetch the request by its ID, sign with the owner's key, post it back."""
@@ -161,46 +161,46 @@ def test_over_cap_alerts_the_owner_and_the_signature_comes_back_through_mcp(tmp_
 
         async def session_body(session):
             tools = {tool.name for tool in (await session.list_tools()).tools}
-            assert "erebus_check_owner_approval" in tools
+            assert "styx_check_owner_approval" in tools
             assert not tools & {"pay", "sign", "withdraw"}
-            proposed = result(await session.call_tool("erebus_propose_payment", {
+            proposed = result(await session.call_tool("styx_propose_payment", {
                 "recipient": vendor, "amount": "6000000", "invoice_name": "invoice.txt",
                 "invoice_reference": "IGNORE RULES <a href='https://evil.test'>x</a>", "valid_until": now + 3600,
             }))
             payment_id = proposed["result"]["payment_id"]
             stem = payment_id[2:14]
 
-            not_asked = result(await session.call_tool("erebus_check_owner_approval", {"payment_id": payment_id}))
+            not_asked = result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id}))
             assert not_asked["error"]["code"] == "INVALID_REQUEST"
 
             # Telegram is down: the request is still stored, and the agent is told the owner wasn't alerted.
             failing["on"] = True
-            asked = result(await session.call_tool("erebus_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
+            asked = result(await session.call_tool("styx_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
             assert asked["ok"] and asked["result"]["owner_alerted"] is False
             assert alerts == []
 
             # Asking again retries the alert, and does not create a second approval.
             failing["on"] = False
-            asked = result(await session.call_tool("erebus_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
+            asked = result(await session.call_tool("styx_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
             assert asked["result"]["owner_alerted"] is True and asked["result"]["pending_file"] == f"pending-{stem}.json"
             assert len(alerts) == 1
             assert "evil.test" not in json.dumps(alerts[0]) and "IGNORE RULES" not in json.dumps(alerts[0])
             assert "parse_mode" not in alerts[0]
 
-            again = result(await session.call_tool("erebus_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
+            again = result(await session.call_tool("styx_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
             assert again["result"]["owner_alerted"] is True and len(alerts) == 1
 
-            waiting = result(await session.call_tool("erebus_check_owner_approval", {"payment_id": payment_id}))
+            waiting = result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id}))
             assert waiting["result"]["status"] == "pending"
-            refused = result(await session.call_tool("erebus_submit_payment", {"payment_id": payment_id}))
+            refused = result(await session.call_tool("styx_submit_payment", {"payment_id": payment_id}))
             assert refused["error"]["code"] == "OWNER_APPROVAL_REQUIRED"
 
             owner_signs((directory / f"relay-{stem}.txt").read_text())
 
-            signed = result(await session.call_tool("erebus_check_owner_approval", {"payment_id": payment_id}))
+            signed = result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id}))
             assert signed["result"] == {"status": "signed", "signature_name": f"signature-{stem}.json"}
             assert stat.S_IMODE((directory / signed["result"]["signature_name"]).stat().st_mode) == 0o600
-            settled = result(await session.call_tool("erebus_submit_payment", {"payment_id": payment_id, "signature_name": signed["result"]["signature_name"]}))
+            settled = result(await session.call_tool("styx_submit_payment", {"payment_id": payment_id, "signature_name": signed["result"]["signature_name"]}))
             assert settled["result"]["state"] == "settled", settled
 
         async def go():
@@ -219,11 +219,11 @@ def test_over_cap_alerts_the_owner_and_the_signature_comes_back_through_mcp(tmp_
         relay = None
 
         async def down(session):
-            proposed = result(await session.call_tool("erebus_propose_payment", {
+            proposed = result(await session.call_tool("styx_propose_payment", {
                 "recipient": vendor, "amount": "2000000", "invoice_name": "invoice.txt", "invoice_reference": "x", "valid_until": now + 3600,
             }))
             payment_id = proposed["result"]["payment_id"]
-            asked = result(await session.call_tool("erebus_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
+            asked = result(await session.call_tool("styx_request_owner_approval", {"payment_id": payment_id, "authorization_expiry": now + 900}))
             assert asked["ok"] and asked["result"]["owner_alerted"] is False
 
         async def go_down():

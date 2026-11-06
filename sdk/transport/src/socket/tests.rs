@@ -6,7 +6,7 @@ use crate::{
     message::MessageType,
     store::{FileTranscriptStore, TranscriptStore},
 };
-use erebus_core::{
+use styx_core::{
     ids::{AssetId, ChainNamespace},
     terms::GuaranteeSet,
 };

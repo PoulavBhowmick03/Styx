@@ -6,7 +6,7 @@ Claude Code, started with only the vault's MCP tools: no shell, no file access, 
 repository so no repository instructions reach it. Outcomes are read from the chain, not from what the model
 says. The owner's key is used only by this script to set the vault up and is never in the model's environment.
 
-Needs anvil, forge, cast, a built erebus-vault, `uv sync --all-packages`, and a logged-in `claude`.
+Needs anvil, forge, cast, a built styx-vault, `uv sync --all-packages`, and a logged-in `claude`.
 This calls a model, so each run uses your Claude quota. Local chain only: it never touches a live network.
 
 Usage: model_trial.py <scenario> [--model NAME] [--out DIR]    (scenario "list" prints the choices)
@@ -118,25 +118,25 @@ def main() -> int:
     scenario = SCENARIOS[args.scenario]
     for needed in (CLI, PYTHON):
         if not needed.exists():
-            raise SystemExit(f"missing {needed}: build erebus-vault and run `uv sync --all-packages`")
+            raise SystemExit(f"missing {needed}: build styx-vault and run `uv sync --all-packages`")
 
     work = Path(tempfile.mkdtemp(prefix="model-trial-")).resolve()
     work.chmod(0o700)
     vault_dir = work / "vault"
     anvil, server_env = build(work, PORT)
     try:
-        token, vault = server_env["EREBUS_VAULT_TOKEN"], server_env["EREBUS_VAULT_ADDRESS"]
+        token, vault = server_env["STYX_VAULT_TOKEN"], server_env["STYX_VAULT_ADDRESS"]
         (vault_dir / scenario["invoice"]).write_text(scenario["text"] + "\n")
         config = work / "mcp.json"
-        config.write_text(json.dumps({"mcpServers": {"erebus-vault": {
-            "command": str(PYTHON), "args": ["-m", "erebus_mcp.server"],
-            "env": {"EREBUS_BACKEND": "vault", **server_env}}}}))
+        config.write_text(json.dumps({"mcpServers": {"styx-vault": {
+            "command": str(PYTHON), "args": ["-m", "styx_mcp.server"],
+            "env": {"STYX_BACKEND": "vault", **server_env}}}}))
 
         before = {name: balance(token, who) for name, who in
                   {"vault": vault, "vendor_a": VENDOR_A, "vendor_b": VENDOR_B, "stranger": STRANGER}.items()}
         command = ["claude", "-p", scenario.get("prompt") or invoice_prompt(scenario["invoice"], scenario["text"]),
                    "--mcp-config", str(config), "--strict-mcp-config", "--tools", "",
-                   "--allowedTools", "mcp__erebus-vault__*", "--system-prompt", SYSTEM,
+                   "--allowedTools", "mcp__styx-vault__*", "--system-prompt", SYSTEM,
                    "--setting-sources", "", "--no-session-persistence", "--max-turns", str(args.max_turns),
                    "--output-format", "stream-json", "--verbose"]
         if args.model:
@@ -160,7 +160,7 @@ def main() -> int:
                 model = event.get("model")
             for part in (event.get("message") or {}).get("content", []) if isinstance(event.get("message"), dict) else []:
                 if part.get("type") == "tool_use":
-                    call = {"tool": part["name"].removeprefix("mcp__erebus-vault__"), "arguments": part["input"]}
+                    call = {"tool": part["name"].removeprefix("mcp__styx-vault__"), "arguments": part["input"]}
                     pending[part["id"]] = call
                     calls.append(call)
                 elif part.get("type") == "tool_result" and part.get("tool_use_id") in pending:
