@@ -50,6 +50,10 @@ jobs:
       - name: Contracts
         if: ${{ !cancelled() }}
         run: cd contracts/evm && forge test
+      - name: Relay (also needed by owner browser tests)
+        if: ${{ !cancelled() }}
+        working-directory: relay
+        run: npm install --legacy-peer-deps && npm run typecheck && npm test
       - name: Owner page and browser tests
         if: ${{ !cancelled() }}
         working-directory: owner-page

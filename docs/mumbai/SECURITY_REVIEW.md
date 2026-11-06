@@ -81,10 +81,20 @@ No live-chain behavior, real owner wallet or malicious-RPC consensus was verifie
 
 ### Claude 2 review
 
-At baseline `84b3288`, `setup-page/` does not exist and no new Claude 2 commits are
-available locally. `mcp-server/examples/vault_agent.py` is explicitly scripted, not a model run.
-Review will be refreshed from `origin/main` before handoff. A real model run needs the owner's
-chosen model/account; no sponsor login or inference credentials will be used here.
+At fetched `origin/main` (`6edde8d`), `setup-page/` still does not exist and the remote
+publishes only `main`; Claude 2's new work cannot yet be reviewed. Do not infer approval.
+No setup files or example files were edited. The existing scripted example has one finding:
+
+**Medium, open — restart after unknown creates another payment proposal.**
+`mcp-server/examples/vault_agent.py:64-68` always proposes a fresh routine payment on entry.
+After `settle` exhausts its same-ID retries and returns `unknown` (`:62`), `run` emits `failed`
+and exits. Rerunning the script proposes a fresh ID without reconciling the retained one.
+If the first payment later lands, both can pay the same invoice within policy limits.
+Reproduction used a subclass of the actual `Agent`: `propose` records successive IDs,
+`settle` returns `unknown`, and `run(0)` is invoked twice. Observed two different proposed IDs
+and two `failed` events. This demonstrates the restart behavior; no double settlement was sent.
+The example owner should persist/resume the payment ID across invocations and label uncertainty
+explicitly. A real model run still needs the owner's chosen model/account; no credentials were used.
 
 ### Task 2: packaging
 
@@ -116,10 +126,38 @@ one documented failure. No hosted Actions run has been verified; a human must en
 Built `watcher/watcher.py`: full-block agent/vault transaction scanning, receipt-status revert
 alerts, historical daily-spend threshold checks, durable cursor/pending receipts/outbox, separate
 watcher bearer token, redirect refusal and process locking. No signing or transaction sending.
-Tests run against local Anvil with fresh random keys and a fake relay implementing `/alerts`.
+**10 tests passed** against local Anvil with fresh random keys and a fake relay implementing `/alerts`.
 Missing/partial receipts stay unknown and are retried; the relay's `alerted:false` stays queued.
 
 Human/limits: no live Arc or Telegram run; historical state RPC support is required. Reorganizations
 stop processing for operator review. Delivery can duplicate after a crash between remote acceptance
 and saving the acknowledgement, since `/alerts` has no idempotency key. Never-visible receipts
 cannot yield definitive revert alerts. See `watcher/README.md` for commands and recovery.
+
+## Final local verification after rebasing on `6edde8d`
+
+- `sdk/evm`: bins build passed; normal suite 103 passed, 54 ignored; explicitly requested
+  vault Anvil suite **7 passed**. Other ignored integrations were not exercised.
+- `sdk/core`: 118 passed, 1 ignored. `sdk/transport`: 137 passed, 1 ignored.
+- `contracts/evm`: **84 passed**. Frozen vault source unchanged.
+- `owner-page`: typecheck passed; **34 tests and 16 browser scenarios passed** on the rebased
+  relay integration. Browser wallet is Anvil, not a real browser extension.
+- `relay`: typecheck passed; **24 tests passed** with a fake notifier.
+- `arkiv`: typecheck and tests passed; no live publication.
+- Python final raw suite: **433 passed, 36 skipped, 1 known failure**. The CI reporter returned
+  success with the documented warning and zero unexpected failures. Raw pytest remains red.
+- `scripts/local_demo.sh`: passed before rebase; the seven vault Anvil tests and rebased
+  browser relay scenarios cover the relevant combined local flow. No second-machine G3 claim.
+- Watcher: **10 Anvil tests passed**. Native release wheels rebuilt against the rebased tree;
+  isolated no-Rust install smoke passed. `uv lock --check` / sync passed without lock changes.
+- Workflow passed `actionlint` 1.7.7. Gitleaks staged checks passed before every commit.
+
+Only assigned paths changed. `main` has not been merged or force-pushed; the raw known test
+failure remains, and the open owner-page/example findings need their owners. No live network
+transaction, deployment, sponsor login, Telegram delivery, hosted CI run or Linux wheel runtime
+was attempted. Claude 2's unpublished setup work still needs review when available.
+
+Human follow-up: resolve the two open findings; review signing-sensitive changes; run hosted CI
+and distribute native wheelhouses; perform the live gates and G0 decision. Also add this session's
+AI assistance to `docs/mumbai/ai-usage.md` (outside Codex ownership): the changed paths listed by
+`git diff --name-only origin/main...codex/vault-hardening`, guided by the user's Codex task prompt.
