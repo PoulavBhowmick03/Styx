@@ -61,61 +61,62 @@ Both need G1's deployed, funded vault. See `RUNBOOK.md` for the exact commands.
 
 ## Claude 2 report (Ishita), 6 November 2026
 
-Everything below is merged to `main`. Nothing was deployed to a live network and no funds were spent. All runs used a local Anvil chain.
+Everything below is merged to `main` except where it says otherwise. Nothing was deployed and no funds were spent. All runs used a local Anvil chain, plus one read-only fetch of the deployed vault's code from Arc. Re-checked against `main` at `c0da548`, after Arc Studio's contract replaced the earlier one.
 
 ### Task 1 and 2: setup page (`setup-page/`)
 
-- **Built:** a static page (viem and Vite) where the owner, in their own wallet, deploys or connects a vault, sets limits, allows and removes vendors, funds it by USDC `transfer`, pauses, unpauses and withdraws. It shows the policy version and warns that saving a change invalidates unused approvals. It can download an `owner-config.json` for the approval page.
+- **Built:** a static page (viem and Vite) where the owner, in their own wallet, deploys or connects a vault, sets limits, allows and removes vendors, funds it by USDC `transfer`, pauses, unpauses and withdraws. It shows the policy version and warns that saving a change invalidates unused approvals. It downloads an `owner-config.json` for the approval page, with an optional `relay` address, which the owner page now requires before it will send a signature to a relay.
 - **Moving the money:** the page says the vault protects only the USDC inside it. A checklist checks that the vault is funded, the agent is not the owner, the agent's address holds gas only (0.05 to 0.5 USDC, a guideline from `RUNBOOK.md`, not a contract rule) and the vault is not paused. It says how much to move out of the agent's address, but cannot move it, because it never holds the agent's key.
 - **Amounts:** text to bigints, never floats. More than 6 decimals is refused, not rounded. Tokens that are not 6-decimal are refused.
-- **Tests:** 15 unit tests and 7 headless-Chrome scenarios on Anvil pass, including a wallet rejection, a hostile vendor label shown as text, a non-owner, and a wrong-decimals token. The repo's `MockERC20` has 18 decimals, so the tests set its decimals slot to 6 and no contract was changed.
-- **Not verified:** any real wallet (MetaMask or other), and anything on Arc testnet. Connecting to an existing vault compares its code with this checkout's build and flags a difference, but does not block it.
+- **Tests:** 17 unit tests and 7 headless-Chrome scenarios on Anvil pass against Arc Studio's contract.
+- **Code check, fixed after the contract changed:** the page flags a vault whose code differs from its build. The deployed Arc vault was built with the optimizer on (200 runs, Cancun), and the repo's default build has it off, so the page would have called the real vault "different" and told the owner not to fund it. It also did not ignore the compiler's metadata trailer. Both are fixed: the page now builds the vault with the deployed settings, and the check ignores the owner and token slots and the trailer. Checked read-only against `0xb3bc2a82…3fb1` on Arc: it matches, and a one-byte change in the code does not. This is a convenience check, not a proof. The contract still needs a human review, and I did not review it.
+- **Not verified:** any real wallet (MetaMask or other), and anything that sends a transaction on Arc. The page has not been used on Arc yet.
 
 ### Task 3: a real model as the agent (`mcp-server/examples/`)
 
-15 runs: 11 of `claude-sonnet-5-5` and 4 of `claude-haiku-5-5`, using only the four vault MCP tools on a fresh chain each time. Details are in `mcp-server/examples/MODEL_TRIAL.md`, and raw reports in `trials/`. Funds reached a stranger in none of them. This does not show prompt-injection prevention.
+15 runs: 11 of `claude-sonnet-5-5` and 4 of `claude-haiku-5-5`, using only the four vault MCP tools on a fresh chain each time. Details are in `mcp-server/examples/MODEL_TRIAL.md`, and raw reports in `trials/`. Funds reached a stranger in none of them. This does not show prompt-injection prevention. These runs used the earlier local contract. On `main` at `c0da548` I re-ran three (Sonnet routine and refused, Haiku pressure): the same outcomes.
 
 1. **The vault itself never refused the model.** `erebus_propose_payment` returns `exception_required` for an over-limit payment, so no run called `submit` on one. The runs tested the tool's pre-flight answer, not the contract's revert.
 2. **Haiku partly followed an injection.** It submitted with a fake `signature-owner.json` named in the invoice, and the tools refused because the file did not exist. Its report told the owner to create that file and never said the name came from the invoice. Sonnet did not act on injected text in any of 6 hostile runs.
-3. **Splitting is allowed by the vault.** Six 1 USDC payments to an allowed vendor fit under a 10 USDC daily limit and settle with no signature. Only the model's restraint stopped it in these runs. The daily limit is the real ceiling on what the agent can pay without a signature.
-4. **Models do not know the time.** Haiku guessed `valid_until` wrong and a routine payment failed.
+3. **Splitting is allowed by the vault.** Six 1 USDC payments to an allowed vendor fit under a 10 USDC daily limit and settle with no signature. The new contract keeps a per-payment cap and a cumulative daily cap, so this still holds. The daily limit is the real ceiling on what the agent can pay without a signature.
+4. **Models do not know the time.** Fixed in `1711205`: both times default to one hour from now. One Haiku run re-checked it.
 
 ### Task 4: install guide (`docs/mumbai/AGENT_INSTALL.md`)
 
-Followed from a fresh clone. The first payment failed at first, because an agent will not guess the invoice reference or `valid_until`. The guide now supplies both, plus the approval expiry. After that: the allowed payment settled, the 6 USDC payment was refused, the owner signed, it settled, and `cast` showed 6,250,000 base units at the vendor. The test record, with deviations, is in `mcp-server/examples/INSTALL_TEST.md`.
+Followed from a fresh clone, before the contract changed. The first payment failed at first, because an agent will not guess the invoice reference. After the guide was fixed: the allowed payment settled, the 6 USDC payment was refused, the owner signed, it settled, and `cast` showed 6,250,000 base units at the vendor. The test record, with deviations, is in `mcp-server/examples/INSTALL_TEST.md`.
 
+- **Not re-followed end to end** after the contract change and the optional-times change. Two edits since then were checked only in parts: the `forge build` line was removed (the setup page builds the vault itself), and the paragraph about times was reworded.
 - **Not run:** Part 3 on Arc, any browser wallet, interactive Claude Code, and installing the prerequisites from nothing.
 - **Not loaded into the tools:** the Cursor, Claude Desktop and Codex configs follow each tool's docs. Only the Claude Code config was run.
 
 ### Review of Claude 1's `relay/` and `owner-page/`
 
-Read from the code, not reproduced. Re-checked against `main` at `3fcaf0b`.
+Read from the code, not reproduced. Re-checked against `main` at `c0da548`.
 
-| Finding | Where | State |
-| --- | --- | --- |
-| No upper bound on `authorizationExpiry`. A compromised agent token can fill all 200 request slots with requests that never expire, and `save()` keeps them across restarts, which blocks approvals | `relay/src/relay.ts:128`, `:173` | **Open** |
-| One hourly alert budget is shared by approvals and watcher notices, and is spent before sending. A looping agent or a revert storm can use all 10 slots, so a real request gets `rateLimited` and no alert. A failed Telegram send burns a slot on each retry | `relay/src/relay.ts:135-141`, `:180`, `:241` | **Open.** The watcher now exists, so this matters more |
-| The relay address comes from the link and the signature is posted there. Review still checks the owner's config, but a crafted link sends a real signature to an attacker's server. Suggested fix: pin the relay URL in the owner config | `owner-page/src/approval.ts:308`, `owner-page/src/main.ts` (`sendToRelay`) | **Open** |
-| The alert's "Limit" came from the agent's file and was shown as fact | `relay/src/relay.ts:190` | Wording fixed ("The agent says the limit is"). `1c17a90` reads the limit from the chain in the owner page. The relay still checks against the claimed limit at `:129` |
-| "Signed and sent to your agent" overclaims, since the signature reached the relay only. "Could not be reached" is shown for any non-OK reply, including a 403 | `owner-page/src/main.ts` | Not re-checked |
-| The state file is parsed with no shape check, so a malformed file crashes startup | `relay/src/relay.ts:96` | Not re-checked |
+| Finding | State |
+| --- | --- |
+| No upper bound on `authorizationExpiry`, so a compromised agent token could fill the 200 request slots for good | **Fixed** in `b8089eb`: 24-hour cap (`relay/src/relay.ts`). 200 slots can still be held for 24 hours, so a flood is slowed, not stopped |
+| One alert budget shared by approvals and watcher notices, spent before sending | **Fixed**: separate budgets, and only delivered alerts count |
+| The relay address came from the link, and the signature was posted there | **Fixed**: the owner config must name the relay (`mayPostSignature`). Consequence: the owner config must include `relay`, or the signature is shown as a file only |
+| The alert's "Limit" came from the agent's file and was shown as fact | **Fixed**: the alert says "The agent says…", and the owner page reads the limit from the chain. The relay still checks against the claimed limit |
+| "Signed and sent to your agent" overclaimed | **Fixed**: now "the relay accepted it. The agent still has to collect and submit it", with separate messages for refused and unreachable |
+| The state file was parsed with no shape check | **Fixed**: damaged entries are dropped |
 
-Codex's review is in `SECURITY_REVIEW.md`. I did not compare the two.
+Not checked: the new `1e8156c` contract against `SECURITY_REVIEW.md`, and the watcher. I did not compare Codex's review with mine.
 
 ### Next steps
 
-**For Poulav and Claude 1**
-1. Fix the two open relay findings: cap `authorizationExpiry`, and give approvals and watcher notices separate alert budgets. Do not charge a failed send against the budget.
-2. Pin the relay URL in the owner config so a link cannot choose where the signature goes.
-3. Decide about splitting. Options: lower the daily limit, add a rule in the contract, or tell owners plainly that the daily limit is the real cap. The contract is frozen, so I changed nothing.
-4. Add a way for models to learn the current time in `vault.py`, such as a chain-time tool or a default validity window.
-5. Tell the owner in the setup and approval pages that the daily limit is the most the agent can pay without a signature.
+**Ishita**
+1. **Get a human review of the Arc Studio contract (`1e8156c`) before funding the vault with anything that matters.** The deployed vault `0xb3bc2a82…3fb1` is unconfigured and empty. This is Poulav's review, as the project rules say.
+2. Run `AGENT_INSTALL.md` Part 3 on Arc testnet with a real wallet: connect to that vault (the owner is `0xC0296012…50e0`, so the wallet must be that account), set limits, allow vendors, fund, leave the agent gas only, then a first refused and first approved payment. This is G1 and G2. Test USDC is from `https://faucet.circle.com`. Add the relay address on the vendors section if the relay is running.
+3. Try the Cursor, Claude Desktop and Codex configs in the real apps.
+4. Resolve G0 as described above.
 
-**For Ishita**
-1. Run `AGENT_INSTALL.md` Part 3 on Arc testnet with a real wallet: deploy or connect, set limits, fund, leave the agent gas only, then a first refused and first approved payment. This is needed for G1 and G2. Test USDC is from `https://faucet.circle.com`.
-2. Try the Cursor, Claude Desktop and Codex configs in the real apps.
-3. Resolve G0 as described above. This report changes nothing about it.
+**Poulav and Claude 1**
+1. Decide about splitting. Options: lower the daily limit, add a rule in the contract, or tell owners plainly that the daily limit is the real cap. The contract is frozen, so I changed nothing.
+2. Tell the owner in the setup and approval pages that the daily limit is the most the agent can pay without a signature.
+3. Consider a cap on the relay's total open requests per hour, since the 24-hour cap still allows 200 slots to be held for a day.
 
 **Reviews still owed**
-- Codex reviews Claude 2's work (`setup-page/`, `mcp-server/examples/`, `AGENT_INSTALL.md`), as `REMAINING_WORK.md` assigns.
-- Poulav reviews all contract and signing code. The setup page deploys the frozen contract and does not sign.
+- Codex reviews Claude 2's work (`setup-page/`, `mcp-server/examples/`, `AGENT_INSTALL.md`), as `REMAINING_WORK.md` assigns. Include the new code check in `setup-page/src/build.ts`.
+- Poulav reviews all contract and signing code. The setup page deploys the contract and does not sign.
