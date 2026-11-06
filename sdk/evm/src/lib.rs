@@ -56,6 +56,7 @@
 #![forbid(unsafe_code)]
 
 pub mod abi;
+pub mod arc_vault;
 pub mod backend;
 pub mod chain;
 pub mod deployment;
