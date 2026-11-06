@@ -15,3 +15,15 @@ npm run fetch-grant -- <lookup-tag> <writer-address> fetched.grant
 ```
 
 **Writer address:** none yet; nothing has been published.
+
+## World
+
+Optional step-up authentication in front of the owner signing page, enabled with `VITE_WORLD_GATE=1`. A denied, cancelled or expired attempt never reaches the wallet.
+
+World's Mumbai proofs are mocked and use fake identities. The contract never checks World; the owner's signature is what authorizes a payment. It has not yet run against World's live service. See `world/debrief.md`.
+
+```bash
+cd owner-page && npm install --legacy-peer-deps
+WORLD_CLIENT_ID=... WORLD_CLIENT_SECRET=... WORLD_REDIRECT_URI=... npm run world-gate
+VITE_WORLD_GATE=1 npm run dev
+```

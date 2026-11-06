@@ -39,6 +39,12 @@ const download = element<HTMLAnchorElement>("download");
 let config: OwnerConfig | undefined;
 let pending: Pending | undefined;
 
+// The World gate is optional and sits in front of the wallet only. The contract never checks World.
+const worldGate = import.meta.env.VITE_WORLD_GATE === "1";
+const worldButton = element<HTMLButtonElement>("world");
+let approvedAttempt: string | undefined;
+let currentDigest: Hex | undefined;
+
 function showStatus(message: string, isError = false): void {
   statusLine.textContent = message;
   statusLine.classList.toggle("error", isError);
@@ -47,7 +53,9 @@ function showStatus(message: string, isError = false): void {
 function resetReview(): void {
   review.hidden = true;
   signButton.hidden = true;
+  worldButton.hidden = true;
   output.hidden = true;
+  approvedAttempt = undefined;
 }
 
 // `textContent` only: the invoice reference is agent-supplied text and must never be parsed as HTML.
@@ -65,8 +73,14 @@ function render(): void {
     element("rule").textContent = view.exceededRule;
     element("digest").textContent = view.digest;
     review.hidden = false;
-    signButton.hidden = false;
-    showStatus("Check every field, then sign with the owner wallet.");
+    currentDigest = view.digest;
+    if (worldGate) {
+      worldButton.hidden = false;
+      showStatus("Check every field, then verify with World before signing.");
+    } else {
+      signButton.hidden = false;
+      showStatus("Check every field, then sign with the owner wallet.");
+    }
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "This approval could not be read.", true);
   }
@@ -105,6 +119,53 @@ handleLoad(pendingInput, (value) => {
   showStatus("Approval request loaded.");
 });
 
+worldButton.addEventListener("click", () => {
+  void verifyWithWorld();
+});
+
+async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new ApprovalError("The World check is unavailable.");
+  return (await response.json()) as Record<string, unknown>;
+}
+
+async function verifyWithWorld(): Promise<void> {
+  if (!currentDigest) return;
+  worldButton.disabled = true;
+  try {
+    const started = await postJson("/api/step-up/start", { digest: currentDigest });
+    const attemptId = String(started.attemptId);
+    window.open(String(started.authorizeUrl), "world-check", "noopener");
+    showStatus("Complete the World check in the new window.");
+    for (let elapsed = 0; elapsed < 300; elapsed += 2) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const response = await fetch(`/api/step-up/status?attemptId=${encodeURIComponent(attemptId)}`);
+      const state = (await response.json()) as { status: string; reason?: string; subject?: string };
+      if (state.status === "approved") {
+        approvedAttempt = attemptId;
+        worldButton.hidden = true;
+        signButton.hidden = false;
+        showStatus("World check passed. Sign with the owner wallet.");
+        return;
+      }
+      if (state.status === "denied") {
+        const subject = state.subject ? ` Subject: ${state.subject}` : "";
+        showStatus(`World check failed: ${state.reason ?? "denied"}.${subject}`, true);
+        return;
+      }
+    }
+    showStatus("The World check timed out. Nothing was signed.", true);
+  } catch (error) {
+    showStatus(error instanceof ApprovalError ? error.message : "The World check is unavailable.", true);
+  } finally {
+    worldButton.disabled = false;
+  }
+}
+
 signButton.addEventListener("click", () => {
   void sign();
 });
@@ -118,6 +179,22 @@ async function sign(): Promise<void> {
   }
   signButton.disabled = true;
   try {
+    if (worldGate) {
+      // Spent here, immediately before the wallet prompt, so one check allows one signature.
+      const { allowed } = await postJson("/api/step-up/consume", {
+        attemptId: approvedAttempt,
+        digest: currentDigest,
+      });
+      approvedAttempt = undefined;
+      if (allowed !== true) {
+        signButton.hidden = true;
+        worldButton.hidden = false;
+        showStatus("The World check has expired or was used. Verify again.", true);
+        return;
+      }
+      signButton.hidden = true;
+      worldButton.hidden = false;
+    }
     const accounts = (await wallet.request({ method: "eth_requestAccounts" })) as string[];
     const account = accounts[0] ? getAddress(accounts[0]) : undefined;
     if (account !== config.owner) {
