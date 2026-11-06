@@ -109,6 +109,7 @@
           <dt>Agent address gas</dt><dd id="a-native"></dd>
         </dl>
         <p class="note" id="same-money"></p>
+        <div class="callout" id="plain-send-warning"><strong>Do not send money to this address with your wallet's Send button.</strong> The vault has no way to receive a plain transfer, so the transaction fails and you lose the gas. On Arc, USDC is also the native coin, so your wallet's normal Send may be exactly that kind of transfer. Put money in with "Move into vault" in section 5 instead. It calls the USDC token's <code>transfer</code>, which the vault accepts.</div>
         <p id="not-owner" class="callout" hidden>The connected account is not this vault's owner, so every change below is disabled.</p>
       </section>
 
@@ -146,6 +147,7 @@
       <section>
         <h2>5. Move money into the vault</h2>
         <p>Funds go in through the USDC token's <code>transfer</code>, the only way this vault can receive them. Send the agent's address only what it needs for gas.</p>
+        <div class="callout" id="fund-send-warning"><strong>Use this section, not your wallet's Send button.</strong> A plain send to the vault's address fails and costs you gas, because the vault cannot receive one.</div>
         <label for="fund-amount">Amount (USDC)</label>
         <input id="fund-amount" inputmode="decimal" />
         <button id="fund">Review move</button>
