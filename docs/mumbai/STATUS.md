@@ -12,6 +12,8 @@ Updated 6 November 2026.
 | **Token** | `0x3600000000000000000000000000000000000000` (USDC) |
 | **Arc Studio** | https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16 |
 | **Build** | solc 0.8.24, optimizer on with 200 runs, EVM target cancun |
+| **Code hash** | `0x6da4170f7216064b86985eb843726bb29291bf6bf77016ce5e7e7753d2c83ebd` (keccak of the deployed code) |
+| **Record issuer** | `0x35879a311848b924cce79d788e102de499546a4e` |
 
 Read back from Arc: the transaction succeeded, the owner and token are correct, and the vault is unconfigured and empty. The deployed bytecode matches this repo's source under those build settings, apart from the owner, token and metadata hash. The repo's `foundry.toml` builds with the optimizer off, so its local bytecode differs. Tests of that exact build: our 44 vault tests, 7 end-to-end tests on Anvil, and 10 simulated scenarios against real USDC on Arc. Nothing has been paid on Arc yet.
 
