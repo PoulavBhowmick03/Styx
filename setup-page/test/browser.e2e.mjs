@@ -26,6 +26,9 @@ const sh = (cmd, args, cwd) => {
   return r.stdout.trim();
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Mining is slow on some machines (about 2 ms a block on one, ten times that on another), and cast gives up on a
+// call after 45 s. Small calls stay well under that.
+const mine = (rpc, blocks) => { for (let left = blocks; left > 0; left -= 5000) sh("cast", ["rpc", "anvil_mine", "0x" + Math.min(5000, left).toString(16), "--rpc-url", rpc]); };
 async function waitFor(check, label, tries = 150) {
   for (let i = 0; i < tries; i++) { if (await check().catch(() => false)) return; await sleep(100); }
   throw new Error(`timed out waiting for ${label}`);
@@ -59,7 +62,9 @@ try {
   send(ownerKey, token, "mint(address,uint256)", owner, "20000000"); // 20 USDC
   send(ownerKey, token, "mint(address,uint256)", agent, "5000000"); // the agent starts with 5 USDC: unprotected
 
-  start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page") });
+  // A 2-page fallback window (about 20,000 blocks) keeps the "RPC cannot say when the vault was created" test cheap.
+  const FALLBACK_BLOCKS = 2 * 9999;
+  start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2" } });
   await waitFor(async () => (await fetch(`http://127.0.0.1:${PAGE_PORT}`)).ok, "page");
   browser = await chromium.launch({ channel: "chrome", headless: true });
 
@@ -458,7 +463,7 @@ try {
     farCreated = beforeCreate + 1n; // automine: the deployment is the next block
     send(ownerKey, farVault, "configurePolicy(address,uint256,uint256,uint64)", agent, "1000000", "10000000", String(Math.floor(Date.now() / 1000) + 86400));
     send(ownerKey, farVault, "setRecipient(address,bool)", VENDOR, "true");
-    sh("cast", ["rpc", "anvil_mine", "0x61a8", "--rpc-url", RPC]); // 25,000 blocks: more than two pages
+    mine(RPC, 25_000); // more than two pages, and further back than the 2-page fallback window
     const { page, control, context } = await openPage();
     await connect(page, token);
     await openVaultByAddress(page, farVault);
@@ -533,7 +538,8 @@ try {
   });
 
   await scenario("when the RPC cannot say when the vault was created, the list is marked partial and a lookup still works", async () => {
-    sh("cast", ["rpc", "anvil_mine", "0x1ADB0", "--rpc-url", RPC]); // 110,000 more: the vendor is now older than the fallback window
+    // The vendor is 25,000+ blocks old by now, outside the 2-page window this build uses, so nothing more is mined.
+    assert.ok(25_000 > FALLBACK_BLOCKS);
     const { page, control, context } = await openPage();
     control.noHistory = true;
     await connect(page, token);
