@@ -73,6 +73,7 @@ export function initV2(ctx: V2Context) {
     if (!vault) return;
     setText("v2-confirm-text", [`Vault ${vault}, owned by ${ownerAddress ?? "(reading...)"}.`, ...lines].join("\n"));
     $("v2-confirm").hidden = false;
+    $("v2-confirm").focus(); // display only: the panel is a fixed second step and must be seen
     pending = action;
     ctx.status("Check what this will do, then confirm or cancel. Nothing has been sent.");
     ctx.setControls();
