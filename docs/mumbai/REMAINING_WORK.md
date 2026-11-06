@@ -19,7 +19,7 @@ Each agent writes only the paths it owns. Each one reviews another's work, as pl
 | **Codex** (Poulav) | `packaging/`, `.github/`, `watcher/`, `docs/mumbai/SECURITY_REVIEW.md`, `sdk/evm/src/arc_vault/` (bug fixes only) | Claude 1 |
 | **Humans** | Arc Studio, deployments, keys, funds, sponsor logins, booth questions, the G0 decision, the demo video, the final README | Everything that handles contracts or signing |
 
-**Nobody edits `contracts/evm/src/ErebusPolicyVault.sol`.** It is frozen until Studio's version arrives. Report contract bugs to Poulav.
+**Nobody edits `contracts/evm/src/ErebusPolicyVault.sol`.** It is the deployed v1, and all G1 to G4 evidence rests on it. Organization work goes in a new v2 file. See "V2 for organizations".
 
 ## Rules for every agent
 
@@ -62,6 +62,30 @@ One known failure: `test_every_mapped_message_exists_where_it_is_produced`, whic
 | `POST /requests/<id>/signature` with a `vault-owner-signature/1` body | Owner page | Accepted only if it recovers to the configured owner over this exact request |
 | `GET /requests/<id>/signature` with the agent token | Agent | `{"status":"pending"}` or `{"status":"signed","signature":{...}}` |
 | `POST /alerts` with a separate watcher token and body `{"kind","text"}` | Watcher | Sends the owner a notice with no request attached |
+
+## V2 for organizations
+
+Decided by Poulav on 7 November: try a v2 contract for organizations tonight. **v1 stays live and stays the fallback.**
+
+**Cutoff: 05:30 IST.** If v2 is not deployed on Arc, reviewed by Poulav and through the money path by then, we submit v1 and v2 becomes the roadmap. Nothing that v1 needs may be broken before then, so all v2 work stays on branches until it passes.
+
+**Goal:**
+
+- **Many agents,** added over time, each with its own limits and an off switch
+- **Approvers:** people who sign exceptions from their own wallets, on a list the owner controls
+- **A multisig as owner,** using ERC-1271 for contract signatures
+- **Adding an agent or approver must not cancel pending approvals** for anyone else
+
+**Who owns what:**
+
+| Worker | Owns |
+| --- | --- |
+| **Codex** | The opinion in `docs/mumbai/V2_REVIEW.md`, `contracts/evm/src/ErebusPolicyVaultV2.sol` and its tests, and v2 in `sdk/evm/src/arc_vault/`. Branch `codex/v2` |
+| **Claude 1** | `owner-page/`, `relay/`, `mcp-server/src/erebus_mcp/vault.py`, the agent join request, hosting, and the v2 deployment with Arc Studio and live runs |
+| **Claude 2** | `setup-page/` screens for agents and approvers, `docs/mumbai/ARCHITECTURE.md`, `docs/mumbai/DEMO_SCRIPT.md`, the README sections. Branch `claude2/v2` |
+| **Poulav** | The go or no-go at the cutoff, review of the contract and signing code, Arc Studio |
+
+**Order:** Codex posts its opinion and the v2 interface first. Claude 1 and Claude 2 build against that interface once it is on `main`. If Codex argues for a different design, Poulav decides before anyone builds on it.
 
 ## Tasks
 
