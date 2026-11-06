@@ -115,6 +115,11 @@ def main() -> int:
         pass
     finally:
         anvil.terminate()
+        try:
+            anvil.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            anvil.kill()  # a terminate that is ignored would leave the chain running
+            anvil.wait()
         shutil.rmtree(work, ignore_errors=True)
     return 0
 
