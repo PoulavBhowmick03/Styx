@@ -300,3 +300,43 @@ def test_requests_do_not_use_python_default_user_agent():
     finally:
         server.shutdown()
     assert seen["agent"] and not seen["agent"].startswith("Python-urllib")
+
+
+def test_scanning_many_blocks_stays_ahead_of_a_fast_chain(chain, relay, tmp_path, monkeypatch):
+    # Arc makes about 2 blocks a second and a public RPC answers about 3 requests a second,
+    # so a scan needs far fewer than one request per block or it falls behind for good.
+    tx = chain["pay"](6)
+    chain["rpc"]("anvil_mine", [hex(60)])
+    watcher = watch(chain, relay, tmp_path)
+    actual, requests = module.post, []
+
+    def counted(url, body, token=None):
+        requests.append(url)
+        return actual(url, body, token)
+
+    monkeypatch.setattr(module, "post", counted)
+    watcher.tick()
+    assert watcher.state["next_block"] == chain["start"] + 62
+    assert len([url for url in requests if url == chain["url"]]) <= 20
+    assert any(tx in item["text"] for item in relay["notices"])
+    watcher.close()
+
+
+def test_a_failed_block_in_a_batch_does_not_advance_the_cursor(chain, relay, tmp_path, monkeypatch):
+    chain["pay"](6)
+    chain["rpc"]("anvil_mine", [hex(3)])
+    watcher = watch(chain, relay, tmp_path)
+    actual = module.post
+
+    def broken(url, body, token=None):
+        response = actual(url, body, token)
+        if isinstance(response, list):
+            response[1] = {"jsonrpc": "2.0", "id": response[1]["id"], "error": {"code": -32005, "message": "limit"}}
+        return response
+
+    monkeypatch.setattr(module, "post", broken)
+    with pytest.raises(Unknown):
+        watcher.tick()
+    assert watcher.state["next_block"] == chain["start"]
+    assert not relay["notices"]
+    watcher.close()
