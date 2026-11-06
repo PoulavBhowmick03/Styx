@@ -42,7 +42,7 @@ To open the link on your phone, the page and relay must be reachable from it, so
 
 ## Hosted
 
-The relay runs on Fly at `https://styx-vault-relay.fly.dev`, and the pages on Vercel at `https://styx-approve.vercel.app`, with setup at `/setup/`. One relay serves one vault and one owner, set in `fly.toml`.
+The relay runs on Fly at `https://styx-vault-relay.fly.dev`, and the pages on Vercel at `https://styxco.xyz`, with setup at `/setup/`. The relay accepts one page address, so approvals only work from that domain. One relay serves one vault and one owner, set in `fly.toml`.
 
 ```bash
 fly secrets import --app styx-vault-relay   # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, RELAY_AGENT_TOKEN, RELAY_WATCHER_TOKEN, one per line

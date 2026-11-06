@@ -105,8 +105,8 @@ The first verify attempt read unavailable because the RPC did not answer, so it 
 
 | | |
 | --- | --- |
-| **Approval page** | https://styx-approve.vercel.app |
-| **Setup page** | https://styx-approve.vercel.app/setup/ |
+| **Approval page** | https://styxco.xyz |
+| **Setup page** | https://styxco.xyz/setup/ |
 | **Relay** | https://styx-vault-relay.fly.dev, in Singapore, for this one vault and owner |
 
 Owners no longer need a config file to approve from an alert. The page confirms the vault once per browser, then reads the owner, token, limits and allowlist from the vault through the wallet. Tested on a local chain in headless Chrome (26 scenarios), where Anvil stands in for the wallet.
