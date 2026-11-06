@@ -1,4 +1,4 @@
-//! The whole vault flow on a local chain: the real contract, the real `erebus-vault` binary and
+//! The whole vault flow on a local chain: the real contract, the real `styx-vault` binary and
 //! real transactions for attacks A1 to A4. Anvil's keys are read from its runtime config output.
 
 use std::io::Write;
@@ -8,15 +8,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use erebus_evm::arc_vault::abi::{
+use styx_evm::arc_vault::abi::{
     classify_revert, encode_pay, encode_pay_with_exception, RevertMeaning,
 };
-use erebus_evm::arc_vault::digest::{approval_digest, payment_hash};
-use erebus_evm::arc_vault::record::VaultPaymentRecord;
-use erebus_evm::arc_vault::rpc::{receipt_succeeded, CallOutcome, VaultRpc};
-use erebus_evm::arc_vault::types::{parse_hex, ExceptionAuthorization, Payment, PendingApproval};
-use erebus_evm::arc_vault::verify::{verify_record, Check, ReviewerPins};
-use erebus_evm::chain::{build_signed_call, Eip1559Fees, TransactionKey, TransactionParams};
+use styx_evm::arc_vault::digest::{approval_digest, payment_hash};
+use styx_evm::arc_vault::record::VaultPaymentRecord;
+use styx_evm::arc_vault::rpc::{receipt_succeeded, CallOutcome, VaultRpc};
+use styx_evm::arc_vault::types::{parse_hex, ExceptionAuthorization, Payment, PendingApproval};
+use styx_evm::arc_vault::verify::{verify_record, Check, ReviewerPins};
+use styx_evm::chain::{build_signed_call, Eip1559Fees, TransactionKey, TransactionParams};
 use serde_json::{json, Value};
 
 const CHAIN_ID: u64 = 31_337;
@@ -134,7 +134,7 @@ impl Chain {
         let token = create("src/MockERC20.sol:MockERC20", &["USD Coin", "USDC"]);
         let owner = address_of(&owner_key);
         let vault = create(
-            "src/ErebusPolicyVault.sol:ErebusPolicyVault",
+            "src/StyxPolicyVault.sol:StyxPolicyVault",
             &[&owner, &token],
         );
         let chain = Self {
@@ -198,16 +198,16 @@ impl Chain {
 
     /// Runs the real binary with only the agent's configuration in its environment.
     fn cli(&self, request: Value, timeout_seconds: u64) -> Value {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-vault"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_styx-vault"))
             .env_clear()
-            .env("EREBUS_VAULT_CHAIN_ID", CHAIN_ID.to_string())
-            .env("EREBUS_VAULT_RPC_URLS", &self.rpc_url)
-            .env("EREBUS_VAULT_ADDRESS", &self.vault)
-            .env("EREBUS_VAULT_TOKEN", &self.token)
-            .env("EREBUS_VAULT_STATE_ROOT", self.dir.join("journal"))
-            .env("EREBUS_VAULT_AGENT_KEY_FILE", self.dir.join("agent.key"))
+            .env("STYX_VAULT_CHAIN_ID", CHAIN_ID.to_string())
+            .env("STYX_VAULT_RPC_URLS", &self.rpc_url)
+            .env("STYX_VAULT_ADDRESS", &self.vault)
+            .env("STYX_VAULT_TOKEN", &self.token)
+            .env("STYX_VAULT_STATE_ROOT", self.dir.join("journal"))
+            .env("STYX_VAULT_AGENT_KEY_FILE", self.dir.join("agent.key"))
             .env(
-                "EREBUS_VAULT_RECEIPT_TIMEOUT_SECONDS",
+                "STYX_VAULT_RECEIPT_TIMEOUT_SECONDS",
                 timeout_seconds.to_string(),
             )
             .stdin(Stdio::piped())
@@ -262,7 +262,7 @@ impl Chain {
         let account: [u8; 20] = parse_hex(account).unwrap();
         let token: [u8; 20] = parse_hex(&self.token).unwrap();
         self.rpc
-            .view_u128(&token, &erebus_evm::abi::encode_balance_of_call(&account))
+            .view_u128(&token, &styx_evm::abi::encode_balance_of_call(&account))
             .await
             .unwrap()
     }
@@ -684,7 +684,7 @@ struct Reviewer {
 }
 
 fn disclosure_cli(request: Value) -> (Value, bool) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-disclosure"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_styx-disclosure"))
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

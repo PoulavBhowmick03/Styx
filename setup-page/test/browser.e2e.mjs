@@ -325,7 +325,7 @@ try {
   });
 
   // ---- Task: owners must always know which vault they are changing ----
-  const forgeVault = () => create(ownerKey, "src/ErebusPolicyVault.sol:ErebusPolicyVault", owner, token); // repo default build: differs from the page's
+  const forgeVault = () => create(ownerKey, "src/StyxPolicyVault.sol:StyxPolicyVault", owner, token); // repo default build: differs from the page's
   const openChooser = async (page) => { if (!(await page.locator("#vault-input").isVisible())) await page.click("#chooser summary"); };
   const openVaultByAddress = async (page, address) => { await openChooser(page); await page.fill("#vault-input", address); await page.click("#load-vault"); };
   let otherVault;

@@ -3,14 +3,14 @@
 #
 #   g3_review.sh <first.grant> <second.grant> <issuer-address>
 #
-# Needs erebus-disclosure, cast and python3. The reviewer key must already exist (keygen) and stay private.
+# Needs styx-disclosure, cast and python3. The reviewer key must already exist (keygen) and stay private.
 # Settings, all optional:
 #   REVIEW_KEY       the reviewer's key file             (default ~/styx-g3-reviewer/key)
 #   RPC              the reviewer's own RPC              (default https://rpc.testnet.arc.io)
 #   VAULT            the vault, lowercase or checksummed (default 0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1)
 #   CHAIN_ID         the chain                           (default 5042002)
 #   EXPECTED_ISSUER  the issuer you were told to expect  (default 0x35879a311848b924cce79d788e102de499546a4e)
-#   DISCLOSURE_BIN   the reviewer tool                   (default sdk/evm/target/debug/erebus-disclosure)
+#   DISCLOSURE_BIN   the reviewer tool                   (default sdk/evm/target/debug/styx-disclosure)
 #   OUT              where this run keeps its files      (default ~/styx-g3-reviewer/run-<time>)
 #
 # Exit 0 only if every outcome was the expected one. That is still not G3: the gate also needs the reviewer to have their
@@ -26,14 +26,14 @@ RPC="${RPC:-https://rpc.testnet.arc.io}"
 VAULT="$(printf '%s' "${VAULT:-0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1}" | tr 'A-F' 'a-f')"
 CHAIN_ID="${CHAIN_ID:-5042002}"
 EXPECTED_ISSUER="$(printf '%s' "${EXPECTED_ISSUER:-0x35879a311848b924cce79d788e102de499546a4e}" | tr 'A-F' 'a-f')"
-BIN="${DISCLOSURE_BIN:-$ROOT/sdk/evm/target/debug/erebus-disclosure}"
+BIN="${DISCLOSURE_BIN:-$ROOT/sdk/evm/target/debug/styx-disclosure}"
 OUT="${OUT:-$HOME/styx-g3-reviewer/run-$(date +%Y%m%d-%H%M%S)}"
 
 say() { printf '%s\n' "$*"; }
 stop() { say "STOP: $*"; exit 1; }
 mode_of() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
 
-[ -x "$BIN" ] || stop "build the reviewer tool first: (cd sdk/evm && cargo build --bin erebus-disclosure)"
+[ -x "$BIN" ] || stop "build the reviewer tool first: (cd sdk/evm && cargo build --bin styx-disclosure)"
 mkdir -p "$OUT" && chmod 700 "$OUT"
 
 say "== Inputs"

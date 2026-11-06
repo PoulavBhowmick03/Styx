@@ -1,19 +1,19 @@
 {
   "mcpServers": {
-    "erebus-vault": {
+    "styx-vault": {
       "type": "stdio",
-      "command": "erebus-mcp-server",
+      "command": "styx-mcp-server",
       "args": [],
       "env": {
-        "EREBUS_BACKEND": "vault",
-        "EREBUS_VAULT_DIR": "${env:EREBUS_VAULT_DIR}",
-        "EREBUS_VAULT_CLI": "${env:EREBUS_VAULT_CLI}",
-        "EREBUS_VAULT_CHAIN_ID": "${env:EREBUS_VAULT_CHAIN_ID}",
-        "EREBUS_VAULT_RPC_URLS": "${env:EREBUS_VAULT_RPC_URLS}",
-        "EREBUS_VAULT_ADDRESS": "${env:EREBUS_VAULT_ADDRESS}",
-        "EREBUS_VAULT_TOKEN": "${env:EREBUS_VAULT_TOKEN}",
-        "EREBUS_VAULT_STATE_ROOT": "${env:EREBUS_VAULT_STATE_ROOT}",
-        "EREBUS_VAULT_AGENT_KEY_FILE": "${env:EREBUS_VAULT_AGENT_KEY_FILE}"
+        "STYX_BACKEND": "vault",
+        "STYX_VAULT_DIR": "${env:STYX_VAULT_DIR}",
+        "STYX_VAULT_CLI": "${env:STYX_VAULT_CLI}",
+        "STYX_VAULT_CHAIN_ID": "${env:STYX_VAULT_CHAIN_ID}",
+        "STYX_VAULT_RPC_URLS": "${env:STYX_VAULT_RPC_URLS}",
+        "STYX_VAULT_ADDRESS": "${env:STYX_VAULT_ADDRESS}",
+        "STYX_VAULT_TOKEN": "${env:STYX_VAULT_TOKEN}",
+        "STYX_VAULT_STATE_ROOT": "${env:STYX_VAULT_STATE_ROOT}",
+        "STYX_VAULT_AGENT_KEY_FILE": "${env:STYX_VAULT_AGENT_KEY_FILE}"
       }
     }
   }

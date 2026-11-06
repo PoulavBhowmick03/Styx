@@ -5,8 +5,8 @@
 //! adapter checks them before preparing funds, so a caller gets a local error rather than a
 //! reverted transaction.
 
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{AssetId, ChainNamespace};
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{AssetId, ChainNamespace};
 
 use crate::error::EvmError;
 

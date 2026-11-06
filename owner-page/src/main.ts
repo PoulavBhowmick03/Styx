@@ -279,7 +279,7 @@ async function sign(): Promise<void> {
       else if (sent === "refused") showStatus("Signed, but the relay refused the signature. Check the request and your vault settings.", true);
       else showStatus("Signed, but the relay could not be reached. Give the agent this file instead.", true);
     } else {
-      showStatus("Signed. Give this file to the agent's erebus_submit_payment tool.");
+      showStatus("Signed. Give this file to the agent's styx_submit_payment tool.");
     }
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "The wallet did not sign.", true);

@@ -5,11 +5,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 if [ "$(uname -m)" = x86_64 ]; then export MACOSX_DEPLOYMENT_TARGET=10.15; fi
-cargo build --locked --release --manifest-path sdk/evm/Cargo.toml --bin erebus-vault --bin erebus-disclosure
-export EREBUS_CLI_BIN_DIR="$ROOT/sdk/evm/target/release"
-uv build --wheel --package erebus-cli --out-dir "$ROOT/dist"
-uv build --wheel --package erebus-sdk --out-dir "$ROOT/dist"
-uv build --wheel --package erebus-mcp-server --out-dir "$ROOT/dist"
+cargo build --locked --release --manifest-path sdk/evm/Cargo.toml --bin styx-vault --bin styx-disclosure
+export STYX_CLI_BIN_DIR="$ROOT/sdk/evm/target/release"
+uv build --wheel --package styx-cli --out-dir "$ROOT/dist"
+uv build --wheel --package styx-sdk --out-dir "$ROOT/dist"
+uv build --wheel --package styx-mcp-server --out-dir "$ROOT/dist"
 cp packaging/install-mcp.sh dist/install-mcp.sh
 cp packaging/README.md dist/README.md
 python3 - <<'PY'

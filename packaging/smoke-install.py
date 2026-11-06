@@ -24,10 +24,10 @@ with tempfile.TemporaryDirectory(prefix="styx-install-") as directory:
                                 capture_output=True, env=env, check=True)
         return json.loads(output.stdout)
 
-    assert run("erebus-vault", {"method": "version"})["protocol"] == 1
+    assert run("styx-vault", {"method": "version"})["protocol"] == 1
     key = work / "reviewer.key"
-    response = run("erebus-disclosure", {"method": "keygen", "key_file": str(key)})
+    response = run("styx-disclosure", {"method": "keygen", "key_file": str(key)})
     assert key.is_file(), response
     assert key.stat().st_mode & 0o077 == 0
-    subprocess.run([str(tools / "erebus-mcp-server"), "--help"], env=env, check=True, capture_output=True)
+    subprocess.run([str(tools / "styx-mcp-server"), "--help"], env=env, check=True, capture_output=True)
     print("PASS: isolated wheel install, vault version, disclosure keygen, MCP entry point; no cargo/rustc on PATH")

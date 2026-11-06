@@ -14,7 +14,7 @@ The entry type (G0) and the partner picks are not decided in this file, and noth
 | Open the hosted setup page at `https://styxco.xyz/setup/` and the approval page at `https://styxco.xyz/`. Use these, not the earlier `styx-approve.vercel.app`: the relay accepts approvals only from `styxco.xyz`, so an approval from the earlier address would not reach it | Both pages are on one site, so what the owner confirms on one is read by the other |
 | In MetaMask, switch to Arc Testnet and the owner account. Connect to the vault with `?vault=0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1`. Do not deploy anything | A second vault was already deployed by mistake |
 | Test the approval page once with the owner wallet in the browser you will film. **MetaMask showed a phishing warning for the earlier address on a Mac, and the reason is not known. It has not been re-checked on `styxco.xyz`** | If it appears on camera, say so plainly and use the fallback route below |
-| Start the agent as in `AGENT_INSTALL.md`, with the relay settings added: `EREBUS_VAULT_RELAY_URL=https://styx-vault-relay.fly.dev` and `EREBUS_VAULT_RELAY_TOKEN`, set to the agent token, which Poulav holds. Never show that token | The tools only post to the relay when both are set |
+| Start the agent as in `AGENT_INSTALL.md`, with the relay settings added: `STYX_VAULT_RELAY_URL=https://styx-vault-relay.fly.dev` and `STYX_VAULT_RELAY_TOKEN`, set to the agent token, which Poulav holds. Never show that token | The tools only post to the relay when both are set |
 | Write the invoice files `inv-1.txt` and `inv-2.txt` into the agent's vault directory | The agent cannot read them. It needs each invoice's reference in the prompt |
 | Confirm Telegram delivers an alert to the owner's phone or Mac | The alert is part of the story. A real bot has delivered alerts before |
 | Confirm the relay answers: open `https://styx-vault-relay.fly.dev` and expect a plain not-found, not a connection error | The relay runs on Fly in Singapore for one vault and one owner |
@@ -48,8 +48,8 @@ The entry type (G0) and the partner picks are not decided in this file, and noth
 ```bash
 export RPC_URL=https://rpc.testnet.arc.io VAULT=0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1
 export VENDOR_B=<the second allowed vendor> AGENT_KEY_FILE=<the agent key file>
-export PENDING_FILE="$EREBUS_VAULT_DIR/pending-<id12>.json"
-export OWNER_SIGNATURE_FILE="$EREBUS_VAULT_DIR/signature-<id12>.json"
+export PENDING_FILE="$STYX_VAULT_DIR/pending-<id12>.json"
+export OWNER_SIGNATURE_FILE="$STYX_VAULT_DIR/signature-<id12>.json"
 bash contracts/evm/script/attacks.sh                 # A1, A2, A3: each must print PASS
 # the agent submits and the exception settles, then:
 SETTLED=1 bash contracts/evm/script/attacks.sh       # A4
@@ -60,7 +60,7 @@ Each attack costs the agent gas. The agent's tools write the signature file when
 **The reviewer, on the second Mac:**
 
 ```bash
-(cd sdk/evm && cargo build --bin erebus-disclosure)
+(cd sdk/evm && cargo build --bin styx-disclosure)
 mcp-server/examples/g3_review.sh ~/styx-g3-reviewer/first.grant ~/styx-g3-reviewer/second.grant 0x35879a311848b924cce79d788e102de499546a4e
 ```
 

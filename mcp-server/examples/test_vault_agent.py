@@ -42,13 +42,13 @@ class FakeVault:
     def dispatch(self, name: str, a: dict) -> dict:
         ok = lambda **r: {"ok": True, "result": r}  # noqa: E731
         error = lambda code: {"ok": False, "error": {"code": code, "message": code}}  # noqa: E731
-        if name == "erebus_propose_payment":
+        if name == "styx_propose_payment":
             payment_id = f"0x{len(self.proposed) + 1:064x}"
             self.proposed.append((a["invoice_reference"], payment_id))
             if a["amount"] == "6000000":
                 self.over_limit_ids.add(payment_id)
             return ok(payment_id=payment_id, status="ok")
-        if name == "erebus_submit_payment":
+        if name == "styx_submit_payment":
             payment_id = a["payment_id"]
             if payment_id in self.over_limit_ids and not a.get("signature_name"):
                 return error("OWNER_APPROVAL_REQUIRED")
@@ -60,11 +60,11 @@ class FakeVault:
                 self.settled.add(payment_id)
                 return ok(state="settled", status="ok", tx_hash="0x01")
             return ok(state="unknown", status="ok")
-        if name == "erebus_payment_status":
+        if name == "styx_payment_status":
             if self.status_outcome == "unavailable":
                 return error("VERIFICATION_UNAVAILABLE")
             return ok(state="settled" if a["payment_id"] in self.settled else "not_settled")
-        if name == "erebus_request_owner_approval":
+        if name == "styx_request_owner_approval":
             return ok(pending_file=f"pending-{a['payment_id'][2:14]}.json", approval_digest="0x02", status="ok")
         raise AssertionError(f"unexpected tool {name}")
 
@@ -103,7 +103,7 @@ def test_restart_after_unknown_reconciles_the_kept_id_before_proposing(directory
 
     assert fake.routine_ids() == first, "a restart must not mint a second routine payment"
     second_run = [name for name, _ in fake.calls[calls_before:]]
-    assert second_run[0] == "erebus_payment_status", "the kept ID is looked up before anything else"
+    assert second_run[0] == "styx_payment_status", "the kept ID is looked up before anything else"
     assert fake.calls[calls_before][1]["payment_id"] == first[0]
 
 
@@ -117,7 +117,7 @@ def test_restart_with_the_payment_not_settled_retries_the_same_id(directory):
 
     assert fake.routine_ids() == first
     assert first[0] in fake.settled
-    resubmitted = [a["payment_id"] for name, a in fake.calls[calls_before:] if name == "erebus_submit_payment"]
+    resubmitted = [a["payment_id"] for name, a in fake.calls[calls_before:] if name == "styx_submit_payment"]
     assert resubmitted and resubmitted[0] == first[0]
 
 

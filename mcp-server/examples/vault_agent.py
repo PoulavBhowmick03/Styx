@@ -9,7 +9,7 @@ submitted. A rerun looks up each kept ID on the chain before it proposes anythin
 under the same ID, and proposes nothing while the chain cannot be read, because an unreadable answer never means
 unpaid. The state file belongs to one pair of invoices: delete it only after checking the chain yourself.
 
-Environment: the EREBUS_VAULT_* settings the server needs, including EREBUS_VAULT_DIR, which must hold the
+Environment: the STYX_VAULT_* settings the server needs, including STYX_VAULT_DIR, which must hold the
 invoice files. Usage: vault_agent.py <vendor-address> [--wait-seconds N]
 """
 from __future__ import annotations
@@ -78,7 +78,7 @@ class Agent:
         return result
 
     async def propose(self, amount: str, invoice: str, reference: str) -> dict:
-        return await self.tool("erebus_propose_payment", recipient=self.vendor, amount=amount, invoice_name=invoice,
+        return await self.tool("styx_propose_payment", recipient=self.vendor, amount=amount, invoice_name=invoice,
                                invoice_reference=reference, valid_until=int(time.time()) + 3600)
 
     async def settle(self, payment_id: str, signature: str | None = None) -> str:
@@ -87,7 +87,7 @@ class Agent:
             arguments = {"payment_id": payment_id}
             if signature:
                 arguments["signature_name"] = signature
-            result = await self.tool("erebus_submit_payment", **arguments)
+            result = await self.tool("styx_submit_payment", **arguments)
             if not result["ok"]:
                 if result["error"]["code"] != "VERIFICATION_UNAVAILABLE":
                     return result["error"]["code"]
@@ -98,7 +98,7 @@ class Agent:
 
     async def reconcile(self, payment_id: str, signature: str | None = None) -> str:
         """Settles a kept payment ID without ever minting a new one: read the chain first, then retry the same ID."""
-        status = await self.tool("erebus_payment_status", payment_id=payment_id)
+        status = await self.tool("styx_payment_status", payment_id=payment_id)
         if not status["ok"]:
             # VERIFICATION_UNAVAILABLE never means unpaid, so submitting blind is not safe either.
             return "unknown"
@@ -146,7 +146,7 @@ class Agent:
         if kept.get("payment_id"):
             payment_id = kept["payment_id"]
             emit("reconciling", step="oversized", payment_id=payment_id)
-            status = await self.tool("erebus_payment_status", payment_id=payment_id)
+            status = await self.tool("styx_payment_status", payment_id=payment_id)
             if not status["ok"] or status["result"].get("state") == "unavailable":
                 self.unknown("oversized", payment_id)
                 emit("failed", step="oversized")
@@ -171,7 +171,7 @@ class Agent:
             if refused != "OWNER_APPROVAL_REQUIRED":
                 emit("failed", step="expected a refusal")
                 return False
-            requested = await self.tool("erebus_request_owner_approval", payment_id=payment_id,
+            requested = await self.tool("styx_request_owner_approval", payment_id=payment_id,
                                         authorization_expiry=int(time.time()) + wait_seconds + 600)
             if not requested["ok"]:
                 emit("failed", step="request approval")
@@ -186,7 +186,7 @@ class Agent:
                 await asyncio.sleep(0.5)
 
         outcome = await self.reconcile(payment_id, signature)
-        status = await self.tool("erebus_payment_status", payment_id=payment_id)
+        status = await self.tool("styx_payment_status", payment_id=payment_id)
         chain_state = status["result"]["state"] if status["ok"] else "unavailable"
         emit("done", outcome=outcome, chain_state=chain_state)
         if outcome == "settled":
@@ -207,11 +207,11 @@ async def main() -> int:
     parser.add_argument("vendor")
     parser.add_argument("--wait-seconds", type=int, default=900)
     args = parser.parse_args()
-    directory = Path(os.environ["EREBUS_VAULT_DIR"])
+    directory = Path(os.environ["STYX_VAULT_DIR"])
     (directory / ROUTINE[1]).write_bytes(b"routine invoice: 0.25 USDC to vendor A\n")
     (directory / OVERSIZED[1]).write_bytes(b"oversized invoice: 6 USDC to vendor A\n")
-    server = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"],
-                                   env={**os.environ, "EREBUS_BACKEND": "vault"})
+    server = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"],
+                                   env={**os.environ, "STYX_BACKEND": "vault"})
     async with stdio_client(server) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()

@@ -1,18 +1,18 @@
 {
   "mcpServers": {
-    "erebus-vault": {
-      "command": "/ABSOLUTE/PATH/TO/erebus-mcp-server",
+    "styx-vault": {
+      "command": "/ABSOLUTE/PATH/TO/styx-mcp-server",
       "args": [],
       "env": {
-        "EREBUS_BACKEND": "vault",
-        "EREBUS_VAULT_DIR": "/ABSOLUTE/PATH/TO/private/vault-dir",
-        "EREBUS_VAULT_CLI": "/ABSOLUTE/PATH/TO/erebus-vault",
-        "EREBUS_VAULT_CHAIN_ID": "5042002",
-        "EREBUS_VAULT_RPC_URLS": "https://rpc.testnet.arc.io",
-        "EREBUS_VAULT_ADDRESS": "0xYOUR_VAULT",
-        "EREBUS_VAULT_TOKEN": "0x3600000000000000000000000000000000000000",
-        "EREBUS_VAULT_STATE_ROOT": "/ABSOLUTE/PATH/TO/private/journal",
-        "EREBUS_VAULT_AGENT_KEY_FILE": "/ABSOLUTE/PATH/TO/private/agent.key"
+        "STYX_BACKEND": "vault",
+        "STYX_VAULT_DIR": "/ABSOLUTE/PATH/TO/private/vault-dir",
+        "STYX_VAULT_CLI": "/ABSOLUTE/PATH/TO/styx-vault",
+        "STYX_VAULT_CHAIN_ID": "5042002",
+        "STYX_VAULT_RPC_URLS": "https://rpc.testnet.arc.io",
+        "STYX_VAULT_ADDRESS": "0xYOUR_VAULT",
+        "STYX_VAULT_TOKEN": "0x3600000000000000000000000000000000000000",
+        "STYX_VAULT_STATE_ROOT": "/ABSOLUTE/PATH/TO/private/journal",
+        "STYX_VAULT_AGENT_KEY_FILE": "/ABSOLUTE/PATH/TO/private/agent.key"
       }
     }
   }

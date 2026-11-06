@@ -4,10 +4,10 @@
 
 use std::path::Path;
 
-pub(super) use erebus_journal::{
+use serde::{Deserialize, Serialize};
+pub(super) use styx_journal::{
     IdentityLock, JournalRecord, RecordId, RecordLock, Store, StoreError,
 };
-use serde::{Deserialize, Serialize};
 
 use super::error::VaultError;
 use super::types::{decimal, hex_fixed, ExceptionAuthorization, Payment};
@@ -159,7 +159,7 @@ impl Journal {
     ) -> Result<(), VaultError> {
         let index = record.attempts.len();
         self.store
-            .write_blob_then_record::<erebus_journal::StoreError<PaymentRef>>(
+            .write_blob_then_record::<styx_journal::StoreError<PaymentRef>>(
                 record,
                 index,
                 raw,

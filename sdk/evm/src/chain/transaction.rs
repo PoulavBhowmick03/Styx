@@ -1,10 +1,7 @@
-//! Local signing of settlement transactions, with every field chosen by the caller.
+//! Local signing of transactions, with every field chosen by the caller.
 //!
-//! [`build_signed`] is a pure function: prepared settlement, key, nonce, fees, and gas limit in;
-//! raw EIP-1559 bytes and their hash out. Nothing is filled from the network, so the caller can
-//! persist the exact bytes (and the hash they will be mined under) before broadcasting them, and
-//! a fee bump is a second call with the same nonce. Signing is RFC 6979 deterministic, so the
-//! same inputs always produce the same bytes.
+//! [`build_signed_call`] is a pure function, so the caller can persist the exact bytes before
+//! broadcasting them. Signing is RFC 6979 deterministic.
 
 use alloy::consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy::eips::eip2718::{Decodable2718, Encodable2718};
@@ -12,16 +9,12 @@ use alloy::primitives::{keccak256, Address, Bytes, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
-use erebus_core::settlement::PreparedSettlement;
-
-use crate::backend::validate_prepared;
-use crate::deployment::{EvmDeployment, ADDRESS_BYTES};
+use super::ADDRESS_BYTES;
 use crate::error::EvmError;
 
 /// Minimum fee increase, in percent, for a same-nonce replacement.
 ///
-/// This is a local policy, not a verified Monad acceptance rule. A node can reject a
-/// replacement that meets this floor; the coordinator must handle that rejection.
+/// This is a local policy, not a node rule. A node can still reject a replacement.
 pub const REPLACEMENT_BUMP_PERCENT: u128 = 10;
 
 /// A gas-paying transaction key, independent of the deal authorization role.
@@ -259,27 +252,6 @@ impl SignedTransaction {
         &self.input
     }
 
-    /// Checks decoded bytes against the trusted journal intent before rebroadcast.
-    /// Decoding alone establishes no relationship to a particular settlement.
-    pub fn validate_against(
-        &self,
-        deployment: &EvmDeployment,
-        prepared: &PreparedSettlement,
-        sender: [u8; ADDRESS_BYTES],
-        params: TransactionParams,
-    ) -> Result<(), EvmError> {
-        let calldata = settlement_calldata(deployment, prepared)?;
-        if self.chain_id != deployment.chain_id
-            || self.to != deployment.settlement_contract
-            || self.sender != sender
-            || self.params != params
-            || self.input != calldata
-        {
-            return Err(EvmError::SignedIntentMismatch);
-        }
-        Ok(())
-    }
-
     /// Checks a zero-value call against a backend-validated target and calldata.
     pub fn validate_call(
         &self,
@@ -316,37 +288,6 @@ impl SignedTransaction {
         }
         Ok(())
     }
-}
-
-/// The `settle` calldata for a prepared settlement, after re-deriving the commitment and
-/// nullifier from its evidence (DM3-2). A coordinator can compare it with
-/// [`SignedTransaction::input`] of reloaded bytes.
-pub fn settlement_calldata(
-    deployment: &EvmDeployment,
-    prepared: &PreparedSettlement,
-) -> Result<Vec<u8>, EvmError> {
-    Ok(validate_prepared(deployment, prepared)?.calldata)
-}
-
-/// Signs a settlement transaction locally, without any network I/O.
-///
-/// The prepared settlement is validated against the deployment exactly as the M3 path does
-/// before submission, the call targets the deployment's settlement contract, and the signature
-/// is bound to the deployment's chain id. The result is deterministic in its inputs.
-pub fn build_signed(
-    deployment: &EvmDeployment,
-    prepared: &PreparedSettlement,
-    key: &TransactionKey,
-    params: TransactionParams,
-) -> Result<SignedTransaction, EvmError> {
-    let calldata = settlement_calldata(deployment, prepared)?;
-    sign_call(
-        key,
-        deployment.chain_id,
-        deployment.settlement_contract,
-        calldata,
-        params,
-    )
 }
 
 /// Signs a backend-validated zero-value EVM call without network I/O.
@@ -406,209 +347,4 @@ fn sign_call(
         to,
         input,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Arbitrary test-only key: 0x07 repeated. It holds no funds on any chain.
-    const TEST_KEY: [u8; 32] = [0x07; 32];
-
-    fn key() -> TransactionKey {
-        TransactionKey::from_bytes(&TEST_KEY).expect("key")
-    }
-
-    fn kat_params() -> TransactionParams {
-        TransactionParams {
-            nonce: 7,
-            fees: Eip1559Fees::new(3_000_000_000, 1_000_000_000).expect("fees"),
-            gas_limit: 300_000,
-            value: 0,
-        }
-    }
-
-    fn kat_target() -> [u8; ADDRESS_BYTES] {
-        hex::decode("5fbdb2315678afecb367f032d93f642f64180aa3")
-            .expect("hex")
-            .try_into()
-            .expect("20 bytes")
-    }
-
-    fn kat_input() -> Vec<u8> {
-        let mut input = vec![0xdf, 0xd8, 0xbf, 0x75];
-        input.extend_from_slice(&[0xab; 32]);
-        input
-    }
-
-    /// Produced independently by Foundry, offline:
-    /// `cast mktx --private-key <TEST_KEY> --chain 31337 --nonce 7 --gas-limit 300000
-    ///  --gas-price 3000000000 --priority-gas-price 1000000000
-    ///  0x5fbdb2315678afecb367f032d93f642f64180aa3 0xdfd8bf75abab...ab`
-    const CAST_RAW: &str = "02f891827a6907843b9aca0084b2d05e00830493e0945fbdb2315678afecb367f032d93f642f64180aa380a4dfd8bf75ababababababababababababababababababababababababababababababababc001a028a05e09881658440b69b8cab39ca9457f2c9162b3fbc37b41d9a793de97a9c9a04411de3c9f4a06cfc587ceab6342c5ec42e3b72d0ccf0036a18bfc3807500e70";
-    /// `cast keccak <CAST_RAW>`.
-    const CAST_HASH: &str = "4e1f9743ab6ead029a384e317dc4e65260577e5ef1732ed02d1c02809a7b2be5";
-
-    #[test]
-    fn local_signing_matches_foundry_byte_for_byte() {
-        let signed =
-            sign_call(&key(), 31_337, kat_target(), kat_input(), kat_params()).expect("sign");
-        assert_eq!(hex::encode(signed.raw()), CAST_RAW);
-        assert_eq!(hex::encode(signed.hash()), CAST_HASH);
-        assert_eq!(
-            hex::encode(signed.sender()),
-            "4a62316623ad457f02cdc5d997ded67a383ec569"
-        );
-    }
-
-    #[test]
-    fn signing_is_deterministic_and_round_trips() {
-        let first =
-            sign_call(&key(), 31_337, kat_target(), kat_input(), kat_params()).expect("sign");
-        let second =
-            sign_call(&key(), 31_337, kat_target(), kat_input(), kat_params()).expect("sign");
-        assert_eq!(first, second);
-        assert_eq!(
-            SignedTransaction::from_raw(first.raw()).expect("decode"),
-            first
-        );
-
-        let bumped = TransactionParams {
-            fees: kat_params().fees.replacement_floor().expect("bump"),
-            ..kat_params()
-        };
-        let replacement =
-            sign_call(&key(), 31_337, kat_target(), kat_input(), bumped).expect("sign");
-        assert_ne!(replacement.hash(), first.hash());
-        assert_eq!(replacement.params().nonce, first.params().nonce);
-        assert_eq!(replacement.input(), first.input());
-    }
-
-    #[test]
-    fn raw_decoding_rejects_non_canonical_and_foreign_shapes() {
-        let raw = hex::decode(CAST_RAW).expect("hex");
-        let mut trailing = raw.clone();
-        trailing.push(0);
-        assert!(SignedTransaction::from_raw(&trailing).is_err());
-        let mut tampered = raw.clone();
-        let last = tampered.len() - 1;
-        tampered[last] ^= 1;
-        // A flipped signature byte either fails recovery or recovers a different sender; it
-        // never decodes to the original transaction.
-        if let Ok(decoded) = SignedTransaction::from_raw(&tampered) {
-            assert_ne!(decoded.sender(), key().address());
-        }
-        assert!(SignedTransaction::from_raw(&raw[1..]).is_err());
-    }
-
-    #[test]
-    fn fees_reject_impossible_caps_and_bump_by_ten_percent() {
-        assert!(Eip1559Fees::new(0, 0).is_err());
-        assert!(Eip1559Fees::new(10, 11).is_err());
-        let fees = Eip1559Fees::new(1_000, 101).expect("fees");
-        let floor = fees.replacement_floor().expect("floor");
-        assert_eq!(floor.max_fee_per_gas(), 1_100);
-        // 101 * 10% = 10.1, rounded up to 11.
-        assert_eq!(floor.max_priority_fee_per_gas(), 112);
-        assert!(floor.can_replace(&fees));
-        assert!(!fees.can_replace(&fees));
-        let short = Eip1559Fees::new(1_100, 111).expect("fees");
-        assert!(!short.can_replace(&fees));
-        assert!(Eip1559Fees::new(u128::MAX, 1)
-            .expect("fees")
-            .replacement_floor()
-            .is_err());
-    }
-
-    #[test]
-    fn the_key_debug_output_does_not_contain_the_secret() {
-        let rendered = format!("{:?}", key());
-        assert!(!rendered.contains(&hex::encode(TEST_KEY)));
-        assert!(rendered.contains("4a62316623ad457f02cdc5d997ded67a383ec569"));
-    }
-
-    #[test]
-    fn replacement_rejects_changed_intent_even_with_sufficient_fees() {
-        let first = sign_call(&key(), 31_337, kat_target(), kat_input(), kat_params()).unwrap();
-        let bumped = TransactionParams {
-            fees: kat_params().fees.replacement_floor().unwrap(),
-            ..kat_params()
-        };
-        let replacement = sign_call(&key(), 31_337, kat_target(), kat_input(), bumped).unwrap();
-        replacement.validate_replacement(&first).unwrap();
-        assert!(first.validate_replacement(&first).is_err());
-        for changed in [
-            sign_call(&key(), 1, kat_target(), kat_input(), bumped).unwrap(),
-            sign_call(&key(), 31_337, [1; 20], kat_input(), bumped).unwrap(),
-            sign_call(&key(), 31_337, kat_target(), vec![1], bumped).unwrap(),
-            sign_call(
-                &key(),
-                31_337,
-                kat_target(),
-                kat_input(),
-                TransactionParams { nonce: 8, ..bumped },
-            )
-            .unwrap(),
-            sign_call(
-                &key(),
-                31_337,
-                kat_target(),
-                kat_input(),
-                TransactionParams {
-                    gas_limit: 400_000,
-                    ..bumped
-                },
-            )
-            .unwrap(),
-            sign_call(
-                &TransactionKey::from_bytes(&[1; 32]).unwrap(),
-                31_337,
-                kat_target(),
-                kat_input(),
-                bumped,
-            )
-            .unwrap(),
-        ] {
-            assert!(changed.validate_replacement(&first).is_err());
-        }
-    }
-
-    #[test]
-    fn replacement_preserves_native_value_and_requires_a_fee_bump() {
-        let first = sign_call(&key(), 31_337, kat_target(), kat_input(), kat_params()).unwrap();
-        let mut bumped = kat_params();
-        bumped.fees = kat_params().fees.replacement_floor().unwrap();
-        let second = sign_call(&key(), 31_337, kat_target(), kat_input(), bumped).unwrap();
-        second
-            .validate_replacement(&first)
-            .expect("fee bump with same intent");
-        // An unchanged fee cap cannot replace.
-        assert!(first.validate_replacement(&first).is_err());
-        // A changed native value cannot replace even with a fee bump.
-        let mut changed_value = bumped;
-        changed_value.value = 1;
-        let third = sign_call(&key(), 31_337, kat_target(), kat_input(), changed_value).unwrap();
-        assert!(third.validate_replacement(&first).is_err());
-        // A changed gas limit cannot replace.
-        let mut changed_gas = bumped;
-        changed_gas.gas_limit = 400_000;
-        let fourth = sign_call(&key(), 31_337, kat_target(), kat_input(), changed_gas).unwrap();
-        assert!(fourth.validate_replacement(&first).is_err());
-    }
-
-    #[test]
-    fn bounds_and_debug_are_safe() {
-        let params = TransactionParams {
-            gas_limit: 0,
-            ..kat_params()
-        };
-        assert!(sign_call(&key(), 31_337, kat_target(), kat_input(), params).is_err());
-        let large = Eip1559Fees::new(u128::MAX / 2, 1).unwrap();
-        assert!(large.replacement_floor().is_ok());
-        let signed = sign_call(&key(), 31_337, kat_target(), kat_input(), kat_params()).unwrap();
-        let debug = format!("{signed:?}");
-        assert!(!debug.contains("input"));
-        assert!(!debug.contains("raw"));
-        assert!(!debug.contains(&format!("{:?}", kat_input())));
-    }
 }

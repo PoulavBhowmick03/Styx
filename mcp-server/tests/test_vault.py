@@ -14,17 +14,17 @@ import time
 from pathlib import Path
 
 import pytest
-from erebus import VaultError, VaultSeam
+from styx import VaultError, VaultSeam
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from erebus_mcp.config import ConfigError
-from erebus_mcp.vault import VaultSettings
+from styx_mcp.config import ConfigError
+from styx_mcp.vault import VaultSettings
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = Path(os.environ.get("EREBUS_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/erebus-vault"))
-DISCLOSURE_BINARY = Path(os.environ.get("EREBUS_TEST_DISCLOSURE_BIN", ROOT / "sdk/evm/target/debug/erebus-disclosure"))
-TOOLS = {"erebus_propose_payment", "erebus_request_owner_approval", "erebus_submit_payment", "erebus_payment_status"}
+BINARY = Path(os.environ.get("STYX_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/styx-vault"))
+DISCLOSURE_BINARY = Path(os.environ.get("STYX_TEST_DISCLOSURE_BIN", ROOT / "sdk/evm/target/debug/styx-disclosure"))
+TOOLS = {"styx_propose_payment", "styx_request_owner_approval", "styx_submit_payment", "styx_payment_status"}
 
 
 def scripted_binary(tmp_path: Path, responses: dict[str, tuple[dict, int]]) -> Path:
@@ -51,8 +51,8 @@ def result(response):
 
 def run_session(env: dict[str, str], body):
     parameters = StdioServerParameters(
-        command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT),
-        env={"EREBUS_BACKEND": "vault", "PATH": os.environ.get("PATH", ""), **env},
+        command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT),
+        env={"STYX_BACKEND": "vault", "PATH": os.environ.get("PATH", ""), **env},
     )
 
     async def run():
@@ -71,19 +71,19 @@ def private_dir(path: Path) -> Path:
 
 
 def test_settings_reject_insecure_directories(monkeypatch, tmp_path):
-    monkeypatch.delenv("EREBUS_VAULT_DIR", raising=False)
+    monkeypatch.delenv("STYX_VAULT_DIR", raising=False)
     with pytest.raises(ConfigError, match="must name"):
         VaultSettings.from_env()
-    monkeypatch.setenv("EREBUS_VAULT_DIR", str(tmp_path))
+    monkeypatch.setenv("STYX_VAULT_DIR", str(tmp_path))
     tmp_path.chmod(0o755)
     with pytest.raises(ConfigError, match="owner-only"):
         VaultSettings.from_env()
 
 
-@pytest.mark.parametrize("name", ["EREBUS_VAULT_OWNER_KEY_FILE", "EREBUS_DISCLOSURE_KEY_FILE"])
+@pytest.mark.parametrize("name", ["STYX_VAULT_OWNER_KEY_FILE", "STYX_DISCLOSURE_KEY_FILE"])
 def test_settings_refuse_other_roles_keys_in_the_agent_environment(monkeypatch, tmp_path, name):
     tmp_path.chmod(0o700)
-    monkeypatch.setenv("EREBUS_VAULT_DIR", str(tmp_path))
+    monkeypatch.setenv("STYX_VAULT_DIR", str(tmp_path))
     monkeypatch.setenv(name, "/somewhere/key")
     with pytest.raises(ConfigError, match="must not be set"):
         VaultSettings.from_env()
@@ -134,32 +134,32 @@ def test_tools_expose_exactly_the_agent_surface_and_pass_structured_errors(tmp_p
     async def body(session):
         tools = {tool.name for tool in (await session.list_tools()).tools}
         assert tools == TOOLS
-        proposed = result(await session.call_tool("erebus_propose_payment", {
+        proposed = result(await session.call_tool("styx_propose_payment", {
             "recipient": "0x" + "a1" * 20, "amount": "6000000", "invoice_name": "invoice.txt",
             "invoice_reference": "INV-1", "valid_until": 1800000000,
         }))
         assert proposed["ok"] and proposed["result"]["path"] == "exception_required"
         payment_id = proposed["result"]["payment_id"]
 
-        requested = result(await session.call_tool("erebus_request_owner_approval", {
+        requested = result(await session.call_tool("styx_request_owner_approval", {
             "payment_id": payment_id, "authorization_expiry": 1800000000,
         }))
         # The agent sees a name inside its directory, not an absolute path.
         assert requested["result"]["pending_file"] == f"pending-{'ab' * 6}.json"
 
-        refused = result(await session.call_tool("erebus_submit_payment", {"payment_id": payment_id}))
+        refused = result(await session.call_tool("styx_submit_payment", {"payment_id": payment_id}))
         assert refused == {"ok": False, "error": {"code": "OWNER_APPROVAL_REQUIRED", "message": "needs the owner"}}
 
-        unavailable = result(await session.call_tool("erebus_payment_status", {"payment_id": payment_id}))
+        unavailable = result(await session.call_tool("styx_payment_status", {"payment_id": payment_id}))
         assert unavailable["error"]["code"] == "VERIFICATION_UNAVAILABLE"
 
-        escape = result(await session.call_tool("erebus_propose_payment", {
+        escape = result(await session.call_tool("styx_propose_payment", {
             "recipient": "0x" + "a1" * 20, "amount": "1", "invoice_name": "../outside",
             "invoice_reference": "x", "valid_until": 1,
         }))
         assert escape["error"]["code"] == "INVALID_REQUEST"
 
-    run_session({"EREBUS_VAULT_DIR": str(directory), "EREBUS_VAULT_CLI": str(binary)}, body)
+    run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(binary)}, body)
 
     requests = [json.loads(line) for line in (tmp_path / "requests.log").read_text().splitlines()]
     assert all("../outside" not in json.dumps(request) for request in requests)
@@ -172,7 +172,7 @@ def test_tools_expose_exactly_the_agent_surface_and_pass_structured_errors(tmp_p
 TOOLS_AVAILABLE = BINARY.exists() and all(shutil.which(tool) for tool in ("anvil", "forge", "cast"))
 
 
-@pytest.mark.skipif(not TOOLS_AVAILABLE, reason="build erebus-vault and install Foundry to run this test")
+@pytest.mark.skipif(not TOOLS_AVAILABLE, reason="build styx-vault and install Foundry to run this test")
 def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -212,7 +212,7 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
             return int(output.split()[0])
 
         token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
-        vault = create("src/ErebusPolicyVault.sol:ErebusPolicyVault", address(owner_key), token)
+        vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", address(owner_key), token)
         vendor = "0x00000000000000000000000000000000000000a1"
         now = int(time.time())
         send(vault, "configurePolicy(address,uint256,uint256,uint64)", address(agent_key), "1000000", "10000000",
@@ -226,14 +226,14 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
         key_file.write_text(agent_key)
         key_file.chmod(0o600)
         env = {
-            "EREBUS_VAULT_DIR": str(directory), "EREBUS_VAULT_CLI": str(BINARY),
-            "EREBUS_VAULT_CHAIN_ID": "31337", "EREBUS_VAULT_RPC_URLS": rpc,
-            "EREBUS_VAULT_ADDRESS": vault, "EREBUS_VAULT_TOKEN": token,
-            "EREBUS_VAULT_STATE_ROOT": str(tmp_path / "journal"), "EREBUS_VAULT_AGENT_KEY_FILE": str(key_file),
+            "STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(BINARY),
+            "STYX_VAULT_CHAIN_ID": "31337", "STYX_VAULT_RPC_URLS": rpc,
+            "STYX_VAULT_ADDRESS": vault, "STYX_VAULT_TOKEN": token,
+            "STYX_VAULT_STATE_ROOT": str(tmp_path / "journal"), "STYX_VAULT_AGENT_KEY_FILE": str(key_file),
         }
 
         async def propose(session, amount):
-            return result(await session.call_tool("erebus_propose_payment", {
+            return result(await session.call_tool("styx_propose_payment", {
                 "recipient": vendor, "amount": amount, "invoice_name": "invoice.txt",
                 "invoice_reference": "INV-1", "valid_until": now + 3600,
             }))
@@ -243,14 +243,14 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
             assert ordinary["ok"], ordinary
             assert ordinary["result"]["path"] == "ordinary"
             payment_id = ordinary["result"]["payment_id"]
-            settled = result(await session.call_tool("erebus_submit_payment", {"payment_id": payment_id}))
+            settled = result(await session.call_tool("styx_submit_payment", {"payment_id": payment_id}))
             assert settled["result"]["state"] == "settled", settled
-            status = result(await session.call_tool("erebus_payment_status", {"payment_id": payment_id}))
+            status = result(await session.call_tool("styx_payment_status", {"payment_id": payment_id}))
             assert status["result"]["state"] == "settled"
 
             oversized = await propose(session, "6000000")
             assert oversized["result"]["path"] == "exception_required"
-            refused = result(await session.call_tool("erebus_submit_payment", {
+            refused = result(await session.call_tool("styx_submit_payment", {
                 "payment_id": oversized["result"]["payment_id"],
             }))
             assert refused["error"]["code"] == "OWNER_APPROVAL_REQUIRED"
@@ -264,7 +264,7 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
             await body(session)
             again = await propose(session, "100000")
             paid["id"] = again["result"]["payment_id"]
-            settled = result(await session.call_tool("erebus_submit_payment", {"payment_id": paid["id"]}))
+            settled = result(await session.call_tool("styx_submit_payment", {"payment_id": paid["id"]}))
             assert settled["result"]["state"] == "settled", settled
 
         run_session(env, pay_and_capture)
@@ -276,7 +276,7 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
             [str(BINARY)], input=json.dumps({"method": "export_record", "payment_id": paid["id"],
                                              "record_file": str(record_file)}),
             capture_output=True, text=True,
-            env={name: value for name, value in env.items() if name.startswith("EREBUS_VAULT_")},
+            env={name: value for name, value in env.items() if name.startswith("STYX_VAULT_")},
         )
         assert exported.returncode == 0, exported.stdout
         issuer_key = tmp_path / "issuer" / "issuer.key"
@@ -289,17 +289,17 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
 
         reviewer_dir = private_dir(tmp_path / "reviewer")
         reviewer_env = {
-            "EREBUS_BACKEND": "disclosure", "EREBUS_DISCLOSURE_DIR": str(reviewer_dir),
-            "EREBUS_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
-            "EREBUS_DISCLOSURE_VAULT_PINS": json.dumps({
+            "STYX_BACKEND": "disclosure", "STYX_DISCLOSURE_DIR": str(reviewer_dir),
+            "STYX_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
+            "STYX_DISCLOSURE_VAULT_PINS": json.dumps({
                 "chain_id": 31337, "rpc_urls": [rpc], "vault": vault, "vault_code_hash": code_hash,
             }),
         }
         issuer_dir = private_dir(tmp_path / "issuer")
         issuer_env = {
-            "EREBUS_BACKEND": "disclosure", "EREBUS_DISCLOSURE_DIR": str(issuer_dir),
-            "EREBUS_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
-            "EREBUS_DISCLOSURE_VAULT_ISSUER_KEY_FILE": str(issuer_key),
+            "STYX_BACKEND": "disclosure", "STYX_DISCLOSURE_DIR": str(issuer_dir),
+            "STYX_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
+            "STYX_DISCLOSURE_VAULT_ISSUER_KEY_FILE": str(issuer_key),
         }
 
         async def reviewer_key(session):
@@ -351,13 +351,13 @@ def test_models_can_leave_the_timestamps_out(tmp_path):
     })
 
     async def body(session):
-        await session.call_tool("erebus_propose_payment", {
+        await session.call_tool("styx_propose_payment", {
             "recipient": "0x" + "a1" * 20, "amount": "1", "invoice_name": "i.txt", "invoice_reference": "x",
         })
-        await session.call_tool("erebus_request_owner_approval", {"payment_id": "0x" + "ab" * 32})
+        await session.call_tool("styx_request_owner_approval", {"payment_id": "0x" + "ab" * 32})
 
     before = int(time.time())
-    run_session({"EREBUS_VAULT_DIR": str(directory), "EREBUS_VAULT_CLI": str(binary)}, body)
+    run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(binary)}, body)
     requests = {json.loads(line)["method"]: json.loads(line) for line in (tmp_path / "requests.log").read_text().splitlines()}
     assert before + 3500 < requests["propose"]["valid_until"] < before + 3700
     assert before + 3500 < requests["request_approval"]["authorization_expiry"] < before + 3700
