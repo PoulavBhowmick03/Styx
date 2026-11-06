@@ -10,7 +10,6 @@ dependencies = [
 
 [project.scripts]
 styx-mcp-server = "styx_mcp.server:main"
-styx-init = "styx_mcp.onboarding:init_main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
