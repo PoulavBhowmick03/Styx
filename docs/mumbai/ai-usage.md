@@ -8,10 +8,12 @@
 
 | Who or what | Role | Where the evidence is |
 | --- | --- | --- |
-| **Claude 2**: Claude Code, model `claude-sonnet-5-5` as the tool reported it, working for Ishita | Wrote and tested the setup page, the example agent tooling, and several documents. Reviewed other agents' code read-only | git history (`git log --author=ishitab02`, 24 commits) and the file list below |
+| **Claude 2**: Claude Code (version 2.1.319 when checked on 6 November), model `claude-sonnet-5-5` as the tool reported it, working for Ishita | Wrote and tested the setup page, the example agent tooling, and several documents. Reviewed other agents' code read-only | git history (`git log --author=ishitab02`, 24 commits) and the file list below |
 | **Claude 1**: an AI agent working for Poulav | Relay, approval page, the vault MCP tools, Arkiv, the live Arc product run | `REMAINING_WORK.md`, "Who does what". **TO FILL** by Poulav |
 | **Codex**: an AI agent working for Poulav | Packaging, CI, the watcher, `SECURITY_REVIEW.md`, bug fixes in `sdk/evm/src/arc_vault/` | `REMAINING_WORK.md`, "Who does what". **TO FILL** by Poulav |
-| **Arc Studio**: Arc's tool | The deployed `ErebusPolicyVault.sol` (`1e8156c`), which `STATUS.md` says comes from Studio | `STATUS.md`, "Deployment". **TO FILL**: how it was prompted and what was changed by hand |
+| **Arc Studio**: Arc's tool | The deployed `ErebusPolicyVault.sol` (`1e8156c`, 6 November 21:02), which `STATUS.md` says comes from Studio. It replaced a local version written earlier that day (`26ac813`, 10:23) | `STATUS.md`, "Deployment", and git history. `BUILD_PLAN.md`, section 5, describes Studio as driven by prompts (`arc-studio run "<prompt>"`) and says the vault would be written in Studio, either by prompting it with section 4 of the plan or in its editor. **TO FILL**: which of those was done, the prompt, and any hand edits. Who or what wrote the local version `26ac813` |
+| **`BUILD_PLAN.md`** | The plan every other file follows | Its own first paragraph says it "starts from GPT's `Erebus_Implementation_Roadmap.docx`" and makes six changes to it, so an AI wrote the roadmap it grew from. **TO FILL**: who or what wrote the plan itself |
+| **`CLAUDE.md`**, in the repository since the first commit | Standing instructions for Claude Code, read by every Claude Code session here | Evidence that Claude Code was used in this repository, by more than Claude 2. **TO FILL**: by whom and for what |
 | **The earlier Erebus code** imported in the first commit (`b28d8d6`, from `d56c777`, about 62,000 lines) | Pre-existing | `STATUS.md`, "Open conflict on G0". **TO FILL**: how it was written, whether AI helped, and by whom. This matters for the entry type |
 | **Humans** | Direction, accounts, keys, funds, the MetaMask signatures, every real-wallet and Telegram step, and the decisions that are theirs (entry type, prize picks) | |
 
@@ -29,16 +31,17 @@
 | `mcp-server/examples/model_trial.py`, `local_vault.py`, `g3_review.sh`, `test_vault_agent.py` | The model trial harness, the local rehearsal vault, the reviewer's G3 helper, and the restart tests |
 | `mcp-server/examples/configs/` | MCP configs for four agents |
 | `mcp-server/examples/MODEL_TRIAL.md`, `INSTALL_TEST.md`, `trials/` | Trial and install-test records, and the raw run reports |
-| `docs/mumbai/AGENT_INSTALL.md`, `ARCHITECTURE.md`, `DEMO_SCRIPT.md`, `ai-usage.md` | Guides and plans |
+| `docs/mumbai/AGENT_INSTALL.md`, `ARCHITECTURE.md`, `DEMO_SCRIPT.md`, `SUBMISSION_README_SECTIONS.md`, `ai-usage.md`, `ai-prompts/claude2.md` | Guides, plans and this record |
 | `docs/mumbai/STATUS.md` | The "Claude 2 report" sections only |
+| `PROVENANCE.md` on the unpushed branch `claude2/restore-provenance` | Not written: copied verbatim from the first commit, where it already existed, so the file's content is the team's own |
 
 **Files Claude 2 changed but did not create:** `mcp-server/examples/vault_agent.py`. Poulav's side wrote it (`9e067e4`). Claude 2 changed how it restarts (`46406d8`).
 
 **Read, not written:** Claude 2 reviewed Claude 1's `relay/` and `owner-page/` and reported findings. It edited neither. It did not review the contract, and that review is a person's.
 
-**How this appears in git.** 24 commits are authored `ishitab02`. The seven earliest (`02b7fad`, `eda32c5`, `4c23fd7`, `f22a809`, `ca08a71`, `218e18c`, `6b01b61`) end with `Co-Authored-By: Claude Sonnet 5.5`. Later commits omit that line because Ishita asked for it to be left out. The omission does not mean the later work was not AI-written: all 24 commits are Claude 2's work, and this file is the record.
+**How this appears in git.** 30 commits are authored `ishitab02`, counting unpushed branches on 7 November 2026. The seven earliest (`02b7fad`, `218e18c`, `4c23fd7`, `6b01b61`, `ca08a71`, `eda32c5`, `f22a809`) end with `Co-Authored-By: Claude Sonnet 5.5`. Later commits omit that line because Ishita asked for it to be left out. The omission does not mean the later work was not AI-written: every one of those commits is Claude 2's work, and this file is the record.
 
-**What a human checked.** **TO FILL** by Ishita: which of these files she read line by line, and which she only ran. Claude 2 cannot know. Its own checks were tests: 37 unit tests and 20 browser scenarios for the setup page, 7 tests for the example agent, and runs against a local chain and the live Arc RPC read-only.
+**What a human checked.** **TO FILL** by Ishita: which of these files she read line by line, and which she only ran. Claude 2 cannot know. What is known: Poulav reviewed the contract and signing code per `STATUS.md`, which is the team's own review. Claude 2's own checks were tests: 37 unit tests and 26 browser scenarios for the setup page, 7 tests for the example agent, and runs against a local chain and the live Arc RPC, read-only. Ishita ran the second-machine reviewer step on her Mac with Claude 2, and Poulav decided that Mac counts as the second machine.
 
 **Known limits.** None of the setup-page changes after the first real-wallet run has been tried with a real wallet. None of it is audited.
 
