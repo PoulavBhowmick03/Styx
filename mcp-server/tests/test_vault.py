@@ -23,6 +23,7 @@ from erebus_mcp.vault import VaultSettings
 
 ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get("EREBUS_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/erebus-vault"))
+DISCLOSURE_BINARY = Path(os.environ.get("EREBUS_TEST_DISCLOSURE_BIN", ROOT / "sdk/evm/target/debug/erebus-disclosure"))
 TOOLS = {"erebus_propose_payment", "erebus_request_owner_approval", "erebus_submit_payment", "erebus_payment_status"}
 
 
@@ -51,7 +52,7 @@ def result(response):
 def run_session(env: dict[str, str], body):
     parameters = StdioServerParameters(
         command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT),
-        env={"EREBUS_BACKEND": "vault", **env},
+        env={"EREBUS_BACKEND": "vault", "PATH": os.environ.get("PATH", ""), **env},
     )
 
     async def run():
@@ -257,8 +258,86 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
             over_daily = await propose(session, "11000000")
             assert over_daily["error"]["code"] == "POLICY_LIMIT"
 
-        run_session(env, body)
-        assert balance_of(token, vendor) == 250000
+        paid = {}
+
+        async def pay_and_capture(session):
+            await body(session)
+            again = await propose(session, "100000")
+            paid["id"] = again["result"]["payment_id"]
+            settled = result(await session.call_tool("erebus_submit_payment", {"payment_id": paid["id"]}))
+            assert settled["result"]["state"] == "settled", settled
+
+        run_session(env, pay_and_capture)
+        assert balance_of(token, vendor) == 350000
+
+        # The reviewer's server runs apart from the agent's, with its own key and its own RPC.
+        record_file = private_dir(tmp_path / "issuer") / "payment.record"
+        exported = subprocess.run(
+            [str(BINARY)], input=json.dumps({"method": "export_record", "payment_id": paid["id"],
+                                             "record_file": str(record_file)}),
+            capture_output=True, text=True,
+            env={name: value for name, value in env.items() if name.startswith("EREBUS_VAULT_")},
+        )
+        assert exported.returncode == 0, exported.stdout
+        issuer_key = tmp_path / "issuer" / "issuer.key"
+        issuer_key.write_bytes(bytes([0x42]) * 32)
+        issuer_key.chmod(0o600)
+        issuer = address("0x" + "42" * 32)
+        code = subprocess.run(["cast", "code", vault, "--rpc-url", rpc], capture_output=True, text=True,
+                              check=True).stdout.strip()
+        code_hash = subprocess.run(["cast", "keccak", code], capture_output=True, text=True, check=True).stdout.strip()
+
+        reviewer_dir = private_dir(tmp_path / "reviewer")
+        reviewer_env = {
+            "EREBUS_BACKEND": "disclosure", "EREBUS_DISCLOSURE_DIR": str(reviewer_dir),
+            "EREBUS_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
+            "EREBUS_DISCLOSURE_VAULT_PINS": json.dumps({
+                "chain_id": 31337, "rpc_urls": [rpc], "vault": vault, "vault_code_hash": code_hash,
+            }),
+        }
+        issuer_dir = private_dir(tmp_path / "issuer")
+        issuer_env = {
+            "EREBUS_BACKEND": "disclosure", "EREBUS_DISCLOSURE_DIR": str(issuer_dir),
+            "EREBUS_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
+            "EREBUS_DISCLOSURE_VAULT_ISSUER_KEY_FILE": str(issuer_key),
+        }
+
+        async def reviewer_key(session):
+            assert "export_vault_payment" not in {t.name for t in (await session.list_tools()).tools}
+            return result(await session.call_tool("create_disclosure_key", {}))["result"]["recipient_public_key"]
+
+        public_key = run_session(reviewer_env, reviewer_key)
+
+        async def issue(session):
+            assert "verify_vault_payment" not in {t.name for t in (await session.list_tools()).tools}
+            issued = result(await session.call_tool("export_vault_payment", {
+                "record_name": "payment.record", "recipient_public_key": public_key,
+                "grant_name": "payment.grant", "expires_at": now + 86400,
+            }))
+            assert issued["ok"], issued
+            assert issued["result"]["issuer"] == issuer
+
+        run_session(issuer_env, issue)
+        (reviewer_dir / "payment.grant").write_bytes((issuer_dir / "payment.grant").read_bytes())
+        (reviewer_dir / "payment.grant").chmod(0o600)
+
+        async def review(session):
+            checked = result(await session.call_tool("verify_vault_payment", {
+                "grant_name": "payment.grant", "expected_issuer": issuer, "opened_name": "opened.json",
+            }))
+            assert checked["ok"], checked
+            for name in ("record_integrity", "settlement", "policy_at_execution"):
+                assert checked["result"][name] == "verified", checked
+            assert checked["result"]["authorization"] == "not_applicable"
+            assert "invoice body" not in json.dumps(checked)
+            wrong = result(await session.call_tool("verify_vault_payment", {
+                "grant_name": "payment.grant", "expected_issuer": "0x" + "11" * 20,
+            }))
+            assert wrong["error"]["code"] == "DISCLOSURE_UNAVAILABLE"
+
+        run_session(reviewer_env, review)
+        opened = json.loads((reviewer_dir / "opened.json").read_text())
+        assert bytes.fromhex(opened["evidence"]["invoiceHex"][2:]) == b"invoice body"
     finally:
         anvil.kill()
         anvil.wait()

@@ -27,6 +27,9 @@ class DisclosureSeam:
         "verify_agreement": {"grant_file", "key_file", "expected_issuer"},
         "verify_payment": {"grant_file", "key_file", "expected_issuer", "deployment"},
         "checkpoint": {"deployment", "confirm_new_cache"},
+        "export_vault_payment": {"record_file", "issuer_key_file", "recipient_public_key",
+                                 "grant_file", "expires_at"},
+        "verify_vault_payment": {"grant_file", "key_file", "expected_issuer", "deployment", "opened_file"},
     }
     _public_fields = {
         "status", "protocol", "methods", "mode", "recipient_public_key", "evidence_saved",
@@ -35,6 +38,8 @@ class DisclosureSeam:
         "next_log_block", "ancestry_block",
         "checkpoint", "checkpoint_block", "checkpoint_hash", "leaf_count", "root",
         "history_from_block", "scope", "next_action",
+        "payment_id", "tx_hash", "record_integrity", "authorization", "settlement",
+        "policy_at_execution", "reasons",
     }
     # The cache's checkpoint is at or after this deal's settlement: neither paid nor unpaid.
     _settled_before_checkpoint_exit = 3
