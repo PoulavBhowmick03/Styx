@@ -28,6 +28,10 @@ npm start
 
 Optional: `RELAY_PORT`, `RELAY_HOST`, `RELAY_MAX_ALERTS_PER_HOUR` (10), `RELAY_MAX_REQUESTS` (200), `RELAY_WATCHER_TOKEN`.
 
+Give the agent's MCP server the relay with `EREBUS_VAULT_RELAY_URL` and `EREBUS_VAULT_RELAY_TOKEN`, the latter set to `RELAY_AGENT_TOKEN`. `erebus_request_owner_approval` then alerts the owner and reports `owner_alerted`. Asking again retries a failed alert. `erebus_check_owner_approval` reports `pending`, `expired` or `signed`, and when signed it returns the `signature_name` to pass to `erebus_submit_payment`.
+
+The link opens the owner page with the request loaded. The first time in a browser, choose your owner config; the page remembers it in that browser. After signing, the page sends the signature back, and still shows the file in case the relay is down.
+
 To open the link on your phone, the page and relay must be reachable from it, so set both URLs to HTTPS addresses you host or tunnel. A non-HTTPS page still works, but the alert has a text link and no button.
 
 **Not yet exercised:** a real Telegram bot. The tests use a fake Telegram server that follows the Bot API docs.

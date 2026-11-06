@@ -2,7 +2,9 @@
 // answering the page's EIP-1193 requests, so this covers the UI, not a real wallet extension.
 // Needs anvil, forge, cast, Chrome, and a built erebus-vault. Run: npm run e2e
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -17,7 +19,7 @@ const WORK = mkdtempSync(join(tmpdir(), "owner-page-e2e-"));
 chmodSync(WORK, 0o700);
 const SHOTS = process.env.E2E_SCREENSHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-const RPC_PORT = 18661, PAGE_PORT = 18662, GATE_PORT = 18663;
+const RPC_PORT = 18661, PAGE_PORT = 18662, GATE_PORT = 18663, RELAY_PORT = 18664, TELEGRAM_PORT = 18665;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
 const VENDOR = "0x00000000000000000000000000000000000000a1";
 const XSS = '<img src=x onerror="window.__pwned=1">';
@@ -33,7 +35,8 @@ async function waitFor(check, label) {
   throw new Error(`timed out waiting for ${label}`);
 }
 const children = [];
-const start = (cmd, args, opts = {}) => { const c = spawn(cmd, args, { stdio: "ignore", ...opts }); children.push(c); return c; };
+// Each child leads its own process group, because vite and tsx start children of their own.
+const start = (cmd, args, opts = {}) => { const c = spawn(cmd, args, { stdio: "ignore", detached: true, ...opts }); children.push(c); return c; };
 
 const results = [];
 async function scenario(name, run) {
@@ -204,6 +207,102 @@ try {
     await context.close();
   });
 
+  // ---- The whole alert path: agent request, Telegram alert, link, signature, settlement ----
+  const alerts = [];
+  const telegram = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    alerts.push({ path: req.url, ...JSON.parse(raw) });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, result: { message_id: alerts.length } }));
+  });
+  await new Promise((r) => telegram.listen(TELEGRAM_PORT, "127.0.0.1", r));
+  const RELAY = `http://127.0.0.1:${RELAY_PORT}`;
+  const agentToken = randomBytes(24).toString("hex");
+  start(join(ROOT, "relay/node_modules/.bin/tsx"), ["src/main.ts"], {
+    cwd: join(ROOT, "relay"),
+    env: { ...process.env, RELAY_PORT: String(RELAY_PORT), RELAY_CHAIN_ID: "31337", RELAY_VAULT: vault, RELAY_OWNER: owner, RELAY_TOKEN: token,
+      RELAY_PAGE_URL: `http://127.0.0.1:${PAGE_PORT}/`, RELAY_PUBLIC_URL: RELAY, RELAY_AGENT_TOKEN: agentToken,
+      TELEGRAM_BOT_TOKEN: "1:fake", TELEGRAM_CHAT_ID: "42", TELEGRAM_API_BASE: `http://127.0.0.1:${TELEGRAM_PORT}` },
+  });
+  await waitFor(async () => (await fetch(`${RELAY}/requests/nope`)).status === 404, "relay");
+  const askOwner = async () => {
+    const id = propose().payment_id;
+    const body = JSON.parse(readFileSync(approve(id), "utf8"));
+    const response = await fetch(`${RELAY}/requests`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${agentToken}` }, body: JSON.stringify({ pending: body }),
+    });
+    const result = await response.json();
+    assert.equal(result.alerted, true, JSON.stringify(result));
+    const text = alerts.at(-1).text;
+    return { id, requestId: result.requestId, link: /https?:\/\/\S+/.exec(text.split("\n").at(-1))[0], text };
+  };
+  await scenario("an alert's link opens the request, and the signature reaches the agent with no file carried", async () => {
+    const { id, requestId, link, text } = await askOwner();
+    assert.match(text, /This message proves nothing/);
+    assert.equal(text.includes("onerror"), false);
+    const { page, context, errors } = await openPage(PAGE_PORT);
+    await page.goto(link);
+    await waitFor(async () => /owner config/.test(await status(page)), "config prompt");
+    assert.equal(await page.locator("#pending-label").isVisible(), false);
+    await page.setInputFiles("#config-file", ownerConfig);
+    await page.locator("#sign").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#amount").textContent(), "6 USDC");
+    await shot(page, "from-alert");
+    await page.click("#sign");
+    await waitFor(async () => /sent to your agent/.test(await status(page)), "relay confirmation");
+    const signed = await (await fetch(`${RELAY}/requests/${requestId}/signature`, { headers: { authorization: `Bearer ${agentToken}` } })).json();
+    assert.equal(signed.status, "signed");
+    const file = join(WORK, "relay-signature.json");
+    writeFileSync(file, JSON.stringify(signed.signature));
+    const paid = cli({ method: "submit", payment_id: id, signature_file: file });
+    assert.equal(paid.state, "settled", JSON.stringify(paid));
+
+    // The owner config is remembered in this browser, so the next alert goes straight to review.
+    const next = await askOwner();
+    await page.goto(next.link);
+    await page.locator("#sign").waitFor({ state: "visible" });
+    assert.equal(errors.length, 0, errors.join());
+    await context.close();
+  });
+  await scenario("a hostile relay's altered request never shows the sign button", async () => {
+    const { link } = await askOwner();
+    const { page, prompts, context } = await openPage(PAGE_PORT);
+    await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
+    await page.setInputFiles("#config-file", ownerConfig);
+    await page.route(`${RELAY}/requests/**`, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.pending.payment.amount = "7000000";
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(link);
+    await waitFor(async () => /does not match/.test(await status(page)), "refusal");
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal(prompts.length, 0);
+    await context.close();
+  });
+  await scenario("if the relay is down, the page says so, and the owner can still save the signature", async () => {
+    const { link } = await askOwner();
+    const down = await openPage(PAGE_PORT);
+    await down.page.route(`${RELAY}/requests/**`, (route) => route.abort());
+    await down.page.goto(link);
+    await waitFor(async () => /could not be reached/.test(await status(down.page)), "load failure");
+    await down.context.close();
+
+    const { page, context } = await openPage(PAGE_PORT);
+    await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
+    await page.setInputFiles("#config-file", ownerConfig);
+    await page.goto(link);
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await page.route(`${RELAY}/requests/**`, (route) => route.abort());
+    await page.click("#sign");
+    await waitFor(async () => /relay could not be reached/.test(await status(page)), "send failure");
+    assert.ok((await page.locator("#output-text").inputValue()).includes("vault-owner-signature/1"));
+    await context.close();
+  });
+  telegram.close();
+
   // The World gate, with its backend's answers scripted. stepup.test.ts covers the backend itself.
   async function gated(state, allowed = true) {
     const session = await openPage(GATE_PORT);
@@ -244,6 +343,6 @@ try {
   console.log(`\n${results.length} scenarios passed.`);
 } finally {
   await browser?.close();
-  for (const c of children) c.kill();
+  for (const c of children) { try { process.kill(-c.pid); } catch { /* already gone */ } }
 }
 process.exit(0);

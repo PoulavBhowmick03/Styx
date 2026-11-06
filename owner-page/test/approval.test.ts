@@ -12,6 +12,7 @@ import {
   formatUsdc,
   parseOwnerConfig,
   parsePending,
+  parseRelayLink,
   paymentHash,
   reviewPending,
   SIGNATURE_SCHEMA,
@@ -211,5 +212,23 @@ describe("formatUsdc", () => {
     expect(formatUsdc(1n)).toBe("0.000001 USDC");
     expect(formatUsdc(0n)).toBe("0 USDC");
     expect(formatUsdc(123_456_789_012_345_678_901n)).toBe("123456789012345.678901 USDC");
+  });
+});
+
+describe("alert links", () => {
+  const id = "abcdefghijklmnopqrstuv";
+
+  it("are read from the page's query string", () => {
+    expect(parseRelayLink(`?relay=${encodeURIComponent("https://relay.example/ignored")}&request=${id}`)).toEqual({
+      relay: "https://relay.example",
+      request: id,
+    });
+    expect(parseRelayLink("")).toBeUndefined();
+  });
+
+  it("refuse other schemes and malformed IDs", () => {
+    expect(() => parseRelayLink(`?relay=${encodeURIComponent("javascript:alert(1)")}&request=${id}`)).toThrow(ApprovalError);
+    expect(() => parseRelayLink(`?relay=not-a-url&request=${id}`)).toThrow(ApprovalError);
+    expect(() => parseRelayLink(`?relay=https://relay.example&request=${encodeURIComponent("../../alerts")}`)).toThrow(ApprovalError);
   });
 });

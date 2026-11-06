@@ -282,3 +282,27 @@ export async function buildSignatureFile(
     2,
   );
 }
+
+export interface RelayLink {
+  relay: string;
+  request: string;
+}
+
+/**
+ * Reads an alert's link. The link grants nothing: whatever the relay returns still has to pass
+ * `reviewPending` against the owner's own config, so a link to a hostile relay cannot change that.
+ */
+export function parseRelayLink(search: string): RelayLink | undefined {
+  const params = new URLSearchParams(search);
+  const relay = params.get("relay"), request = params.get("request");
+  if (!relay || !request) return undefined;
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(request)) throw new ApprovalError("this approval link is malformed");
+  let url: URL;
+  try {
+    url = new URL(relay);
+  } catch {
+    throw new ApprovalError("this approval link is malformed");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new ApprovalError("this approval link is malformed");
+  return { relay: url.origin, request };
+}

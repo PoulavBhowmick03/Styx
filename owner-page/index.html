@@ -33,6 +33,7 @@
         font: 16px/1.5 system-ui, sans-serif;
       }
       h1 { font-size: 1.5rem; margin: 0 0 1.5rem; }
+      [hidden] { display: none !important; }
       label { display: block; margin-bottom: 1rem; font-weight: 600; }
       input[type="file"] { display: block; margin-top: 0.25rem; font-weight: 400; max-width: 100%; }
       dl { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); gap: 0.5rem 1rem; margin: 1.5rem 0; }
@@ -72,7 +73,7 @@
       Your owner config
       <input id="config-file" type="file" accept="application/json,.json" />
     </label>
-    <label>
+    <label id="pending-label">
       Approval request from the agent
       <input id="pending-file" type="file" accept="application/json,.json" />
     </label>

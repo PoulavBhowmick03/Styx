@@ -5,10 +5,12 @@ import {
   buildSignatureFile,
   parseOwnerConfig,
   parsePending,
+  parseRelayLink,
   reviewPending,
   typedDataRequest,
   type OwnerConfig,
   type Pending,
+  type RelayLink,
 } from "./approval";
 
 interface Eip1193 {
@@ -112,6 +114,7 @@ function handleLoad(input: HTMLInputElement, apply: (value: unknown) => void): v
 
 handleLoad(configInput, (value) => {
   config = parseOwnerConfig(value);
+  rememberConfig(value);
   showStatus("Owner config loaded.");
 });
 handleLoad(pendingInput, (value) => {
@@ -217,10 +220,72 @@ async function sign(): Promise<void> {
     output.hidden = false;
     signButton.hidden = true;
     worldButton.hidden = true;
-    showStatus("Signed. Give this file to the agent's erebus_submit_payment tool.");
+    if (relayLink && (await sendToRelay(relayLink, file))) {
+      showStatus("Signed and sent to your agent. You can close this page.");
+    } else if (relayLink) {
+      showStatus("Signed, but the relay could not be reached. Give the agent this file instead.", true);
+    } else {
+      showStatus("Signed. Give this file to the agent's erebus_submit_payment tool.");
+    }
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "The wallet did not sign.", true);
   } finally {
     signButton.disabled = false;
   }
 }
+
+// ---- Opening a request from an alert's link ----
+
+const CONFIG_KEY = "vault-owner-config";
+
+// A convenience so the owner picks their config once per browser. Everything still works without it.
+function rememberConfig(value: unknown): void {
+  try {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(value));
+  } catch {
+    // Storage can be blocked. The owner just picks the file again next time.
+  }
+}
+function restoreConfig(): void {
+  try {
+    const stored = localStorage.getItem(CONFIG_KEY);
+    if (stored) config = parseOwnerConfig(JSON.parse(stored));
+  } catch {
+    config = undefined;
+  }
+}
+async function sendToRelay(link: RelayLink, file: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${link.relay}/requests/${encodeURIComponent(link.request)}/signature`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: file,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+async function openFromLink(link: RelayLink): Promise<void> {
+  element("pending-label").hidden = true;
+  showStatus("Loading the approval request.");
+  try {
+    const response = await fetch(`${link.relay}/requests/${encodeURIComponent(link.request)}`);
+    if (!response.ok) throw new ApprovalError(response.status === 410 ? "this approval has expired" : "this approval request was not found");
+    const body = (await response.json()) as { pending?: unknown };
+    pending = parsePending(body.pending);
+    if (config) render();
+    else showStatus("Choose your owner config to review this request.");
+  } catch (error) {
+    showStatus(error instanceof ApprovalError ? error.message : "The relay could not be reached.", true);
+  }
+}
+
+restoreConfig();
+let relayLink: RelayLink | undefined;
+try {
+  relayLink = parseRelayLink(window.location.search);
+} catch (error) {
+  showStatus(error instanceof ApprovalError ? error.message : "This approval link is malformed.", true);
+}
+if (relayLink) void openFromLink(relayLink);
