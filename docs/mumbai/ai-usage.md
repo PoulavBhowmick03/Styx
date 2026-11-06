@@ -35,11 +35,11 @@
 | `docs/mumbai/STATUS.md` | The "Claude 2 report" sections only |
 | `PROVENANCE.md` on the unpushed branch `claude2/restore-provenance` | Not written: copied verbatim from the first commit, where it already existed, so the file's content is the team's own |
 
-**Files Claude 2 changed but did not create:** `mcp-server/examples/vault_agent.py`. Poulav's side wrote it (`9e067e4`). Claude 2 changed how it restarts (`46406d8`).
+**Files Claude 2 changed but did not create:** `mcp-server/examples/vault_agent.py`, which Poulav's side wrote (`9e067e4`) and Claude 2 changed to survive restarts (`46406d8`) and to lock and sync its state; `docs/mumbai/RUNBOOK.md` and `packaging/README.md`, which were brought in line with the code on 7 November. The walkthrough results are in `mcp-server/examples/INSTALL_TEST.md`.
 
-**Read, not written:** Claude 2 reviewed Claude 1's `relay/` and `owner-page/` and reported findings. It edited neither. It did not review the contract, and that review is a person's.
+**Read, not written:** Claude 2 reviewed Claude 1's `relay/` and `owner-page/` and reported findings, and on 7 November it reviewed the removal of unused code (`12319c0`, `55fe561`) by running every test the project's CI runs. It edited none of that code. It did not review the contract, and that review is a person's.
 
-**How this appears in git.** 30 commits are authored `ishitab02`, counting unpushed branches on 7 November 2026. The seven earliest (`02b7fad`, `218e18c`, `4c23fd7`, `6b01b61`, `ca08a71`, `eda32c5`, `f22a809`) end with `Co-Authored-By: Claude Sonnet 5.5`. Later commits omit that line because Ishita asked for it to be left out. The omission does not mean the later work was not AI-written: every one of those commits is Claude 2's work, and this file is the record.
+**How this appears in git.** 40 commits are authored `ishitab02`, counting unpushed branches on 7 November 2026. The seven earliest (`02b7fad`, `218e18c`, `4c23fd7`, `6b01b61`, `ca08a71`, `eda32c5`, `f22a809`) end with `Co-Authored-By: Claude Sonnet 5.5`. Later commits omit that line because Ishita asked for it to be left out. The omission does not mean the later work was not AI-written: every one of those commits is Claude 2's work, and this file is the record.
 
 **What a human checked.** **TO FILL** by Ishita: which of these files she read line by line, and which she only ran. Claude 2 cannot know. What is known: Poulav reviewed the contract and signing code per `STATUS.md`, which is the team's own review. Claude 2's own checks were tests: 37 unit tests and 26 browser scenarios for the setup page, 7 tests for the example agent, and runs against a local chain and the live Arc RPC, read-only. Ishita ran the second-machine reviewer step on her Mac with Claude 2, and Poulav decided that Mac counts as the second machine.
 
