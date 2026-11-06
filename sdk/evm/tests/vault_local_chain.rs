@@ -509,7 +509,7 @@ async fn owner_exception_settles_and_a3_a4_revert() {
     assert_eq!(chain.balance(VENDOR_B).await, 0);
 
     // The owner-approved payment settles, with a wallet-format signature.
-    assert_eq!(signature[64] >= 27, true);
+    assert!(signature[64] >= 27);
     let settled = chain.submit(&id, Some(&signature_file), 30);
     assert_eq!(settled["state"], "settled", "{settled}");
     assert_eq!(chain.balance(VENDOR_A).await, 6 * ONE_USDC);
@@ -633,4 +633,47 @@ async fn reviewer_verifies_records_and_detects_tampering() {
     assert_eq!(report.authorization, Check::Unavailable);
     assert_eq!(report.settlement, Check::Unavailable);
     assert_eq!(report.policy_at_execution, Check::Unavailable);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires anvil and forge from a Foundry install"]
+async fn attack_script_reports_every_attack_as_reverted() {
+    let chain = Chain::start().await;
+    let id = id_of(&chain.propose(VENDOR_A, 6 * ONE_USDC, b"invoice six").await);
+    let (_, signature_file) = chain.approve(&id).await;
+    let pending_file = chain.dir.join(format!("pending-{}.json", &id[2..14]));
+    let script = contracts_dir().join("script/attacks.sh");
+    let attacks = |settled: &str| {
+        let output = Command::new("bash")
+            .arg(&script)
+            .env("RPC_URL", &chain.rpc_url)
+            .env("VAULT", &chain.vault)
+            .env("AGENT_KEY_FILE", chain.dir.join("agent.key"))
+            .env("VENDOR_B", VENDOR_B)
+            .env("OWNER_SIGNATURE_FILE", &signature_file)
+            .env("PENDING_FILE", &pending_file)
+            .env("SETTLED", settled)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        assert!(
+            output.status.success(),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        stdout
+    };
+
+    let before = attacks("0");
+    assert!(before.contains("PASS A1"), "{before}");
+    assert!(before.contains("PASS A2"), "{before}");
+    assert!(before.contains("PASS A3"), "{before}");
+    assert!(before.contains("A4 skipped"), "{before}");
+
+    let settled = chain.submit(&id, Some(&signature_file), 30);
+    assert_eq!(settled["state"], "settled", "{settled}");
+    let after = attacks("1");
+    assert!(after.contains("PASS A4"), "{after}");
+    assert_eq!(chain.balance(VENDOR_A).await, 6 * ONE_USDC);
+    assert_eq!(chain.balance(VENDOR_B).await, 0);
 }
