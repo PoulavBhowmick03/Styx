@@ -1,4 +1,4 @@
-# Runbook: gates G1 to G5
+# Runbook: gates G1 to G4
 
 Everything here uses Arc testnet and test funds only. Keep every key outside this repo.
 
@@ -42,13 +42,17 @@ cast call "$USDC" 'balanceOf(address)(uint256)' "$VAULT" --rpc-url "$RPC"   # ex
 
 Every `configurePolicy` or `setRecipient` call raises the policy version, so finish setup before proposing payments.
 
-## 3. Owner page
+## 3. Owner pages
+
+**Hosted, with no file.** The approval page is at `https://styxco.xyz` and the setup page at `https://styxco.xyz/setup/`, on one site so that what the owner confirms on one is read by the other. When the owner connects to their vault on the setup page, section 7 sets the browser up to approve from alerts. The approval page then reads the owner, token, limits and allowlist from the vault itself, so no config file is needed. The hosted relay serves one vault and one owner, set in `relay/fly.toml`, and accepts approvals only from `https://styxco.xyz`.
+
+**Local, with a config file.**
 
 ```bash
 cd owner-page && npm install --legacy-peer-deps && npm run dev
 ```
 
-Open it in the owner's own browser profile. Copy `owner-config.example.json` outside the repo and fill in the real addresses. Vendor labels come only from this file.
+Open it in the owner's own browser profile. Copy `owner-config.example.json` outside the repo and fill in the real addresses, or download the config from the Vendors section of the setup page. Vendor labels come only from this file.
 
 To get a Telegram alert instead of carrying files by hand, run the relay. See `relay/README.md`.
 
@@ -76,6 +80,10 @@ The script's reviewer section runs on one machine, which does not pass G3. On a 
 2. The issuer runs `export_vault_payment` with that key, using the record in `OUT`, and sends the grant.
 3. The reviewer runs `verify_vault_payment` with their own RPC, the issuer's address, and the vault's code hash obtained separately. Then repeat with a tampered copy and a second record.
 
+`mcp-server/examples/g3_review.sh <first.grant> <second.grant> <issuer>` runs the reviewer's side in one go, sends no transaction, and says whether each outcome was the expected one. It never says G3 passed.
+
+**A grant made by an older build cannot be opened by a newer one.** The grant's domain string changed when the project was renamed to Styx, so the issuer and the reviewer must use `styx-disclosure` from the same build, and grants made before the rename must be reissued.
+
 ## 6. G4 Arkiv
 
 Get tGLM from `hub.arkiv.network/faucet` and an access key from `hub.arkiv.network/access-keys`, using a separate publisher key.
@@ -87,19 +95,7 @@ ARKIV_PUBLISHER_KEY_FILE=... ARKIV_ACCESS_KEY=... npm run publish-grant -- excep
 npm run fetch-grant -- <lookup-tag> <writer-address> fetched.grant
 ```
 
-Run the verifier on `fetched.grant`, then add the writer address and one query to the README and update `arkiv/`'s files.
-
-## 7. G5 World
-
-Register a client at `auth.world.org/portal` with an HTTPS callback ending in `/api/step-up/callback`, and confirm whether `localhost` is allowed.
-
-```bash
-cd owner-page
-WORLD_CLIENT_ID=... WORLD_CLIENT_SECRET=... WORLD_REDIRECT_URI=... npm run world-gate
-VITE_WORLD_GATE=1 npm run dev
-```
-
-The first attempt shows your subject. Set it as `WORLD_OWNER_SUBJECT`, restart, then run a success and a cancelled attempt. Fill in `world/debrief.md` with real numbers.
+Run the verifier on `fetched.grant`, then add the writer address and one query to the README and update `arkiv/`'s files. `scripts/arkiv_gate.sh` does the publish, then the fetch and verify with every project process stopped, and refuses to run if one is still running.
 
 ## Using a model as the agent
 

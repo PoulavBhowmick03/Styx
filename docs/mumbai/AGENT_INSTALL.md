@@ -59,23 +59,17 @@ cd ~/styx-agent && claude      # approve the styx-vault server when asked
 
 Vendor A is `0x00000000000000000000000000000000000000a1`.
 
-The agent cannot read the invoice files, and it will not guess what it was not told, so give it the invoice reference in every prompt. It does not know the time either. Since commit `1711205` the tools default `valid_until` and the approval expiry to one hour from now when the agent leaves them out. If you want a different window, print a Unix time and put it in the prompt in place of `<VALID_UNTIL>`:
+The agent cannot read the invoice files, and it will not guess what it was not told, so give it the invoice reference in every prompt. It does not know the time either, so when it leaves them out the tools default the payment's `valid_until` and the approval's expiry to one hour from now. The prompts below leave them out. They were followed that way from a fresh clone on 7 November. To choose a different window, print a Unix time with `echo $(( $(date +%s) + 3600 ))` and add "Use `valid_until` <that number>." to the prompt.
 
-```bash
-echo $(( $(date +%s) + 3600 ))
-```
+**First payment, allowed.** Tell the agent:
 
-The prompts below carry a time. They were tested that way, before that default existed. Leaving the times out was only re-checked with the trial harness, not by following this guide again.
-
-**First payment, allowed.** Tell the agent, with your number in place of `<VALID_UNTIL>`:
-
-> Pay invoice `inv-1.txt` (invoice reference INV-1): 0.25 USDC (250000 base units) to 0x00000000000000000000000000000000000000a1. Use `valid_until` <VALID_UNTIL>. Use your vault tools.
+> Pay invoice `inv-1.txt` (invoice reference INV-1): 0.25 USDC (250000 base units) to 0x00000000000000000000000000000000000000a1. Use your vault tools.
 
 Expected: the agent proposes, submits, and reports `settled` with a transaction hash.
 
 **First payment, refused.** Tell the agent:
 
-> Pay invoice `inv-2.txt` (invoice reference INV-2): 6 USDC (6000000 base units) to 0x00000000000000000000000000000000000000a1. Use `valid_until` <VALID_UNTIL>. If the vault needs the owner's approval, request it with `authorization_expiry` <VALID_UNTIL>. Use your vault tools.
+> Pay invoice `inv-2.txt` (invoice reference INV-2): 6 USDC (6000000 base units) to 0x00000000000000000000000000000000000000a1. If the vault needs the owner's approval, request it. Use your vault tools.
 
 Expected: the vault says this needs an owner exception. The agent writes an approval request, a file named `pending-<12 hex digits>.json` in `$STYX_VAULT_DIR`, and nothing is paid. On Arc testnet that file is what the owner signs. Here, the next step stands in for the owner.
 
@@ -126,7 +120,7 @@ This prints only the address. Keep it. The JSON layout is Foundry 1.9's; other v
 cd setup-page && npm install --legacy-peer-deps && npm run dev
 ```
 
-Open the address it prints, then in order: connect the wallet and switch to Arc Testnet; deploy a vault (or connect one your team deployed through Arc Studio); in Limits, set the agent address from step 1, 1 USDC per payment and 10 USDC per day; in Vendors, allow each vendor; download the approval-page config and keep it outside the repository; in Move money, send USDC into the vault.
+Open the address it prints (or the hosted copy of the same page, `https://styxco.xyz/setup/`), then in order: connect the wallet and switch to Arc Testnet; deploy a vault (or connect one your team deployed through Arc Studio); in Limits, set the agent address from step 1, 1 USDC per payment and 10 USDC per day; in Vendors, allow each vendor; in Move money, send USDC into the vault. On the hosted copy, section 7 then sets this browser up to approve from alerts with no file. On a local copy, download the approval-page config from the Vendors section instead, and keep it outside the repository.
 
 **3. Leave the agent gas only.** The page's "Is your money protected?" panel must show every item as OK. Send the agent's address about 0.3 USDC for gas, no more. On Arc that balance is also its USDC, so anything above gas is outside the vault and under no rule.
 
@@ -141,7 +135,10 @@ export STYX_VAULT_STATE_ROOT=~/styx-agent/journal STYX_VAULT_AGENT_KEY_FILE=~/st
 cd ~/styx-agent && claude
 ```
 
-**5. First refused and first approved payment**, as in Part 2, with an invoice for each. When the agent writes `pending-....json`, the owner opens the approval page (`cd owner-page && npm run dev`), loads the config from step 2 and the pending file, checks every field, signs in the wallet, and saves the signature file into the agent's vault directory. Alerts and automatic return of the signature are in `relay/README.md`.
+**5. First refused and first approved payment**, as in Part 2, with an invoice for each. There are two ways to approve:
+
+- **With no file, through the relay.** The agent's tools post the request to a relay, which sends the owner a Telegram alert with a link. The owner opens it on the approval page (`https://styxco.xyz`), confirms the vault once in that browser, checks the recipient and amount against what the vault says, and signs in their wallet. The page sends the signature back to the relay, and the agent's `styx_check_owner_approval` tool collects it. This needs the relay settings in the agent's environment (`STYX_VAULT_RELAY_URL` and `STYX_VAULT_RELAY_TOKEN`). **The hosted relay (`https://styx-vault-relay.fly.dev`) serves one vault and one owner, set by the team, so for your own vault run your own relay.** See `relay/README.md`.
+- **With files, no relay.** When the agent writes `pending-....json`, the owner runs the approval page locally (`cd owner-page && npm run dev`), loads the config from step 2 and the pending file, checks every field, signs in the wallet, and saves the signature file into the agent's vault directory.
 
 ## Other agents
 
@@ -157,7 +154,7 @@ Configs for each agent's documented format are in `mcp-server/examples/configs/`
 ## If something goes wrong
 
 - **`unknown`, or `VERIFICATION_UNAVAILABLE`.** A missing receipt is not a failure. Submit again with the same payment ID, or look at `https://explorer.testnet.arc.io`. Never propose a new payment to retry.
-- **"valid_until has already passed".** The agent guessed the date wrong. Models do not know the time. Tell it the current Unix time. `mcp-server/examples/MODEL_TRIAL.md` has the details.
+- **"valid_until has already passed".** The agent supplied its own time and got it wrong, as models do not know the time. Tell it to leave `valid_until` out: the tools default it to one hour from now. `mcp-server/examples/MODEL_TRIAL.md` has the details.
 - **Approval stopped working after you changed something.** Any change to limits or vendors raises the policy version and invalidates unused approvals. The agent must propose again.
 - **The server will not start.** Read its message. Usual causes: the vault directory is not owner-only, a forbidden key variable is set, or `STYX_VAULT_CLI` points to a missing binary.
 

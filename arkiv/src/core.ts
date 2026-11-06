@@ -41,6 +41,15 @@ export function redacted(error: unknown, secret = process.env.ARKIV_ACCESS_KEY):
   return secret ? text.split(secret).join("***") : text;
 }
 
+/** Public RPCs can stall without answering. A stall means unreachable, which says nothing about Arkiv's contents. */
+export function withinTime<T>(work: Promise<T>, milliseconds: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`no answer from Arkiv in ${milliseconds / 1000} seconds`)), milliseconds);
+  });
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
 export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }

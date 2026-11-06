@@ -27,7 +27,7 @@ npm run fetch-grant -- <lookup-tag> <writer-address> fetched.grant
 
 ```bash
 cd arkiv && npm install --legacy-peer-deps
-npm run fetch-grant -- ffa18dd008d8a0e8ebc14d2d1424a861 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
+npm run fetch-grant -- 2da3058148c284654bd85b1a670a3ce9 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
 ```
 
 It is sealed to one reviewer, so only that reviewer's key can open it.
