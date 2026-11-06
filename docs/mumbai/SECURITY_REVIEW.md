@@ -85,3 +85,13 @@ At baseline `84b3288`, `setup-page/` does not exist and no new Claude 2 commits 
 available locally. `mcp-server/examples/vault_agent.py` is explicitly scripted, not a model run.
 Review will be refreshed from `origin/main` before handoff. A real model run needs the owner's
 chosen model/account; no sponsor login or inference credentials will be used here.
+
+### Task 2: packaging
+
+Built macOS arm64 **release** wheels for CLI, SDK and MCP, plus SHA256SUMS in ignored `dist/`.
+`packaging/install-mcp.sh` installs all tools in one command from a supplied wheelhouse.
+The isolated smoke test passed with Cargo/rustc absent from PATH, real vault version,
+disclosure key generation and MCP entry point checks. `uv lock --check` and workspace sync passed;
+`uv.lock` did not change. See `packaging/README.md` for build and install commands.
+Human: distribute reviewed artifacts or publish packages. No PyPI release, Linux runtime,
+Windows support or clean second-machine install was verified.
