@@ -52,7 +52,7 @@ jobs:
           shopt -s nullglob
           vault_binaries=("$PWD"/target/debug/*-vault)
           test "${#vault_binaries[@]}" -eq 1
-          STYX_VAULT_TEST_BINARY="${vault_binaries[0]}" cargo test --locked --lib arc_vault::v2::integration -- --ignored
+          STYX_DISCLOSURE_TEST_BINARY="$PWD/target/debug/styx-disclosure" STYX_VAULT_TEST_BINARY="${vault_binaries[0]}" cargo test --locked --lib arc_vault::v2::integration -- --ignored
           FOUNDRY_OPTIMIZER=true FOUNDRY_OPTIMIZER_RUNS=200 FOUNDRY_EVM_VERSION=cancun forge test --root ../../contracts/evm --match-contract StyxVaultTest
       - name: Rust core and transport
         if: ${{ !cancelled() }}
@@ -68,13 +68,20 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: owner-page
         run: npm install --legacy-peer-deps && npm run typecheck && npm test && npm run e2e
+      - name: Setup page and browser tests
+        if: ${{ !cancelled() }}
+        working-directory: setup-page
+        run: npm ci --legacy-peer-deps && npm run typecheck && npm test && npm run e2e
       - name: Arkiv
         if: ${{ !cancelled() }}
         working-directory: arkiv
         run: npm install --legacy-peer-deps && npm run typecheck && npm test
-      - name: Python (documented failure remains visible)
+      - name: Python SDK and MCP server
         if: ${{ !cancelled() }}
-        run: uv lock --check && uv sync --all-packages && python3 .github/scripts/python-tests.py
+        run: uv lock --check && uv sync --all-packages && uv run pytest mcp-server/tests sdk/py/tests -q --junitxml=python-results.xml
+      - name: MCP examples
+        if: ${{ !cancelled() }}
+        run: uv run pytest mcp-server/examples -q
       - name: Local demo
         if: ${{ !cancelled() }}
         run: scripts/local_demo.sh
