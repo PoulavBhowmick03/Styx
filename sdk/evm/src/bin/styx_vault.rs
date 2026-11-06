@@ -2,9 +2,9 @@
 
 use std::io::{Read, Write};
 
+use serde_json::{json, Value};
 use styx_evm::arc_vault::service::{handle, Request};
 use styx_evm::arc_vault::{VaultCode, VaultError};
-use serde_json::{json, Value};
 
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 
