@@ -265,6 +265,16 @@ try {
     assert.equal(exported.owner.toLowerCase(), owner.toLowerCase());
     assert.equal(exported.token.toLowerCase(), token.toLowerCase());
     assert.deepEqual(Object.values(exported.vendors), ["Unlabelled vendor"]);
+    assert.equal("relay" in exported, false); // no relay unless the owner names one
+    // A relay address is exported as its origin, and a bad one is refused without writing a file.
+    await page.fill("#relay-url", "ftp://relay.example");
+    await page.click("#export-config");
+    await statusIs(page, /must be an http or https URL/);
+    await page.fill("#relay-url", "https://relay.example/some/path?x=1");
+    const [second] = await Promise.all([page.waitForEvent("download"), page.click("#export-config")]);
+    const withRelay = join(WORK, "owner-config-relay.json");
+    await second.saveAs(withRelay);
+    assert.equal(JSON.parse(readFileSync(withRelay, "utf8")).relay, "https://relay.example");
     await context.close();
   });
 
