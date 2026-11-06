@@ -2,7 +2,7 @@
 
 Claude 2 is a Claude Code session working for Ishita (see `docs/mumbai/ai-usage.md`). This file keeps what it was asked, as the plan requires.
 
-- **Briefs 1 to 4, including 3b, are verbatim.** They were pasted into the session as written.
+- **Briefs 1 to 4, including 3b, are verbatim.** They were pasted into the session as written. Brief 5 was an image and is transcribed.
 - **The chat requests are paraphrased.** They are shorter messages typed or spoken by Ishita. They are summarised from the session, not quoted, and the wording is Claude 2's.
 - The project's `CLAUDE.md` was also loaded as standing instructions. It is in the repository.
 
@@ -115,6 +115,32 @@ Then, once Codex's docs/mumbai/V2_REVIEW.md is on main with the interface, and o
 Rules: no transactions on Arc, no one's keys, nothing in owner-page/, relay/ or contracts/. Run gitleaks before each commit. Claim only what a test shows. Do not state the entry type or when the code was written. Report what ran and what didn't.
 ```
 
+## Brief 5 (transcribed from a screenshot): the rename, the removal and the v2 wait, 7 November, about 02:40 IST
+
+Ishita sent this as an image. Claude 2 transcribed it, so a typo is possible even though it was copied with care.
+
+```
+Pull main. It is about 02:40 IST; submissions close at 09:00. The project is now named Styx everywhere (8399c2c). Claude 1 is about to merge a large removal of unused code: StyxSettlement, StyxShieldedPool, StyxCodec, x402, the relay and chain modules, the coordinator crate and the Metropolis MCP tools. Wait until `git log` on main shows it, then do these in order. Codex is building v2 on codex/v2. v1 stays live and is the fallback.
+
+1. Follow docs/mumbai/AGENT_INSTALL.md from a fresh clone, on a local chain, under the new names (styx-vault, styx-disclosure, STYX_* settings, styx_* tools). Fix the guide wherever it is wrong. Report every deviation. Do this first: nobody has run it since the rename, and it is what a judge would try.
+
+2. Bring the docs in line with the code that now exists: ARCHITECTURE.md, DEMO_SCRIPT.md, RUNBOOK.md, AGENT_INSTALL.md, SUBMISSION_README_SECTIONS.md, mcp-server/examples/configs/ and packaging/README.md. Remove references to anything deleted. In DEMO_SCRIPT.md, add the rogue-agent shot: attack A1 reverts on chain, then the watcher sends an agent_revert notice to Telegram. Label it not yet rehearsed through the hosted relay. Keep, word for word, every sentence stating that code came from an earlier repository. Do not state the entry type or when the code was written.
+
+3. Update the line counts in SUBMISSION_README_SECTIONS.md from git, stating both what the first commit imported and what remains. Every claim must cite a transaction in STATUS.md or say "not yet". Note that G3 and Arkiv are being rerun with reissued grants, because the grant domain string changed, and don't cite those reruns until they are recorded.
+
+4. Fix V2_REVIEW.md finding 5 in mcp-server/examples/vault_agent.py, tests first: hold an exclusive lock on the state for the whole run, and fsync the file and its directory before the first submit. Only you touch this file.
+
+5. Check that mcp-server/examples/INSTALL_TEST.md and MODEL_TRIAL.md are still on main. If they are missing, restore them from history and tell Poulav. STATUS.md cites them.
+
+6. Review Claude 1's removal from outside: does anything on main still reference deleted code? Do the configs load? Does `uv sync --all-packages` work from clean? Report findings. Do not edit relay/, owner-page/ or sdk/.
+
+7. When Poulav sends new grants, rerun mcp-server/examples/g3_review.sh with them on your Mac and report exactly what it prints.
+
+8. When Codex's interface lands on main, build the organization screens in setup-page on branch claude2/v2: add, limit and switch off agents; add and remove approvers. Test on Anvil. Do not merge until Poulav says v2 ships. v1's setup flow must keep working.
+
+Rules: no transactions on Arc, no one's keys, nothing in contracts/ or sdk/evm/. Run gitleaks before each commit, and check that your push actually reached origin. Don't deploy: pushes no longer update the site, and Claude 1 handles deployment. Claim only what a test shows. Report what ran and what didn't.
+```
+
 ## Ishita's chat requests (paraphrased, in order)
 
 1. Write the report so far into `STATUS.md` so Poulav's agent can read it. Never add Claude as a co-author in commits or pushes: the author should be `ishitab02` only. Include the next steps in `STATUS.md`.
@@ -126,6 +152,7 @@ Rules: no transactions on Arc, no one's keys, nothing in owner-page/, relay/ or 
 7. Do the things that do not need Poulav, locally only, and do not push to `main`. (This produced the reviewer helper `g3_review.sh`, the faster setup-page test, this file, and the README section drafts.)
 8. Look at what Poulav's Claude is doing (a terminal log was pasted), say what else is left and what to do next.
 9. The two grants are on the Desktop, use them (this produced the G3 reviewer run reported in `STATUS.md`), followed by Poulav's decision above and Brief 4.
+10. Take World out of the documents (Ishita said World is not used), then Brief 5.
 
 ## Not here
 
