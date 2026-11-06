@@ -4,6 +4,7 @@
 # Needs from the environment, never from this repo:
 #   RPC_URL, VAULT, VENDOR_B (an allowlisted recipient other than the approved one),
 #   AGENT_KEY_FILE, PENDING_FILE and OWNER_SIGNATURE_FILE (the settled exception's files)
+# Optional: ATTACKS, a list such as "A1 A4", to run only those. The default is all four.
 set -euo pipefail
 : "${RPC_URL:?}" "${VAULT:?}" "${VENDOR_B:?}" "${AGENT_KEY_FILE:?}" "${PENDING_FILE:?}" "${OWNER_SIGNATURE_FILE:?}"
 
@@ -43,12 +44,15 @@ vendor_b_version="$(cast call "$VAULT" 'recipientVersion(address)(uint256)' "$VE
 fresh="$(cast keccak "attack-v2-$(date +%s)")"
 agent="$(cast wallet address --private-key "$agent_key")"
 
+want() { [[ " ${ATTACKS:-A1 A2 A3 A4} " == *" $1 "* ]]; }
+
 # A1: the agent pays the exception amount directly, skipping every tool.
-expect_revert "A1 over the agent's per-payment limit" "$PAY" "$(payment "$fresh" "$vendor_a" "$amount" "$version")"
+want A1 && expect_revert "A1 over the agent's per-payment limit" "$PAY" "$(payment "$fresh" "$vendor_a" "$amount" "$version")"
 # A2: the agent signs the exception itself and names itself as signer.
-own="$(cast wallet sign --no-hash --private-key "$agent_key" "$digest")"
-expect_revert "A2 the agent is not an approver" "$PAY_EXCEPTION" "$(payment "$fresh" "$vendor_a" "$amount" "$version")" "$(authorization "$agent")" "$own"
+if want A2; then own="$(cast wallet sign --no-hash --private-key "$agent_key" "$digest")"
+expect_revert "A2 the agent is not an approver" "$PAY_EXCEPTION" "$(payment "$fresh" "$vendor_a" "$amount" "$version")" "$(authorization "$agent")" "$own"; fi
 # A3: the approver's signature, on a payment to another allowed vendor under a new ID.
-expect_revert "A3 signature does not cover this payment" "$PAY_EXCEPTION" "$(payment "$fresh" "$VENDOR_B" "$amount" "$vendor_b_version")" "$(authorization "$signer")" "$signature"
+want A3 && expect_revert "A3 signature does not cover this payment" "$PAY_EXCEPTION" "$(payment "$fresh" "$VENDOR_B" "$amount" "$vendor_b_version")" "$(authorization "$signer")" "$signature"
 # A4: the settled exception again, with the approver's real signature.
-expect_revert "A4 payment ID already used" "$PAY_EXCEPTION" "$(payment "$id" "$vendor_a" "$amount" "$version")" "$(authorization "$signer")" "$signature"
+want A4 && expect_revert "A4 payment ID already used" "$PAY_EXCEPTION" "$(payment "$id" "$vendor_a" "$amount" "$version")" "$(authorization "$signer")" "$signature"
+exit 0

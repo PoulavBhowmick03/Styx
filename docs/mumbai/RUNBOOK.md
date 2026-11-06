@@ -100,3 +100,9 @@ Run the verifier on `fetched.grant`, then add the writer address and one query t
 ## Using a model as the agent
 
 `mcp-server/examples/vault_agent.py` is a scripted agent with no model. To use a real one, point its MCP client at `styx-mcp-server` with `STYX_BACKEND=vault`, `STYX_VAULT_DIR`, `STYX_VAULT_CLI` and the `STYX_VAULT_*` settings above. Never put an owner key in that environment. The server refuses to start if `STYX_VAULT_OWNER_KEY`, `STYX_VAULT_OWNER_KEY_FILE` or `STYX_DISCLOSURE_KEY_FILE` is set, but it cannot detect a key under another name.
+
+## The live demo
+
+`scripts/demo.sh` runs the demo one key press at a time through the real MCP tools on Arc: `check`, `pay`, `approve`, `attack`, `review`, `arkiv` and `links`, or all of them with no argument. Pass a step's name to run only that step.
+
+It reads a private settings file, `~/.styx-mumbai/demo.env`, or the path in `DEMO_ENV`, which stays outside this repo. It sets the `STYX_VAULT_*` values, `STYX_VAULT_RELAY_TOKEN`, `DEMO_RPC`, `DEMO_APPROVER`, `DEMO_VENDOR_A`, `DEMO_VENDOR_B`, `DEMO_ISSUER`, `ISSUER_KEY_FILE`, `REVIEWER_KEY_FILE`, `OTHER_REVIEWER_KEY_FILE`, `DEMO_ARKIV_TAG`, `DEMO_ARKIV_WRITER`, and optionally `ARKIV_ACCESS_KEY`. `check` reports how many runs today's limits allow.
