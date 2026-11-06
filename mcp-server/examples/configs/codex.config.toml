@@ -1,5 +1,12 @@
 # Add to ~/.codex/config.toml, or to .codex/config.toml in a trusted project.
 # env_vars forwards these variables from the environment Codex was started in.
+#
+# Codex's non-interactive mode (`codex exec`) refuses MCP tool calls unless the server's tools are approved:
+# a trial on 7 November got "MCP tool call requires approval, but approval policy is never". Codex's docs name
+# `default_tools_approval_mode` for this (values auto, prompt, writes, approve). It is not set here on purpose.
+# `approve` would let the agent call all four tools, including the one that submits payments, with no person
+# asked. The vault still enforces every limit, but choose it deliberately. With `approve` set, a trial session
+# did not finish and the cause was not found, so this config has not been shown to complete a payment in Codex.
 [mcp_servers.erebus-vault]
 command = "erebus-mcp-server"
 args = []
