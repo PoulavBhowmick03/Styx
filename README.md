@@ -6,6 +6,11 @@ See `docs/mumbai/BUILD_PLAN.md` for the plan.
 
 Run it with `docs/mumbai/RUNBOOK.md`. `scripts/local_demo.sh` rehearses the whole flow on a local chain.
 
+## Live on Arc testnet
+
+- **Vault:** [`0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1`](https://explorer.testnet.arc.io/address/0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1), deployed from [Arc Studio](https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16). Not audited. Test funds only.
+- **Evidence:** the routine payment, the owner-approved exception and attacks A1 to A4 ran as real transactions. Hashes are in `docs/mumbai/STATUS.md`.
+
 ## Arkiv
 
 Reviewers can fetch an encrypted payment record from Arkiv's Rabdi testnet with no other process running. See `arkiv/schema.md`.

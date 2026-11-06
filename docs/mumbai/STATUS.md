@@ -17,14 +17,33 @@ Read back from Arc: the transaction succeeded, the owner and token are correct, 
 
 A second vault, `0x392B9B12054C0E4E900752d63a77e1591aBBe234`, was deployed by mistake through the setup page and holds 50 USDC. The owner can withdraw it. It is not the demo vault, and it is not a Studio deployment.
 
+## Live run on Arc testnet
+
+Each is a real transaction on the deployed vault, with its receipt read back from Arc.
+
+| Step | Result | Transaction |
+| --- | --- | --- |
+| 0.25 USDC routine payment | Settled | `0x41cf57420722e3492f50a0552b23b3047ec8f322385c003d9c489a59be61b58f` |
+| A1: agent pays 6 USDC directly | Reverted | `0xeb8612da5b68338c6eb81212ebc8fbee9a5d7059f0f1cd0c4f49b23fc688167d` |
+| A2: agent signs the exception itself | Reverted | `0x31f8f4ca516eb8218ca9417aac1610ae4c3322fd299490a338ee5b848def57bc` |
+| A3: owner's signature on a payment to vendor B | Reverted | `0xd6043ce2a4090e059127c342d42a1cf715f085f39a2906a36a22284181fb2e3b` |
+| 6 USDC exception, signed by the owner in MetaMask | Settled | `0x32cc0ccc5092830eaaa0796a8d964b9453cf52a4eeb2a13138ff4bda0dd982f2` |
+| A4: the settled exception resubmitted | Reverted | `0x1c1cb3dc8d91db63bc877db30cd1977a174299bd4d3c59122af8b6e893745574` |
+
+Balances after: vault 53.75 USDC, vendor A 6.25 USDC, vendor B 0. A1 to A3 were also sent again in reruns, and those reverted too.
+
+The reviewer, on this same machine, verified all four results for the record, refused a tampered copy and a record sealed to someone else, and reported "unavailable" with its RPC unreachable. That is not yet G3, which needs a second machine.
+
+Not shown by this run: an audit, any wallet besides MetaMask, or the reasons for the reverts from the receipts. The revert reason for A4 was confirmed separately by simulation: `PaymentAlreadyUsed`.
+
 ## Gates
 
 | Gate | Status | Notes |
 | --- | --- | --- |
 | G0 | **Team says: fresh project, not Continuity. Conflict open, see below** | Arc Studio project: not confirmed |
-| G1 | Deployed and funded with 60 USDC, not configured | Needs the policy, vendors and agent gas, then the 0.25 USDC payment, A1 and A2 |
-| G2 | Not run | Needs the 6 USDC exception with a real wallet, A3 and A4 |
-| G3 | Not run | Needs the reviewer on a second machine |
+| G1 | **Passed on Arc testnet** | See "Live run" below |
+| G2 | **Passed on Arc testnet** | Signed in MetaMask. See "Live run" below |
+| G3 | Passed on one machine, not yet on a second | The gate needs a second machine or clean profile with its own RPC |
 | G4 | Not run | Needs tGLM and an Arkiv access key |
 | G5 | Not run | Needs a World client |
 
