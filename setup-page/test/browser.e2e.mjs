@@ -413,6 +413,30 @@ try {
     await context.close();
   });
 
+  await scenario("the page warns about plain sends next to the address and in the funding section, and the warning is true", async () => {
+    const { page, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    const near = await page.locator("#plain-send-warning").textContent();
+    assert.match(near, /Do not send money to this address with your wallet's Send button/);
+    assert.match(near, /lose the gas/);
+    assert.match(near, /Move into vault/);
+    assert.match(await page.locator("#fund-send-warning").textContent(), /Use this section, not your wallet's Send button/);
+    for (const id of ["plain-send-warning", "fund-send-warning"]) assert.equal(await page.locator(`#${id}`).isVisible(), true);
+    await shot(page, "plain-send-warning");
+    await context.close();
+    // The warning is only worth showing if it is true: a plain native send to the vault reverts and costs gas.
+    const before = BigInt(sh("cast", ["balance", vault, "--rpc-url", RPC]));
+    const attempt = spawnSync("cast", ["send", vault, "--value", "1", "--rpc-url", RPC, "--private-key", ownerKey], { encoding: "utf8" });
+    assert.notEqual(attempt.status, 0, "a plain send to the vault must fail");
+    assert.equal(BigInt(sh("cast", ["balance", vault, "--rpc-url", RPC])), before);
+    // ...and the token transfer the page uses is accepted.
+    const vaultTokens = BigInt(call(token, "balanceOf(address)(uint256)", vault));
+    send(ownerKey, token, "transfer(address,uint256)", vault, "1");
+    assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", vault)), vaultTokens + 1n);
+  });
+
   await scenario("a non-owner can read the vault but every change is disabled", async () => {
     const { page, context, prompts } = await openPage({ account: stranger });
     await connect(page, token);
