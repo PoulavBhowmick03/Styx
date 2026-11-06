@@ -4,6 +4,11 @@
 It pays one routine invoice, asks for an oversized one, waits for the owner's signature, and retries
 under the same payment ID when the outcome is unknown. Each line it prints is one JSON event.
 
+Restarts: every payment ID is written to `vault_agent_state.json` in the vault directory before it is
+submitted. A rerun looks up each kept ID on the chain before it proposes anything, retries an unsettled one
+under the same ID, and proposes nothing while the chain cannot be read, because an unreadable answer never means
+unpaid. The state file belongs to one pair of invoices: delete it only after checking the chain yourself.
+
 Environment: the EREBUS_VAULT_* settings the server needs, including EREBUS_VAULT_DIR, which must hold the
 invoice files. Usage: vault_agent.py <vendor-address> [--wait-seconds N]
 """
@@ -23,10 +28,15 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 ROUTINE = ("250000", "routine-invoice.txt", "INV-ROUTINE")
 OVERSIZED = ("6000000", "oversized-invoice.txt", "INV-OVERSIZED")
 UNKNOWN_RETRIES = 5
+STATE_FILE = "vault_agent_state.json"
 
 
 def emit(event: str, **fields) -> None:
     print(json.dumps({"event": event, **fields}), flush=True)
+
+
+class StateError(Exception):
+    """The state file exists but cannot be trusted. Carrying on would mean minting a new payment ID."""
 
 
 class Agent:
@@ -34,6 +44,31 @@ class Agent:
         self.session = session
         self.vendor = vendor
         self.directory = directory
+        self.state_path = directory / STATE_FILE
+        self.state = self._load_state()
+
+    def _load_state(self) -> dict:
+        try:
+            raw = self.state_path.read_text()
+        except FileNotFoundError:
+            return {}
+        try:
+            state = json.loads(raw)
+            if not isinstance(state, dict) or not all(isinstance(v, dict) for v in state.values()):
+                raise ValueError("unexpected shape")
+        except ValueError as error:
+            raise StateError(f"{self.state_path} is unreadable ({error}). Check the chain for the payment IDs "
+                             "you proposed, then fix or delete the file. Nothing was proposed.") from None
+        return state
+
+    def keep(self, step: str, **fields) -> None:
+        """Writes the state atomically and privately. Called before a payment is first submitted."""
+        self.state[step] = {**self.state.get(step, {}), **fields}
+        temporary = self.state_path.with_suffix(".tmp")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w") as output:
+            json.dump(self.state, output)
+        os.replace(temporary, self.state_path)
 
     async def tool(self, name: str, **arguments) -> dict:
         emit("call", tool=name, arguments=arguments)
@@ -61,43 +96,110 @@ class Agent:
             await asyncio.sleep(3)
         return "unknown"
 
-    async def run(self, wait_seconds: int) -> bool:
-        routine = await self.propose(*ROUTINE)
-        if not routine["ok"] or await self.settle(routine["result"]["payment_id"]) != "settled":
-            emit("failed", step="routine")
-            return False
-
-        oversized = await self.propose(*OVERSIZED)
-        if not oversized["ok"]:
-            emit("failed", step="propose oversized")
-            return False
-        payment_id = oversized["result"]["payment_id"]
-        # The agent tries anyway. The answer has to come from the rules, not from its restraint.
-        refused = await self.settle(payment_id)
-        emit("refused_without_owner", outcome=refused)
-        if refused != "OWNER_APPROVAL_REQUIRED":
-            emit("failed", step="expected a refusal")
-            return False
-
-        requested = await self.tool("erebus_request_owner_approval", payment_id=payment_id,
-                                    authorization_expiry=int(time.time()) + wait_seconds + 600)
-        if not requested["ok"]:
-            emit("failed", step="request approval")
-            return False
-        signature = f"signature-{payment_id.removeprefix('0x')[:12]}.json"
-        emit("waiting_for_owner", pending_file=requested["result"]["pending_file"], signature_file=signature,
-             approval_digest=requested["result"]["approval_digest"], payment_id=payment_id)
-        deadline = time.time() + wait_seconds
-        while not (self.directory / signature).exists():
-            if time.time() > deadline:
-                emit("failed", step="the owner did not sign in time")
-                return False
-            await asyncio.sleep(0.5)
-
-        outcome = await self.settle(payment_id, signature)
+    async def reconcile(self, payment_id: str, signature: str | None = None) -> str:
+        """Settles a kept payment ID without ever minting a new one: read the chain first, then retry the same ID."""
         status = await self.tool("erebus_payment_status", payment_id=payment_id)
-        emit("done", outcome=outcome, chain_state=status["result"]["state"] if status["ok"] else "unavailable")
-        return outcome == "settled"
+        if not status["ok"]:
+            # VERIFICATION_UNAVAILABLE never means unpaid, so submitting blind is not safe either.
+            return "unknown"
+        state = status["result"].get("state")
+        if state == "settled":
+            return "settled"
+        if state == "unavailable":
+            return "unknown"
+        return await self.settle(payment_id, signature)
+
+    def unknown(self, step: str, payment_id: str) -> None:
+        emit("unknown_outcome", step=step, payment_id=payment_id,
+             note="not failed and not unpaid: rerun this script and it will reconcile this ID before proposing anything")
+
+    async def pay_routine(self) -> bool:
+        kept = self.state.get("routine", {})
+        if kept.get("settled"):
+            emit("already_settled", step="routine", payment_id=kept["payment_id"])
+            return True
+        if kept.get("payment_id"):
+            payment_id = kept["payment_id"]
+            emit("reconciling", step="routine", payment_id=payment_id)
+            outcome = await self.reconcile(payment_id)
+        else:
+            routine = await self.propose(*ROUTINE)
+            if not routine["ok"]:
+                emit("failed", step="routine")
+                return False
+            payment_id = routine["result"]["payment_id"]
+            self.keep("routine", payment_id=payment_id, settled=False)  # before the first submit
+            outcome = await self.settle(payment_id)
+        if outcome == "settled":
+            self.keep("routine", settled=True)
+            return True
+        if outcome == "unknown":
+            self.unknown("routine", payment_id)
+        emit("failed", step="routine")
+        return False
+
+    async def pay_oversized(self, wait_seconds: int) -> bool:
+        kept = self.state.get("oversized", {})
+        if kept.get("settled"):
+            emit("already_settled", step="oversized", payment_id=kept["payment_id"])
+            return True
+        if kept.get("payment_id"):
+            payment_id = kept["payment_id"]
+            emit("reconciling", step="oversized", payment_id=payment_id)
+            status = await self.tool("erebus_payment_status", payment_id=payment_id)
+            if not status["ok"] or status["result"].get("state") == "unavailable":
+                self.unknown("oversized", payment_id)
+                emit("failed", step="oversized")
+                return False
+            if status["result"].get("state") == "settled":
+                self.keep("oversized", settled=True)
+                emit("done", outcome="settled", chain_state="settled")
+                return True
+        else:
+            oversized = await self.propose(*OVERSIZED)
+            if not oversized["ok"]:
+                emit("failed", step="propose oversized")
+                return False
+            payment_id = oversized["result"]["payment_id"]
+            self.keep("oversized", payment_id=payment_id, settled=False)  # before the first submit
+
+        signature = f"signature-{payment_id.removeprefix('0x')[:12]}.json"
+        if not (self.directory / signature).exists():
+            # The agent tries anyway. The answer has to come from the rules, not from its restraint.
+            refused = await self.settle(payment_id)
+            emit("refused_without_owner", outcome=refused)
+            if refused != "OWNER_APPROVAL_REQUIRED":
+                emit("failed", step="expected a refusal")
+                return False
+            requested = await self.tool("erebus_request_owner_approval", payment_id=payment_id,
+                                        authorization_expiry=int(time.time()) + wait_seconds + 600)
+            if not requested["ok"]:
+                emit("failed", step="request approval")
+                return False
+            emit("waiting_for_owner", pending_file=requested["result"]["pending_file"], signature_file=signature,
+                 approval_digest=requested["result"]["approval_digest"], payment_id=payment_id)
+            deadline = time.time() + wait_seconds
+            while not (self.directory / signature).exists():
+                if time.time() > deadline:
+                    emit("failed", step="the owner did not sign in time")
+                    return False
+                await asyncio.sleep(0.5)
+
+        outcome = await self.reconcile(payment_id, signature)
+        status = await self.tool("erebus_payment_status", payment_id=payment_id)
+        chain_state = status["result"]["state"] if status["ok"] else "unavailable"
+        emit("done", outcome=outcome, chain_state=chain_state)
+        if outcome == "settled":
+            self.keep("oversized", settled=True)
+            return True
+        if outcome == "unknown":
+            self.unknown("oversized", payment_id)
+        return False
+
+    async def run(self, wait_seconds: int) -> bool:
+        if not await self.pay_routine():
+            return False
+        return await self.pay_oversized(wait_seconds)
 
 
 async def main() -> int:
@@ -115,7 +217,12 @@ async def main() -> int:
             await session.initialize()
             tools = sorted(tool.name for tool in (await session.list_tools()).tools)
             emit("tools", tools=tools)
-            return 0 if await Agent(session, args.vendor, directory).run(args.wait_seconds) else 1
+            try:
+                agent = Agent(session, args.vendor, directory)
+            except StateError as error:
+                emit("failed", step="state file", detail=str(error))
+                return 2
+            return 0 if await agent.run(args.wait_seconds) else 1
 
 
 if __name__ == "__main__":
