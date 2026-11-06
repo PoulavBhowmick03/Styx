@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vault setup</title>
+    <style>
+      :root { color-scheme: light dark; --bg:#fafaf9; --fg:#1c1917; --muted:#57534e; --line:#d6d3d1; --error:#b91c1c; --ok:#15803d; --warn:#a16207; --accent:#1d4ed8; }
+      @media (prefers-color-scheme: dark) { :root { --bg:#1c1917; --fg:#fafaf9; --muted:#a8a29e; --line:#44403c; --error:#fca5a5; --ok:#86efac; --warn:#fcd34d; --accent:#93c5fd; } }
+      body { margin:0 auto; max-width:46rem; padding:2rem 1rem 4rem; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,sans-serif; }
+      h1 { font-size:1.5rem; margin:0 0 .5rem; }
+      h2 { font-size:1.125rem; margin:0 0 .75rem; }
+      section { border:1px solid var(--line); border-radius:.5rem; padding:1rem; margin:1rem 0; }
+      label { display:block; margin:.75rem 0 .25rem; font-weight:600; }
+      input { box-sizing:border-box; width:100%; padding:.5rem; font:inherit; border:1px solid var(--line); border-radius:.375rem; background:var(--bg); color:var(--fg); }
+      button { padding:.5rem 1rem; margin:.5rem .5rem 0 0; border:0; border-radius:.375rem; background:var(--accent); color:var(--bg); font:inherit; font-weight:600; cursor:pointer; }
+      button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+      button:disabled { opacity:.5; cursor:not-allowed; }
+      dl { display:grid; grid-template-columns:minmax(0,10rem) minmax(0,1fr); gap:.375rem 1rem; margin:.5rem 0; }
+      dt { color:var(--muted); } dd { margin:0; overflow-wrap:anywhere; }
+      .mono { font-family:ui-monospace,monospace; font-size:.875rem; }
+      .note { color:var(--muted); font-size:.875rem; }
+      .callout { border-left:4px solid var(--warn); padding:.5rem .75rem; margin:.75rem 0; }
+      #status { position:sticky; top:0; z-index:1; min-height:1.5rem; padding:.5rem .75rem; margin:1rem 0; background:var(--bg); border:1px solid var(--line); border-radius:.375rem; }
+      #status.error { color:var(--error); font-weight:600; }
+      ul.checks { list-style:none; padding:0; margin:.5rem 0; }
+      ul.checks li { padding:.25rem 0; }
+      .tag { display:inline-block; min-width:3.5rem; font-weight:700; }
+      .tag.ok { color:var(--ok); } .tag.warn { color:var(--error); } .tag.todo { color:var(--warn); }
+      ul.vendors { list-style:none; padding:0; }
+      ul.vendors li { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; padding:.25rem 0; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Vault setup</h1>
+    <p class="note">Arc testnet and test funds only. Not audited. This page never asks for a private key: every transaction is signed in your own wallet. The agent's key is made on the agent's machine and never comes here.</p>
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <section id="s-wallet">
+      <h2>1. Wallet</h2>
+      <p class="note">Connect the wallet that will own the vault. Use a different address for the agent.</p>
+      <button id="connect">Connect wallet</button>
+      <button id="switch-arc" class="secondary" hidden>Switch to Arc Testnet</button>
+      <dl><dt>Account</dt><dd id="account" class="mono">not connected</dd><dt>Chain</dt><dd id="chain">-</dd></dl>
+    </section>
+
+    <section id="s-vault" hidden>
+      <h2>2. Vault</h2>
+      <label for="token-input">USDC token address (6 decimals)</label>
+      <input id="token-input" class="mono" autocomplete="off" spellcheck="false" />
+      <p class="note" id="token-note"></p>
+      <button id="deploy">Deploy a new vault</button>
+      <label for="vault-input">Or connect an existing vault</label>
+      <input id="vault-input" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+      <button id="load-vault" class="secondary">Connect vault</button>
+      <p class="note" id="deploy-note"></p>
+    </section>
+
+    <div id="dashboard" hidden>
+      <section>
+        <h2>Is your money protected?</h2>
+        <p><strong>The vault protects only the USDC inside it.</strong> USDC left in the agent's wallet, or in any wallet the agent controls, is covered by no rule: the agent can send it anywhere. Move your funds into the vault and leave the agent's address with gas only.</p>
+        <ul class="checks" id="checks"></ul>
+        <p id="verdict"></p>
+      </section>
+
+      <section>
+        <h2>Vault</h2>
+        <dl>
+          <dt>Address</dt><dd id="v-address" class="mono"></dd>
+          <dt>Owner</dt><dd id="v-owner" class="mono"></dd>
+          <dt>Code</dt><dd id="v-code"></dd>
+          <dt>Policy version</dt><dd id="v-version"></dd>
+          <dt>Agent</dt><dd id="v-agent" class="mono"></dd>
+          <dt>Per-payment limit</dt><dd id="v-per"></dd>
+          <dt>Daily limit</dt><dd id="v-daily"></dd>
+          <dt>Policy valid until</dt><dd id="v-valid"></dd>
+          <dt>State</dt><dd id="v-paused"></dd>
+          <dt>Vault balance</dt><dd id="v-balance"></dd>
+          <dt>Your balance</dt><dd id="o-balance"></dd>
+          <dt>Agent address USDC</dt><dd id="a-tokens"></dd>
+          <dt>Agent address gas</dt><dd id="a-native"></dd>
+        </dl>
+        <p class="note" id="same-money"></p>
+        <p id="not-owner" class="callout" hidden>The connected account is not this vault's owner, so every change below is disabled.</p>
+      </section>
+
+      <section>
+        <h2>3. Limits</h2>
+        <div class="callout" id="policy-warning"></div>
+        <label for="policy-agent">Agent address</label>
+        <input id="policy-agent" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+        <label for="policy-per">Per-payment limit (USDC)</label>
+        <input id="policy-per" value="1" inputmode="decimal" />
+        <label for="policy-daily">Daily limit (USDC)</label>
+        <input id="policy-daily" value="10" inputmode="decimal" />
+        <label for="policy-days">Policy valid for (whole days from now)</label>
+        <input id="policy-days" value="7" inputmode="numeric" />
+        <button id="save-policy">Save limits</button>
+      </section>
+
+      <section>
+        <h2>4. Vendors</h2>
+        <div class="callout" id="vendor-warning"></div>
+        <ul class="vendors" id="vendors"></ul>
+        <p class="note" id="vendors-note"></p>
+        <label for="vendor-address">Vendor address</label>
+        <input id="vendor-address" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+        <label for="vendor-label">Your label for it (kept in this browser, used for the approval page's config)</label>
+        <input id="vendor-label" maxlength="60" />
+        <button id="add-vendor">Allow vendor</button>
+        <button id="check-vendor" class="secondary">Check address</button>
+        <button id="export-config" class="secondary">Download approval-page config</button>
+      </section>
+
+      <section>
+        <h2>5. Move money into the vault</h2>
+        <p>Funds go in through the USDC token's <code>transfer</code>, the only way this vault can receive them. Send the agent's address only what it needs for gas.</p>
+        <label for="fund-amount">Amount (USDC)</label>
+        <input id="fund-amount" inputmode="decimal" />
+        <button id="fund">Move into vault</button>
+        <button id="fund-max" class="secondary">Fill: everything except a gas reserve</button>
+        <p class="note" id="fund-note"></p>
+        <p id="agent-sweep" class="callout" hidden></p>
+      </section>
+
+      <section>
+        <h2>6. Pause and withdraw</h2>
+        <button id="toggle-pause">Pause</button>
+        <p class="note">Pausing stops the agent's payments at once. Money stays in the vault.</p>
+        <label for="withdraw-to">Withdraw to</label>
+        <input id="withdraw-to" class="mono" autocomplete="off" spellcheck="false" />
+        <label for="withdraw-amount">Amount (USDC)</label>
+        <input id="withdraw-amount" inputmode="decimal" />
+        <button id="withdraw">Review withdrawal</button>
+        <button id="withdraw-all" class="secondary">Fill: everything</button>
+        <p id="withdraw-review" class="callout" hidden></p>
+        <button id="withdraw-confirm" hidden>Confirm withdrawal</button>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
