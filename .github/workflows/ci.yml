@@ -44,6 +44,16 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: sdk/evm
         run: cargo build --bins && cargo test --no-fail-fast && cargo test --test vault_local_chain -- --ignored
+      - name: StyxVault organization checks
+        if: ${{ !cancelled() }}
+        working-directory: sdk/evm
+        shell: bash
+        run: |
+          shopt -s nullglob
+          vault_binaries=("$PWD"/target/debug/*-vault)
+          test "${#vault_binaries[@]}" -eq 1
+          STYX_VAULT_TEST_BINARY="${vault_binaries[0]}" cargo test --locked --lib arc_vault::v2::integration -- --ignored
+          FOUNDRY_OPTIMIZER=true FOUNDRY_OPTIMIZER_RUNS=200 FOUNDRY_EVM_VERSION=cancun forge test --root ../../contracts/evm --match-contract StyxVaultTest
       - name: Rust core and transport
         if: ${{ !cancelled() }}
         run: (cd sdk/core && cargo test) && (cd sdk/transport && cargo test)
