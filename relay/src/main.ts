@@ -40,6 +40,12 @@ function agentTokens(): Map<Address, string> {
     }
     tokens.set(getAddress(agent), token);
   }
+  // A shared token would let one agent act for another.
+  const all = [...tokens.values(), required("RELAY_AGENT_TOKEN")];
+  if (new Set(all).size !== all.length) {
+    console.error("each agent needs its own token, different from RELAY_AGENT_TOKEN");
+    process.exit(2);
+  }
   return tokens;
 }
 

@@ -86,6 +86,7 @@ export function tokenMatches(presented: string | undefined, expected: string | u
 export class Relay {
   private readonly requests = new Map<string, Stored>();
   private readonly byDigest = new Map<string, string>();
+  private readonly sending = new Map<string, Promise<boolean>>();
   // Separate budgets, so a burst of watcher notices cannot use up the owner's approval alerts.
   private readonly alertTimes: Record<AlertKind, number[]> = { approval: [], notice: [] };
 
@@ -94,6 +95,11 @@ export class Relay {
     private readonly notify: Notify,
     private readonly now: () => number = () => Math.floor(Date.now() / 1000),
   ) {
+    const tokens = [...(config.v2?.agentTokens.values() ?? [])];
+    // A shared token would let one agent act for another.
+    if (new Set(tokens).size !== tokens.length || tokens.includes(config.agentToken)) {
+      throw new Error("each agent needs its own token");
+    }
     this.load();
   }
 
@@ -158,16 +164,23 @@ export class Relay {
     return pending;
   }
 
-  private hasAlertSlot(kind: AlertKind): boolean {
+  /** Takes a slot before anything is awaited, so concurrent requests cannot all see the same free one. */
+  private reserveAlertSlot(kind: AlertKind): number | undefined {
     const cutoff = this.now() - 3600;
     this.alertTimes[kind] = this.alertTimes[kind].filter((at) => at > cutoff);
-    return this.alertTimes[kind].length < this.config.maxAlertsPerHour;
+    if (this.alertTimes[kind].length >= this.config.maxAlertsPerHour) return undefined;
+    const at = this.now();
+    this.alertTimes[kind].push(at);
+    return at;
   }
 
   /** Only a delivered alert counts against the budget, so an outage cannot use it up. */
-  private async send(kind: AlertKind, alert: Alert): Promise<boolean> {
+  private async send(kind: AlertKind, alert: Alert, reserved: number): Promise<boolean> {
     const delivered = await this.notify(alert).catch(() => false);
-    if (delivered) this.alertTimes[kind].push(this.now());
+    if (!delivered) {
+      const index = this.alertTimes[kind].indexOf(reserved);
+      if (index >= 0) this.alertTimes[kind].splice(index, 1);
+    }
     return delivered;
   }
 
@@ -274,13 +287,22 @@ export class Relay {
       this.byDigest.set(digest, request.id);
     }
     if (request.alerted) return { requestId: request.id, alerted: true };
-    if (!this.hasAlertSlot("approval")) {
+    // A repeat while the first send is still going reports its result, and never alerts twice.
+    const sending = this.sending.get(request.id);
+    if (sending) return { requestId: request.id, alerted: await sending };
+    const reserved = this.reserveAlertSlot("approval");
+    if (reserved === undefined) {
       this.save();
       return { requestId: request.id, alerted: false, rateLimited: true };
     }
     const url = this.link(request.id);
-    const text = lines(url).join("\n");
-    request.alerted = await this.send("approval", { text, url });
+    const delivery = this.send("approval", { text: lines(url).join("\n"), url }, reserved);
+    this.sending.set(request.id, delivery);
+    try {
+      request.alerted = await delivery;
+    } finally {
+      this.sending.delete(request.id);
+    }
     this.save();
     return { requestId: request.id, alerted: request.alerted };
   }
@@ -330,9 +352,10 @@ export class Relay {
     if (typeof value.kind !== "string" || typeof value.text !== "string" || !value.kind || !value.text) {
       throw new RelayError(400, "invalid alert");
     }
-    if (!this.hasAlertSlot("notice")) return { alerted: false };
+    const reserved = this.reserveAlertSlot("notice");
+    if (reserved === undefined) return { alerted: false };
     const clean = (s: string, max: number) => s.replace(/[^\x20-\x7e\n]/g, "").slice(0, max);
-    const alerted = await this.send("notice", { text: `Vault notice (${clean(value.kind, 40)})\n${clean(value.text, 500)}` });
+    const alerted = await this.send("notice", { text: `Vault notice (${clean(value.kind, 40)})\n${clean(value.text, 500)}` }, reserved);
     return { alerted };
   }
 }

@@ -184,8 +184,19 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             pending = settings.artifact(name)
         except VaultError as error:
             return invalid(error)
-        # With a relay, asking again re-sends the existing request, which retries a failed alert.
-        if settings.relay_url and Path(pending).exists():
+        # On v2 the binary decides: a live identical request keeps its authorization, and an expired or
+        # stale one gets a new one under the same payment ID. It never overwrites a file, so each ask gets a new one.
+        if is_v2:
+            attempt = 0
+            while Path(pending).exists():
+                attempt += 1
+                name = f"pending-{payment_id.removeprefix('0x')[:32]}-{(signer or 'owner').removeprefix('0x').lower()}-{attempt}.json"
+                try:
+                    pending = settings.artifact(name)
+                except VaultError as error:
+                    return invalid(error)
+        # On v1, asking again with a relay re-sends the existing request, which retries a failed alert.
+        if not is_v2 and settings.relay_url and Path(pending).exists():
             response: dict[str, Any] = {"ok": True, "result": {"status": "ok"}}
         else:
             response = await call("request_approval", payment_id=payment_id,

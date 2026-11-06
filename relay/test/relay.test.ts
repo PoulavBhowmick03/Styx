@@ -416,6 +416,23 @@ describe("v2 requests", () => {
     expect((await r.post("/requests", { pending: pendingJson("6000000", "x") }, TOKEN_A)).status).toBe(401);
   });
 
+  it("refuses to start with one token shared between agents", () => {
+    const shared = { ...v2Config.v2, agentTokens: new Map([[AGENT_A, TOKEN_A], [AGENT_B, TOKEN_A]]) };
+    const config = { chainId: 5042002n, vault: getAddress(VAULT), owner: AGENT_A, token: getAddress(TOKEN), pageUrl: "https://a.example/", relayUrl: "https://b.example", agentToken: AGENT_TOKEN, maxAlertsPerHour: 1, maxRequests: 1, v2: shared };
+    expect(() => new Relay(config, async () => true)).toThrow(/its own token/);
+  });
+
+  it("alerts once when many copies of a request arrive together, and keeps to the budget", async () => {
+    let sends = 0;
+    const config = { chainId: 5042002n, vault: getAddress(VAULT), owner: AGENT_A, token: getAddress(TOKEN), pageUrl: "https://a.example/", relayUrl: "https://b.example", agentToken: AGENT_TOKEN, maxAlertsPerHour: 2, maxRequests: 50, ...v2Config };
+    const relay = new Relay(config, async () => { sends += 1; await new Promise((r) => setTimeout(r, 5)); return true; });
+    const one = pendingV2(AGENT_A, approver.address, "same");
+    await Promise.all(Array.from({ length: 5 }, () => relay.submit(one, TOKEN_A)));
+    expect(sends).toBe(1);
+    await Promise.all(["a", "b", "c", "d"].map((suffix) => relay.submit(pendingV2(AGENT_A, approver.address, suffix), TOKEN_A)));
+    expect(sends).toBe(2);
+  });
+
   it("survives a restart", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-v2-"));
     const r = await setup({ config: { ...v2Config, stateDir: dir } });
