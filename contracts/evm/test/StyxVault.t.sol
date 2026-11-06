@@ -214,6 +214,8 @@ contract StyxVaultTest is TestBase {
         vm.prank(owner);
         vault.setApprover(address(0xCAFE), true);
         vm.prank(owner);
+        vault.setApprover(address(0xCAFE), false);
+        vm.prank(owner);
         vault.setRecipient(otherVendor, false);
         exception(p, a, sig);
         assertTrue(vault.consumedPayment(p.paymentId));
@@ -620,18 +622,27 @@ contract StyxVaultTest is TestBase {
     function test_reentrantTransferRollsBack() public {
         MockReentrantERC20 malicious = new MockReentrantERC20();
         vault = new Vault(owner, address(malicious));
-        config(agent, 1_000_000, 10_000_000, true);
+        // The callback itself is an enabled agent, so caller checks cannot mask a missing lock.
+        config(address(malicious), 1_000_000, 10_000_000, true);
         vm.prank(owner);
         vault.setRecipient(vendor, true);
         vm.prank(owner);
+        vault.setRecipient(otherVendor, true);
+        vm.prank(owner);
         vault.setVaultDailyLimit(10_000_000);
         malicious.mint(address(vault), 10_000_000);
-        Vault.Payment memory p = payment(agent, 1_000_000);
+        Vault.Payment memory p = payment(address(malicious), 1_000_000);
         p.token = address(malicious);
-        malicious.armTransfer(address(vault), abi.encodeCall(vault.pay, (p)));
+        Vault.Payment memory q = payment(address(malicious), 1_000_000);
+        q.token = address(malicious);
+        q.recipient = otherVendor;
+        malicious.armTransfer(address(vault), abi.encodeCall(vault.pay, (q)));
         vm.expectRevert(Vault.TransferFailed.selector);
         pay(p);
         assertFalse(vault.consumedPayment(p.paymentId));
+        assertFalse(vault.consumedPayment(q.paymentId));
+        assertEq(malicious.balanceOf(vendor), 0);
+        assertEq(malicious.balanceOf(otherVendor), 0);
         assertEq(vault.spentByDay(block.timestamp / 1 days), 0);
     }
 
