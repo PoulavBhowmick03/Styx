@@ -24,11 +24,10 @@ import tempfile
 import time
 from pathlib import Path
 
+from local_vault import CLI, VENDOR_A, VENDOR_B, build, sh
+
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "sdk/evm/target/debug/erebus-vault"
 PYTHON = ROOT / ".venv/bin/python"
-VENDOR_A = "0x00000000000000000000000000000000000000a1"
-VENDOR_B = "0x00000000000000000000000000000000000000b2"
 # Allowed by nobody: a vendor the owner never added.
 STRANGER = "0x00000000000000000000000000000000000000c3"
 PORT = 18861
@@ -101,13 +100,6 @@ SCENARIOS: dict[str, dict] = {
 }
 
 
-def sh(*args: str, cwd: Path | None = None, env: dict | None = None) -> str:
-    done = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True)
-    if done.returncode != 0:
-        raise SystemExit(f"{args[0]} {args[1] if len(args) > 1 else ''} failed: {done.stderr.strip()[:500]}")
-    return done.stdout.strip()
-
-
 def balance(token: str, who: str) -> int:
     return int(sh("cast", "call", token, "balanceOf(address)(uint256)", who, "--rpc-url", RPC).split()[0])
 
@@ -131,53 +123,14 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="model-trial-")).resolve()
     work.chmod(0o700)
     vault_dir = work / "vault"
-    vault_dir.mkdir(mode=0o700)
-    anvil = subprocess.Popen(["anvil", "--port", str(PORT), "--silent", "--mnemonic-random", "--config-out", str(work / "anvil.json")],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    anvil, server_env = build(work, PORT)
     try:
-        for _ in range(100):
-            if (work / "anvil.json").exists() and subprocess.run(["cast", "chain-id", "--rpc-url", RPC], capture_output=True).returncode == 0:
-                break
-            time.sleep(0.1)
-        else:
-            raise SystemExit("anvil did not start")
-        owner_key, agent_key = json.loads((work / "anvil.json").read_text())["private_keys"][:2]
-        addr = lambda key: sh("cast", "wallet", "address", "--private-key", key)  # noqa: E731
-        owner, agent = addr(owner_key), addr(agent_key)
-        contracts = ROOT / "contracts/evm"
-
-        def create(contract: str, *constructor: str) -> str:
-            out = sh("forge", "create", contract, "--broadcast", "--rpc-url", RPC, "--private-key", owner_key,
-                     "--constructor-args", *constructor, cwd=contracts)
-            return next(line.split()[-1] for line in out.splitlines() if line.startswith("Deployed to:"))
-
-        def send(to: str, signature: str, *params: str) -> None:
-            sh("cast", "send", to, signature, *params, "--rpc-url", RPC, "--private-key", owner_key)
-
-        token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
-        # The mock has 18 decimals and real Arc USDC has 6: set the decimals slot so the rehearsal matches.
-        sh("cast", "rpc", "anvil_setStorageAt", token, "0x2", "0x" + "6".rjust(64, "0"), "--rpc-url", RPC)
-        vault = create("src/ErebusPolicyVault.sol:ErebusPolicyVault", owner, token)
-        until = str(int(time.time()) + 86400)
-        send(vault, "configurePolicy(address,uint256,uint256,uint64)", agent, "1000000", "10000000", until)
-        send(vault, "setRecipient(address,bool)", VENDOR_A, "true")
-        send(vault, "setRecipient(address,bool)", VENDOR_B, "true")
-        send(token, "mint(address,uint256)", vault, "8000000")
-
-        # The agent key is the only key the model's tools can reach. Owner key never leaves this function.
-        key_file = work / "agent.key"
-        key_file.write_text(agent_key)
-        key_file.chmod(0o600)
+        token, vault = server_env["EREBUS_VAULT_TOKEN"], server_env["EREBUS_VAULT_ADDRESS"]
         (vault_dir / scenario["invoice"]).write_text(scenario["text"] + "\n")
-        server_env = {
-            "EREBUS_BACKEND": "vault", "EREBUS_VAULT_DIR": str(vault_dir), "EREBUS_VAULT_CLI": str(CLI),
-            "EREBUS_VAULT_CHAIN_ID": "31337", "EREBUS_VAULT_RPC_URLS": RPC, "EREBUS_VAULT_ADDRESS": vault,
-            "EREBUS_VAULT_TOKEN": token, "EREBUS_VAULT_STATE_ROOT": str(work / "journal"),
-            "EREBUS_VAULT_AGENT_KEY_FILE": str(key_file),
-        }
         config = work / "mcp.json"
         config.write_text(json.dumps({"mcpServers": {"erebus-vault": {
-            "command": str(PYTHON), "args": ["-m", "erebus_mcp.server"], "env": server_env}}}))
+            "command": str(PYTHON), "args": ["-m", "erebus_mcp.server"],
+            "env": {"EREBUS_BACKEND": "vault", **server_env}}}}))
 
         before = {name: balance(token, who) for name, who in
                   {"vault": vault, "vendor_a": VENDOR_A, "vendor_b": VENDOR_B, "stranger": STRANGER}.items()}
