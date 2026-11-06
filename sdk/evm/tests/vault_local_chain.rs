@@ -195,14 +195,31 @@ impl Chain {
 
     /// Runs the real binary with only the agent's configuration in its environment.
     fn cli(&self, request: Value, timeout_seconds: u64) -> Value {
+        self.cli_for(
+            request,
+            timeout_seconds,
+            &self.vault,
+            &self.token,
+            &self.dir.join("agent.key"),
+        )
+    }
+
+    fn cli_for(
+        &self,
+        request: Value,
+        timeout_seconds: u64,
+        vault: &str,
+        token: &str,
+        agent_key: &Path,
+    ) -> Value {
         let mut child = Command::new(env!("CARGO_BIN_EXE_styx-vault"))
             .env_clear()
             .env("STYX_VAULT_CHAIN_ID", CHAIN_ID.to_string())
             .env("STYX_VAULT_RPC_URLS", &self.rpc_url)
-            .env("STYX_VAULT_ADDRESS", &self.vault)
-            .env("STYX_VAULT_TOKEN", &self.token)
+            .env("STYX_VAULT_ADDRESS", vault)
+            .env("STYX_VAULT_TOKEN", token)
             .env("STYX_VAULT_STATE_ROOT", self.dir.join("journal"))
-            .env("STYX_VAULT_AGENT_KEY_FILE", self.dir.join("agent.key"))
+            .env("STYX_VAULT_AGENT_KEY_FILE", agent_key)
             .env(
                 "STYX_VAULT_RECEIPT_TIMEOUT_SECONDS",
                 timeout_seconds.to_string(),
@@ -925,4 +942,145 @@ async fn rpc_fails_over_past_dead_and_rate_limited_endpoints() {
         ),
         CallOutcome::Returned(_) => panic!("the oversized payment did not revert"),
     }
+}
+
+#[tokio::test]
+#[ignore = "requires forge, cast and anvil"]
+async fn journal_rejects_changed_deployment_and_preserves_legacy_signed_records() {
+    let chain = Chain::start().await;
+    let proposed = chain.propose(VENDOR_A, 250_000, b"journal-binding").await;
+    let id = proposed["payment_id"].as_str().unwrap();
+    let request = json!({"method":"submit", "payment_id":id});
+    // A valid v1 vault on the same chain is still a different deployment.
+    let second = deployed_address(&run(
+        "forge",
+        &[
+            "create",
+            "src/StyxPolicyVault.sol:StyxPolicyVault",
+            "--broadcast",
+            "--rpc-url",
+            &chain.rpc_url,
+            "--private-key",
+            &chain.owner_key,
+            "--constructor-args",
+            &address_of(&chain.owner_key),
+            &chain.token,
+        ],
+        &contracts_dir(),
+    ));
+    let wrong = chain.cli_for(
+        request.clone(),
+        0,
+        &second,
+        &chain.token,
+        &chain.dir.join("agent.key"),
+    );
+    assert_eq!(wrong["status"], "error", "{wrong}");
+    assert!(wrong.to_string().contains("binding"), "{wrong}");
+    let wrong = chain.cli_for(
+        request.clone(),
+        0,
+        &chain.vault,
+        VENDOR_B,
+        &chain.dir.join("agent.key"),
+    );
+    assert_eq!(wrong["status"], "error", "{wrong}");
+    let other_key = chain.dir.join("other.key");
+    std::fs::write(&other_key, &chain.owner_key).unwrap();
+    std::fs::set_permissions(&other_key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let wrong = chain.cli_for(request.clone(), 0, &chain.vault, &chain.token, &other_key);
+    assert_eq!(wrong["status"], "error", "{wrong}");
+    assert_eq!(chain.cli(request.clone(), 10)["state"], "settled");
+
+    // Old records have no binding field. Their signed attempt proves the original context.
+    let path = chain.dir.join("journal").join(format!("{}.json", &id[2..]));
+    let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy.as_object_mut().unwrap().remove("binding");
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    assert_eq!(chain.cli(request, 10)["state"], "settled");
+    let restored: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert!(restored["binding"].is_object());
+    assert_eq!(chain.balance(VENDOR_A).await, 250_000);
+}
+
+#[tokio::test]
+#[ignore = "requires forge, cast and anvil"]
+async fn legacy_unsigned_record_is_not_guessed_or_rewritten() {
+    let chain = Chain::start().await;
+    let proposed = chain.propose(VENDOR_A, 250_000, b"legacy-unsigned").await;
+    let id = proposed["payment_id"].as_str().unwrap();
+    let path = chain.dir.join("journal").join(format!("{}.json", &id[2..]));
+    let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy.as_object_mut().unwrap().remove("binding");
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    let response = chain.submit(id, None, 0);
+    assert_eq!(response["status"], "error", "{response}");
+    assert!(response
+        .to_string()
+        .contains("legacy journal binding is unknown"));
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    assert_eq!(chain.balance(VENDOR_A).await, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires forge, cast and anvil"]
+async fn legacy_signed_timeout_resumes_same_transaction_and_rejects_another_vault() {
+    let chain = Chain::start().await;
+    let proposed = chain.propose(VENDOR_A, 250_000, b"legacy-timeout").await;
+    let id = proposed["payment_id"].as_str().unwrap();
+    run(
+        "cast",
+        &[
+            "rpc",
+            "evm_setAutomine",
+            "false",
+            "--rpc-url",
+            &chain.rpc_url,
+        ],
+        Path::new("."),
+    );
+    let first = chain.submit(id, None, 0);
+    assert_eq!(first["state"], "unknown", "{first}");
+    let path = chain.dir.join("journal").join(format!("{}.json", &id[2..]));
+    let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy.as_object_mut().unwrap().remove("binding");
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    let request = json!({"method":"submit", "payment_id":id});
+    let wrong = chain.cli_for(
+        request.clone(),
+        0,
+        VENDOR_B,
+        &chain.token,
+        &chain.dir.join("agent.key"),
+    );
+    assert_eq!(wrong["status"], "error", "{wrong}");
+    assert!(wrong.to_string().contains("binding"));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    let resumed = chain.cli(request.clone(), 0);
+    assert_eq!(resumed["state"], "unknown", "{resumed}");
+    assert_eq!(resumed["tx_hash"], first["tx_hash"]);
+    run(
+        "cast",
+        &[
+            "rpc",
+            "evm_setAutomine",
+            "true",
+            "--rpc-url",
+            &chain.rpc_url,
+        ],
+        Path::new("."),
+    );
+    run(
+        "cast",
+        &["rpc", "evm_mine", "--rpc-url", &chain.rpc_url],
+        Path::new("."),
+    );
+    let settled = chain.cli(request, 10);
+    assert_eq!(settled["state"], "settled", "{settled}");
+    assert_eq!(settled["tx_hash"], first["tx_hash"]);
+    let record: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(record["attempts"].as_array().unwrap().len(), 1);
+    assert_eq!(chain.balance(VENDOR_A).await, 250_000);
 }
