@@ -100,7 +100,7 @@
           <dt>Policy version</dt><dd id="v-version"></dd>
           <dt>Agent</dt><dd id="v-agent" class="mono"></dd>
           <dt>Per-payment limit</dt><dd id="v-per"></dd>
-          <dt>Daily limit</dt><dd id="v-daily"></dd>
+          <dt>Daily limit</dt><dd><span id="v-daily"></span> <span class="note">(most the agent can pay in a day without a signature)</span></dd>
           <dt>Policy valid until</dt><dd id="v-valid"></dd>
           <dt>State</dt><dd id="v-paused"></dd>
           <dt>Vault balance</dt><dd id="v-balance"></dd>
@@ -115,12 +115,13 @@
 
       <section>
         <h2>3. Limits</h2>
+        <div class="callout" id="daily-meaning"><strong>The daily limit is the most the agent can pay in a day without your signature.</strong> The per-payment limit does not stop splitting: with a 1 USDC per-payment limit, six payments of 1 USDC to an allowed vendor are each within the limit and together spend 6 USDC, with no approval asked. So set the daily limit to the amount you would accept losing in a day. The per-payment limit decides only which single payments ask you first.</div>
         <div class="callout" id="policy-warning"></div>
         <label for="policy-agent">Agent address</label>
         <input id="policy-agent" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
-        <label for="policy-per">Per-payment limit (USDC)</label>
+        <label for="policy-per">Per-payment limit (USDC): a single payment above this asks for your signature</label>
         <input id="policy-per" value="1" inputmode="decimal" />
-        <label for="policy-daily">Daily limit (USDC)</label>
+        <label for="policy-daily">Daily limit (USDC): the most the agent can pay in a day without your signature</label>
         <input id="policy-daily" value="10" inputmode="decimal" />
         <label for="policy-days">Policy valid for (whole days from now)</label>
         <input id="policy-days" value="7" inputmode="numeric" />
