@@ -74,6 +74,10 @@ impl VaultRpc {
                 Ok(Ok(value)) => return Ok(value),
                 Ok(Err(error)) => {
                     if let Some(payload) = error.as_error_resp() {
+                        // A busy endpoint has not answered the question, so try the next one.
+                        if is_rate_limited(payload.code, &payload.message) {
+                            continue;
+                        }
                         rejected = Some(RpcFailure::Rejected {
                             message: payload.message.to_string(),
                             data: payload
@@ -276,6 +280,14 @@ impl VaultRpc {
     }
 }
 
+/// Whether a JSON-RPC error means the endpoint is busy, rather than an answer about the chain.
+fn is_rate_limited(code: i64, message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    matches!(code, 429 | -32005 | -32029)
+        || message.contains("rate limit")
+        || message.contains("too many requests")
+}
+
 /// Reads a receipt's status: `Some(true)` for success, `Some(false)` for a revert.
 #[must_use]
 pub fn receipt_succeeded(receipt: &Value) -> Option<bool> {
@@ -306,4 +318,19 @@ enum RpcFailure {
         message: String,
         data: Option<Value>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_rate_limited;
+
+    #[test]
+    fn only_busy_endpoints_count_as_rate_limited() {
+        assert!(is_rate_limited(-32005, "limit exceeded"));
+        assert!(is_rate_limited(429, "slow down"));
+        assert!(is_rate_limited(-32000, "Rate limit reached"));
+        // Vault reverts and fee errors are real answers, even when they mention a limit.
+        assert!(!is_rate_limited(3, "execution reverted"));
+        assert!(!is_rate_limited(-32000, "exceeds block gas limit"));
+    }
 }
