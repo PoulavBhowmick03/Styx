@@ -533,25 +533,60 @@ function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
 
 // ---- A v2 request: the signer may be an approver with their own wallet ----
 
+// Arc's own public endpoints, from https://docs.arc.io/arc/references/connect-to-arc. Used only if the
+// wallet's RPC cannot answer, because wallets often sit on a rate-limited endpoint. The page is already
+// what the owner trusts to show a request, and the vault checks every signature whatever this reads.
+const ARC_READ_RPCS = ["https://arc-testnet.drpc.org", "https://rpc.testnet.arc.io", "https://rpc.drpc.testnet.arc.io"];
+
+async function readThroughArc(to: Address, data: Hex): Promise<string> {
+  for (const url of ARC_READ_RPCS) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to, data }, "latest"] }),
+      });
+      const reply = (await response.json()) as { result?: unknown };
+      if (typeof reply.result === "string") return reply.result;
+    } catch {
+      // The next endpoint may answer.
+    }
+  }
+  throw new Error("no answer");
+}
+
+/** One read at a time, retried, because a burst is what rate-limited wallet endpoints refuse. */
+async function readVault(wallet: Eip1193, request: PendingV2, data: Hex, words: number): Promise<bigint[]> {
+  const shape = new RegExp(`^0x[0-9a-fA-F]{${64 * words}}$`);
+  let result: string | undefined;
+  for (let attempt = 0; attempt < 3 && result === undefined; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+    try {
+      const answer = await wallet.request({ method: "eth_call", params: [{ to: request.vault, data }, "latest"] });
+      if (typeof answer === "string" && shape.test(answer)) result = answer;
+    } catch {
+      // Retried below.
+    }
+  }
+  if (result === undefined && request.chainId === ARC_CHAIN_ID) result = await readThroughArc(request.vault, data);
+  if (result === undefined || !shape.test(result)) throw new Error("no answer");
+  const answer = result;
+  return Array.from({ length: words }, (_, index) => BigInt(`0x${answer.slice(2 + index * 64, 66 + index * 64)}`));
+}
+
 async function readFactsV2(wallet: Eip1193, request: PendingV2): Promise<ChainFactsV2> {
-  const read = async (data: Hex, words = 1) => {
-    const result = (await wallet.request({ method: "eth_call", params: [{ to: request.vault, data }, "latest"] })) as string;
-    if (!new RegExp(`^0x[0-9a-fA-F]{${64 * words}}$`).test(result)) throw new Error("no answer");
-    return Array.from({ length: words }, (_, index) => BigInt(`0x${result.slice(2 + index * 64, 66 + index * 64)}`));
-  };
+  const read = (data: Hex, words = 1) => readVault(wallet, request, data, words);
   const toAddress = (word: bigint) => getAddress(`0x${word.toString(16).padStart(40, "0")}`);
   const { agent, recipient } = request.payment;
   const { signer } = request.authorization;
-  const [[version], [owner], [token], [paused], [allowed], [recipientVersion], policy, approver] = await Promise.all([
-    read(callData("contractVersion")),
-    read(callData("owner")),
-    read(callData("token")),
-    read(callData("paused")),
-    read(callData("allowedRecipient", [recipient])),
-    read(callData("recipientVersion", [recipient])),
-    read(callData("agentPolicy", [agent]), 5),
-    read(callData("approverState", [signer]), 2),
-  ]);
+  const [version] = await read(callData("contractVersion"));
+  const [owner] = await read(callData("owner"));
+  const [token] = await read(callData("token"));
+  const [paused] = await read(callData("paused"));
+  const [allowed] = await read(callData("allowedRecipient", [recipient]));
+  const [recipientVersion] = await read(callData("recipientVersion", [recipient]));
+  const policy = await read(callData("agentPolicy", [agent]), 5);
+  const approver = await read(callData("approverState", [signer]), 2);
   return {
     contractVersion: version!,
     owner: toAddress(owner!),
