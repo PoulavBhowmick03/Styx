@@ -1,5 +1,7 @@
 # Testing `docs/mumbai/AGENT_INSTALL.md`
 
+> Written before the vault contract was replaced with Arc Studio's version and before `valid_until` became optional. Part 1's `forge build` step has since been removed from the guide, because the setup page now builds the vault itself. The guide was not re-followed end to end after those changes.
+
 Followed on 6 November 2026, step by step, from a fresh clone of this repository (branch `claude2/real-agent`) into an empty folder, on macOS. The Rust build, the Python environment, the contract build and the npm installs were all fresh. The agent was Claude Code (`claude -p`, version 2.1.319) using the guide's own `claude-code.mcp.json` and prompts.
 
 ## What passed
