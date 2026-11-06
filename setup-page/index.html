@@ -21,7 +21,18 @@
       .mono { font-family:ui-monospace,monospace; font-size:.875rem; }
       .note { color:var(--muted); font-size:.875rem; }
       .callout { border-left:4px solid var(--warn); padding:.5rem .75rem; margin:.75rem 0; }
-      #status { position:sticky; top:0; z-index:1; min-height:1.5rem; padding:.5rem .75rem; margin:1rem 0; background:var(--bg); border:1px solid var(--line); border-radius:.375rem; }
+      #top { position:sticky; top:0; z-index:2; background:var(--bg); padding:.5rem 0; }
+      #vault-banner { border:2px solid var(--accent); border-radius:.5rem; padding:.5rem .75rem; margin-bottom:.5rem; }
+      #vault-banner.none { border-color:var(--line); color:var(--muted); }
+      #vault-banner.notowner { border-color:var(--error); }
+      #vault-banner .label { font-size:.75rem; font-weight:700; letter-spacing:.05em; color:var(--muted); }
+      #vault-banner .addr { font-family:ui-monospace,monospace; font-weight:700; overflow-wrap:anywhere; }
+      #vault-banner .meta { font-size:.875rem; overflow-wrap:anywhere; }
+      #vault-banner .bad { color:var(--error); font-weight:700; }
+      #status { min-height:1.5rem; padding:.5rem .75rem; background:var(--bg); border:1px solid var(--line); border-radius:.375rem; }
+      details { margin:.5rem 0; } summary { cursor:pointer; font-weight:600; }
+      #recent { display:flex; flex-direction:column; align-items:flex-start; }
+      #recent button { font-family:ui-monospace,monospace; font-size:.8rem; }
       #status.error { color:var(--error); font-weight:600; }
       ul.checks { list-style:none; padding:0; margin:.5rem 0; }
       ul.checks li { padding:.25rem 0; }
@@ -35,7 +46,10 @@
   <body>
     <h1>Vault setup</h1>
     <p class="note">Arc testnet and test funds only. Not audited. This page never asks for a private key: every transaction is signed in your own wallet. The agent's key is made on the agent's machine and never comes here.</p>
-    <div id="status" role="status" aria-live="polite"></div>
+    <div id="top">
+      <div id="vault-banner" class="none" role="region" aria-label="Connected vault"></div>
+      <div id="status" role="status" aria-live="polite"></div>
+    </div>
 
     <section id="s-wallet">
       <h2>1. Wallet</h2>
@@ -47,14 +61,26 @@
 
     <section id="s-vault" hidden>
       <h2>2. Vault</h2>
-      <label for="token-input">USDC token address (6 decimals)</label>
-      <input id="token-input" class="mono" autocomplete="off" spellcheck="false" />
-      <p class="note" id="token-note"></p>
-      <button id="deploy">Deploy a new vault</button>
-      <label for="vault-input">Or connect an existing vault</label>
-      <input id="vault-input" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
-      <button id="load-vault" class="secondary">Connect vault</button>
-      <p class="note" id="deploy-note"></p>
+      <p id="vault-summary"></p>
+      <p class="note" id="link-note"></p>
+      <details id="chooser" open>
+        <summary>Choose a different vault, or create one</summary>
+        <label for="vault-input">Connect an existing vault by address</label>
+        <input id="vault-input" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+        <button id="load-vault" class="secondary">Connect vault</button>
+        <div id="recent" aria-label="Vaults this browser has opened"></div>
+        <label for="token-input">USDC token address (6 decimals), used only when creating a vault</label>
+        <input id="token-input" class="mono" autocomplete="off" spellcheck="false" />
+        <p class="note" id="token-note"></p>
+        <div class="callout">Deploying creates a <strong>new</strong> vault with a <strong>new</strong> address. If your team already has a vault, connect to it above instead: money sent to a new vault is not in the old one.</div>
+        <button id="deploy">Deploy a new vault</button>
+        <div id="deploy-confirm" class="callout" hidden>
+          <p id="deploy-confirm-text"></p>
+          <button id="deploy-yes">Yes, deploy a new vault</button>
+          <button id="deploy-no" class="secondary">Cancel</button>
+        </div>
+        <p class="note" id="deploy-note"></p>
+      </details>
     </section>
 
     <div id="dashboard" hidden>
@@ -122,9 +148,13 @@
         <p>Funds go in through the USDC token's <code>transfer</code>, the only way this vault can receive them. Send the agent's address only what it needs for gas.</p>
         <label for="fund-amount">Amount (USDC)</label>
         <input id="fund-amount" inputmode="decimal" />
-        <button id="fund">Move into vault</button>
+        <button id="fund">Review move</button>
         <button id="fund-max" class="secondary">Fill: everything except a gas reserve</button>
+        <p id="fund-review" class="callout" hidden></p>
+        <button id="fund-confirm" hidden>Confirm move into vault</button>
         <p class="note" id="fund-note"></p>
+        <p id="code-warning" class="callout" hidden>This vault's code does not match the build this page deploys, so funding is switched off. A link or a mistyped address can lead to someone else's contract. Only unlock it if someone you trust has reviewed this vault's code.</p>
+        <button id="unlock-funding" class="secondary" hidden>I have reviewed this vault's code: allow funding</button>
         <p id="agent-sweep" class="callout" hidden></p>
       </section>
 

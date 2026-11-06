@@ -62,7 +62,8 @@ try {
   await waitFor(async () => (await fetch(`http://127.0.0.1:${PAGE_PORT}`)).ok, "page");
   browser = await chromium.launch({ channel: "chrome", headless: true });
 
-  async function openPage({ account = owner, chainId = "0x7a69", rejectNext = false } = {}) {
+  async function openPage(options = {}) { return openPageAt("", options); }
+  async function openPageAt(query, { account = owner, chainId = "0x7a69", rejectNext = false } = {}) {
     const context = await browser.newContext({ viewport: { width: 1000, height: 1400 }, acceptDownloads: true });
     const page = await context.newPage();
     const errors = [];
@@ -88,7 +89,7 @@ try {
         }),
       };
     });
-    await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
+    await page.goto(`http://127.0.0.1:${PAGE_PORT}/${query}`);
     await page.waitForLoadState("networkidle");
     return { page, errors, prompts, control, context };
   }
@@ -99,7 +100,8 @@ try {
   const connect = async (page, tokenAddress) => {
     await page.click("#connect");
     await page.locator("#s-vault").waitFor({ state: "visible" });
-    await page.fill("#token-input", tokenAddress);
+    // A page opened with ?vault= opens that vault at once and folds the chooser away.
+    if (await page.locator("#token-input").isVisible()) await page.fill("#token-input", tokenAddress);
   };
   const dd = (page, id) => page.locator(`#${id}`).textContent();
   const checksText = (page) => page.locator("#checks").textContent();
@@ -109,6 +111,8 @@ try {
     const { page, errors, prompts, context } = await openPage();
     await connect(page, token);
     await page.click("#deploy");
+    await page.locator("#deploy-confirm").waitFor({ state: "visible" });
+    await page.click("#deploy-yes");
     await page.locator("#dashboard").waitFor({ state: "visible", timeout: 30000 });
     vault = (await dd(page, "v-address")).trim();
     assert.equal(call(vault, "owner()(address)").toLowerCase(), owner.toLowerCase());
@@ -123,7 +127,7 @@ try {
     await page.fill("#policy-daily", "10");
     await page.fill("#policy-days", "7");
     await page.click("#save-policy");
-    await statusIs(page, /Save limits: confirmed/);
+    await statusIs(page, /Save limits on vault 0x\w+\.\.\.\w+: confirmed/);
     assert.equal(call(vault, "perPaymentLimit()(uint256)"), "1000000");
     assert.equal(call(vault, "dailyLimit()(uint256)"), "10000000");
     assert.equal(call(vault, "agent()(address)").toLowerCase(), agent.toLowerCase());
@@ -133,7 +137,7 @@ try {
     await page.fill("#vendor-address", VENDOR);
     await page.fill("#vendor-label", XSS);
     await page.click("#add-vendor");
-    await statusIs(page, /Allow vendor: confirmed/);
+    await statusIs(page, /Allow vendor on vault .*: confirmed/);
     assert.equal(call(vault, "allowedRecipient(address)(bool)", VENDOR), "true");
     await page.locator("#vendors li").first().waitFor();
     assert.equal(await page.locator("#vendors img").count(), 0); // a hostile label stays text
@@ -145,7 +149,10 @@ try {
 
     await page.fill("#fund-amount", "8");
     await page.click("#fund");
-    await statusIs(page, /confirmed/);
+    await page.locator("#fund-confirm").waitFor({ state: "visible" });
+    assert.ok((await page.locator("#fund-review").textContent()).includes(vault)); // the review names the full vault address
+    await page.click("#fund-confirm");
+    await statusIs(page, /Move 8 USDC into the vault on vault .*: confirmed/);
     assert.equal(call(token, "balanceOf(address)(uint256)", vault), "8000000");
     assert.match(await dd(page, "v-balance"), /^8 USDC$/);
     await shot(page, "dashboard-agent-funded");
@@ -154,9 +161,7 @@ try {
     send(agentKey, token, "transfer(address,uint256)", owner, "4800000");
     await page.reload();
     await page.waitForLoadState("networkidle");
-    await connect(page, token);
-    await page.fill("#vault-input", vault);
-    await page.click("#load-vault");
+    await connect(page, token); // the address bar still names the vault, so it reopens by itself
     await page.locator("#dashboard").waitFor({ state: "visible" });
     await waitFor(async () => /^All checks pass/.test(await page.locator("#verdict").textContent()), "protected verdict");
     assert.match(await page.locator("#verdict").textContent(), /do not say the contract has been audited/);
@@ -179,7 +184,7 @@ try {
     await page.click("#load-vault");
     await page.locator("#dashboard").waitFor({ state: "visible" });
     await page.click("#toggle-pause");
-    await statusIs(page, /Pause: confirmed/);
+    await statusIs(page, /Pause on vault .*: confirmed/);
     assert.equal(call(vault, "paused()(bool)"), "true");
     assert.match(await dd(page, "v-paused"), /PAUSED/);
     assert.match(await checksText(page), /vault is paused/);
@@ -189,7 +194,7 @@ try {
     assert.equal(call(vault, "paused()(bool)"), "true");
     control.reject = false;
     await page.click("#toggle-pause");
-    await statusIs(page, /Unpause: confirmed/);
+    await statusIs(page, /Unpause on vault .*: confirmed/);
     assert.equal(call(vault, "paused()(bool)"), "false");
     await context.close();
   });
@@ -239,11 +244,11 @@ try {
     await page.fill("#withdraw-amount", "1.5");
     await page.click("#withdraw");
     await page.locator("#withdraw-confirm").waitFor({ state: "visible" });
-    assert.match(await page.locator("#withdraw-review").textContent(), /Withdraw 1\.5 USDC from the vault to .* protects 6\.5 USDC/);
+    assert.match(await page.locator("#withdraw-review").textContent(), /Withdraw 1\.5 USDC from vault 0x\w+ to .* protects 6\.5 USDC/);
     assert.equal(sends(prompts), 0 + sends(prompts)); // nothing sent by the review itself
     const sentBefore = sends(prompts);
     await page.click("#withdraw-confirm");
-    await statusIs(page, /Withdraw 1\.5 USDC: confirmed/);
+    await statusIs(page, /Withdraw 1\.5 USDC on vault .*: confirmed/);
     assert.equal(sends(prompts), sentBefore + 1);
     assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", stranger)) - before, 1_500_000n);
     assert.equal(call(token, "balanceOf(address)(uint256)", vault), "6500000");
@@ -275,6 +280,136 @@ try {
     const withRelay = join(WORK, "owner-config-relay.json");
     await second.saveAs(withRelay);
     assert.equal(JSON.parse(readFileSync(withRelay, "utf8")).relay, "https://relay.example");
+    await context.close();
+  });
+
+  // ---- Task: owners must always know which vault they are changing ----
+  const forgeVault = () => create(ownerKey, "src/ErebusPolicyVault.sol:ErebusPolicyVault", owner, token); // repo default build: differs from the page's
+  const openChooser = async (page) => { if (!(await page.locator("#vault-input").isVisible())) await page.click("#chooser summary"); };
+  const openVaultByAddress = async (page, address) => { await openChooser(page); await page.fill("#vault-input", address); await page.click("#load-vault"); };
+  let otherVault;
+
+  await scenario("the banner always names the connected vault and whether you own it", async () => {
+    const { page, context } = await openPage();
+    await connect(page, token);
+    assert.match(await page.locator("#vault-banner").textContent(), /No vault connected yet/);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    const banner = await page.locator("#vault-banner").textContent();
+    assert.ok(banner.toLowerCase().includes(vault.toLowerCase()), "the banner shows the full vault address");
+    assert.match(banner, /You are the owner/);
+    await context.close();
+    const stranger_ = await openPage({ account: stranger });
+    await connect(stranger_.page, token);
+    await openVaultByAddress(stranger_.page, vault);
+    await stranger_.page.locator("#dashboard").waitFor({ state: "visible" });
+    assert.match(await stranger_.page.locator("#vault-banner").textContent(), /You are NOT the owner/);
+    await stranger_.context.close();
+  });
+
+  await scenario("a vault named in the page's address opens only after connecting, and says so", async () => {
+    const { page, prompts, context } = await openPageAt(`?vault=${vault.toLowerCase()}`);
+    assert.equal(await page.locator("#dashboard").isVisible(), false); // nothing opens before the wallet connects
+    assert.equal(prompts.length, 0);
+    await page.click("#connect");
+    await page.locator("#dashboard").waitFor({ state: "visible", timeout: 15000 });
+    assert.ok((await page.locator("#vault-banner").textContent()).toLowerCase().includes(vault.toLowerCase()));
+    assert.match(await page.locator("#link-note").textContent(), /Opened from the vault in this page's address/);
+    assert.ok(page.url().toLowerCase().includes(`vault=${vault.toLowerCase()}`));
+    await context.close();
+    const bad = await openPageAt("?vault=0xnope");
+    await statusIs(bad.page, /not a valid address, so it was ignored/);
+    await bad.page.click("#connect");
+    await bad.page.locator("#s-vault").waitFor({ state: "visible" });
+    assert.equal(await bad.page.locator("#dashboard").isVisible(), false);
+    await bad.context.close();
+  });
+
+  await scenario("deploying needs a confirmation, warns about an existing vault, and can be cancelled", async () => {
+    const { page, prompts, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    await openChooser(page);
+    const before = sends(prompts);
+    await page.click("#deploy");
+    await page.locator("#deploy-confirm").waitFor({ state: "visible" });
+    const warning = await page.locator("#deploy-confirm-text").textContent();
+    assert.match(warning, /already have a vault/);
+    assert.ok(warning.toLowerCase().includes(vault.toLowerCase()));
+    assert.match(warning, /SECOND, separate vault/);
+    assert.equal(sends(prompts), before); // asking is not sending
+    await page.click("#deploy-no");
+    await statusIs(page, /Deploy cancelled. Nothing was sent/);
+    assert.equal(sends(prompts), before);
+    assert.equal(await page.locator("#deploy-confirm").isVisible(), false);
+    // Confirming deploys a second vault, and the banner moves to it and says it is a different one.
+    await page.click("#deploy");
+    await page.click("#deploy-yes");
+    await waitFor(async () => !(await page.locator("#vault-banner").textContent()).toLowerCase().includes(vault.toLowerCase()), "banner moves to the new vault");
+    otherVault = (await dd(page, "v-address")).trim();
+    assert.notEqual(otherVault.toLowerCase(), vault.toLowerCase());
+    assert.match(await status(page), /^Vault 0x\w+ connected/);
+    assert.equal(sends(prompts), before + 1);
+    await context.close();
+  });
+
+  await scenario("switching vaults needs no reload and carries nothing over from the last one", async () => {
+    const { page, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    await page.locator("#vendors li").first().waitFor();
+    // Type things for vault A, including a half-finished fund review and a withdrawal review.
+    await page.fill("#policy-agent", agent);
+    await page.fill("#vendor-address", VENDOR);
+    await page.fill("#fund-amount", "1");
+    await page.click("#fund");
+    await page.locator("#fund-confirm").waitFor({ state: "visible" });
+    await page.fill("#withdraw-amount", "1");
+    await page.click("#withdraw");
+    await page.locator("#withdraw-confirm").waitFor({ state: "visible" });
+    const urlBefore = page.url();
+    await openVaultByAddress(page, otherVault);
+    await waitFor(async () => (await page.locator("#vault-banner").textContent()).toLowerCase().includes(otherVault.toLowerCase()), "banner shows vault B");
+    await waitFor(async () => (await dd(page, "v-address")).trim().toLowerCase() === otherVault.toLowerCase(), "dashboard shows vault B");
+    assert.ok(page.url().toLowerCase().includes(`vault=${otherVault.toLowerCase()}`)); // same page, address bar now names vault B
+    assert.equal(new URL(page.url()).origin, new URL(urlBefore).origin);
+    assert.equal(await page.locator("#policy-agent").inputValue(), ""); // vault B has no agent, and A's is gone
+    assert.equal(await page.locator("#vendor-address").inputValue(), "");
+    assert.equal(await page.locator("#fund-amount").inputValue(), "");
+    assert.equal(await page.locator("#fund-confirm").isVisible(), false);
+    assert.equal(await page.locator("#withdraw-confirm").isVisible(), false);
+    assert.equal(await page.locator("#vendors li").count(), 0); // A's vendor is not listed under B
+    assert.match(await checksText(page), /vault is empty/);
+    // The recent list offers both, and switching back works too.
+    await openChooser(page);
+    assert.equal(await page.locator("#recent button").count(), 2);
+    await page.locator("#recent button", { hasText: new RegExp(vault, "i") }).click();
+    await waitFor(async () => (await dd(page, "v-address")).trim().toLowerCase() === vault.toLowerCase(), "back to vault A");
+    await context.close();
+  });
+
+  await scenario("a vault whose code differs cannot be funded until the owner unlocks it, and the unlock does not follow them", async () => {
+    const odd = forgeVault();
+    const { page, prompts, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, odd);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    assert.match(await dd(page, "v-code"), /^DIFFERS/);
+    assert.equal(await page.locator("#fund").isDisabled(), true);
+    assert.equal(await page.locator("#fund-max").isDisabled(), true);
+    await page.locator("#unlock-funding").waitFor({ state: "visible" });
+    const before = sends(prompts);
+    await page.click("#unlock-funding");
+    assert.equal(await page.locator("#fund").isDisabled(), false);
+    assert.equal(sends(prompts), before); // unlocking sends nothing
+    await openVaultByAddress(page, vault); // switch to a matching vault, then back to the odd one
+    await waitFor(async () => (await dd(page, "v-address")).trim().toLowerCase() === vault.toLowerCase(), "vault A");
+    assert.equal(await page.locator("#fund").isDisabled(), false);
+    await openVaultByAddress(page, odd);
+    await waitFor(async () => (await dd(page, "v-address")).trim().toLowerCase() === odd.toLowerCase(), "odd vault again");
+    assert.equal(await page.locator("#fund").isDisabled(), true); // locked again
     await context.close();
   });
 
