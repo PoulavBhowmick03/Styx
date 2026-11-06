@@ -45,7 +45,16 @@ let vault: Address | undefined;
 let artifact: Artifact | undefined;
 let busy = false;
 let pendingWithdrawal: { to: Address; amount: bigint } | undefined;
+let pendingFund: { amount: bigint } | undefined;
 let balances = { vault: 0n, owner: 0n };
+let vaultOwner: Address | undefined;
+/** The token the connected vault holds, read from the vault itself. Funding always uses this one. */
+let vaultToken: Address | undefined;
+/** False when the vault's code differs from this page's build. Funding then needs a deliberate unlock. */
+let codeMatches: boolean | undefined;
+let fundingUnlocked = false;
+// A vault named in the page's address (?vault=0x...). It is opened only after the wallet connects.
+let linkedVault: Address | undefined;
 
 function status(message: string, isError = false): void {
   const line = $("status");
@@ -79,6 +88,83 @@ function labels(): Record<string, string> {
   }
 }
 
+const short = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
+/** Names the vault in every action's status line, so the owner sees which one they are changing. */
+const vaultTag = () => (vault ? ` on vault ${short(vault)}` : "");
+
+const recentKey = () => `vault-setup:recent:${chainId}:${account?.toLowerCase()}`;
+function recents(): Address[] {
+  try {
+    const parsed: unknown = JSON.parse(remembered(recentKey()) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((a): a is string => typeof a === "string" && isAddress(a, { strict: false })).map((a) => getAddress(a)) : [];
+  } catch {
+    return [];
+  }
+}
+function addRecent(address: Address): void {
+  const list = [address, ...recents().filter((a) => a !== address)].slice(0, 5);
+  remember(recentKey(), JSON.stringify(list));
+}
+function renderRecent(): void {
+  const box = $("recent");
+  box.replaceChildren(
+    ...recents().map((address) => {
+      const button = document.createElement("button");
+      button.className = "secondary";
+      button.textContent = address;
+      button.disabled = busy;
+      button.addEventListener("click", () => void openVault(address));
+      return button;
+    }),
+  );
+}
+
+/** The always-visible banner: which vault every button on the page acts on, and whether you own it. */
+function renderBanner(): void {
+  const banner = $("vault-banner");
+  banner.replaceChildren();
+  const line = (className: string, text: string) => {
+    const div = document.createElement("div");
+    div.className = className;
+    div.textContent = text;
+    banner.append(div);
+    return div;
+  };
+  if (!vault) {
+    banner.className = "none";
+    line("label", "VAULT");
+    line("meta", account ? "No vault connected yet. Everything below acts on the vault you connect in step 2." : "Connect your wallet to begin.");
+    return;
+  }
+  const mine = vaultOwner !== undefined && account !== undefined && vaultOwner === account;
+  banner.className = vaultOwner === undefined || mine ? "" : "notowner";
+  line("label", "CONNECTED VAULT: every change on this page acts on this one");
+  line("addr", vault);
+  const meta = line("meta", `Owner ${vaultOwner ?? "(reading...)"} on ${chainId === ARC_TESTNET_ID ? "Arc Testnet" : `chain ${chainId}`}. `);
+  if (vaultOwner !== undefined) {
+    const who = document.createElement("span");
+    who.className = mine ? "" : "bad";
+    who.textContent = mine ? "You are the owner." : "You are NOT the owner: changes are disabled.";
+    meta.append(who);
+  }
+}
+
+/** Forgets everything typed or computed for the previous vault, so nothing from it can be saved on another. */
+function resetForVault(): void {
+  vaultOwner = undefined;
+  codeMatches = undefined;
+  fundingUnlocked = false;
+  pendingWithdrawal = undefined;
+  pendingFund = undefined;
+  for (const id of ["policy-agent", "vendor-address", "vendor-label", "fund-amount", "withdraw-amount"]) $<HTMLInputElement>(id).value = "";
+  $<HTMLInputElement>("policy-per").value = "1";
+  $<HTMLInputElement>("policy-daily").value = "10";
+  $<HTMLInputElement>("policy-days").value = "7";
+  for (const id of ["withdraw-review", "withdraw-confirm", "fund-review", "fund-confirm", "code-warning", "unlock-funding", "agent-sweep"]) $(id).hidden = true;
+  $("vendors").replaceChildren();
+  setText("vendors-note", "");
+}
+
 function errorText(error: unknown): string {
   // viem wraps wallet errors several levels deep, so walk the whole cause chain for a rejection.
   for (let e = error as { code?: number; name?: string; cause?: unknown } | undefined, depth = 0; e && depth < 8; e = e.cause as typeof e, depth++) {
@@ -89,33 +175,34 @@ function errorText(error: unknown): string {
 }
 
 /** One action at a time. Reports a missing receipt as unknown, never as failed (Arc can drop receipts). */
-async function run(label: string, action: () => Promise<Hex | void>): Promise<boolean> {
+async function run(label: string, action: () => Promise<Hex | void>, tagged = true): Promise<boolean> {
+  const tag = () => (tagged ? vaultTag() : "");
   if (busy) return false;
   busy = true;
   setControls();
   try {
-    status(`${label}: confirm in your wallet...`);
+    status(`${label}${tag()}: confirm in your wallet...`);
     const hash = await action();
     if (hash && pub) {
-      status(`${label}: sent ${hash}. Waiting for it to confirm...`);
+      status(`${label}${tag()}: sent ${hash}. Waiting for it to confirm...`);
       let receipt;
       try {
         receipt = await pub.waitForTransactionReceipt({ hash, timeout: 90_000 });
       } catch {
-        status(`${label}: no receipt yet, so the outcome is unknown, not failed. Check the transaction ${hash}${explorerTx(chainId, hash) ? ` at ${explorerTx(chainId, hash)}` : ""} before sending anything again.`, true);
+        status(`${label}${tag()}: no receipt yet, so the outcome is unknown, not failed. Check the transaction ${hash}${explorerTx(chainId, hash) ? ` at ${explorerTx(chainId, hash)}` : ""} before sending anything again.`, true);
         return false;
       }
       if (receipt.status !== "success") {
-        status(`${label}: the transaction reverted (${hash}).`, true);
+        status(`${label}${tag()}: the transaction reverted (${hash}).`, true);
         return false;
       }
-      status(`${label}: confirmed in block ${receipt.blockNumber}.`);
+      status(`${label}${tag()}: confirmed in block ${receipt.blockNumber}.`);
     } else {
-      status(`${label}: done.`);
+      status(`${label}${tag()}: done.`);
     }
     return true;
   } catch (error) {
-    status(`${label}: ${errorText(error)}`, true);
+    status(`${label}${tag()}: ${errorText(error)}`, true);
     return false;
   } finally {
     busy = false;
@@ -127,7 +214,7 @@ async function run(label: string, action: () => Promise<Hex | void>): Promise<bo
 async function loadArtifact(): Promise<Artifact> {
   if (artifact) return artifact;
   const response = await fetch("/vault-artifact.json");
-  if (!response.ok) throw new Error("vault-artifact.json is missing. Run `npm run prepare-artifact` after `forge build`.");
+  if (!response.ok) throw new Error("vault-artifact.json is missing. Run `npm run prepare-artifact` (it needs Foundry).");
   artifact = (await response.json()) as Artifact;
   return artifact;
 }
@@ -155,11 +242,14 @@ async function connect(): Promise<void> {
   token.readOnly = chainId === ARC_TESTNET_ID;
   setText("token-note", chainId === ARC_TESTNET_ID ? "Arc's USDC ERC-20 interface. The same balance is your native gas balance, shown with 18 decimals instead of 6." : "Not Arc Testnet. Paste the 6-decimal test token for this chain.");
   status("Wallet connected.");
-  const last = remembered(lastVaultKey());
-  if (last && isAddress(last, { strict: false })) {
-    $<HTMLInputElement>("vault-input").value = last;
-  }
+  renderBanner();
+  renderRecent();
   setControls();
+  if (linkedVault) {
+    const address = linkedVault;
+    linkedVault = undefined;
+    await openVault(address, true);
+  }
 }
 
 async function switchToArc(): Promise<void> {
@@ -206,7 +296,25 @@ async function checkToken(token: Address): Promise<string | undefined> {
   return undefined;
 }
 
+/** Step one: say what deploying does, and warn loudly if a vault is already known. Nothing is sent yet. */
+async function reviewDeploy(): Promise<void> {
+  const token = tokenAddress();
+  if (!token || !wallet || !pub || !account) return status("Enter the USDC token address first.", true);
+  const problem = await checkToken(token);
+  if (problem) return status(problem, true);
+  const known = [...new Set([...(vault ? [vault] : []), ...recents()])];
+  setText(
+    "deploy-confirm-text",
+    known.length
+      ? `You already have a vault: ${known.join(", ")}. This creates a SECOND, separate vault with a new address. Money and settings in your existing vault do not move to it, and nothing you set up there applies to the new one. Most people should cancel and connect to the vault they have.`
+      : `This creates a new vault owned by ${account}, with token ${token}. If your team already has a vault, cancel and connect to it instead: a new vault starts empty and unconfigured.`,
+  );
+  $("deploy-confirm").hidden = false;
+  status("Check what deploying does, then confirm or cancel.");
+}
+
 async function deploy(): Promise<void> {
+  $("deploy-confirm").hidden = true;
   const token = tokenAddress();
   if (!token || !wallet || !pub || !account) return status("Enter the USDC token address first.", true);
   const problem = await checkToken(token);
@@ -219,11 +327,11 @@ async function deploy(): Promise<void> {
     const receipt = await pub!.waitForTransactionReceipt({ hash, timeout: 90_000 });
     deployedAt = receipt.contractAddress ?? undefined;
     setText("deploy-note", `Deploy transaction ${hash}, block ${receipt.blockNumber}. Keep these for your records.`);
-  });
+  }, false);
   if (ok && deployedAt) await openVault(deployedAt);
 }
 
-async function openVault(address: Address): Promise<void> {
+async function openVault(address: Address, fromLink = false): Promise<void> {
   if (!pub || !account) return;
   try {
     const code = await pub.getCode({ address });
@@ -234,23 +342,39 @@ async function openVault(address: Address): Promise<void> {
     ]);
     const problem = await checkToken(token);
     if (problem) return status(`The vault's token: ${problem}`, true);
+    resetForVault();
     vault = address;
+    vaultOwner = getAddress(owner);
+    vaultToken = token;
     $<HTMLInputElement>("token-input").value = token;
-    remember(lastVaultKey(), address);
+    addRecent(address);
+    renderRecent();
     const built = await loadArtifact().catch(() => undefined);
+    codeMatches = built ? matchesBuild(code, built) : undefined;
     setText(
       "v-code",
       !built
         ? "Not compared: build artifact missing."
-        : matchesBuild(code, built)
-          ? "Matches this repository's compiled vault (owner and token addresses ignored)."
+        : codeMatches
+          ? "Matches this repository's compiled vault (owner and token addresses and the compiler's metadata trailer ignored)."
           : "DIFFERS from this repository's compiled vault. Do not fund it until someone has reviewed that code.",
     );
     $("dashboard").hidden = false;
     setText("v-owner", owner);
     $<HTMLInputElement>("withdraw-to").value = account;
+    setText("vault-summary", `Connected: ${address}`);
+    setText("link-note", fromLink ? `Opened from the vault in this page's address. Check that ${address} is the vault you mean before changing anything.` : "");
+    $<HTMLDetailsElement>("chooser").open = false;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("vault", address);
+      window.history.replaceState(null, "", url);
+    } catch {
+      /* the address bar is a convenience only */
+    }
+    renderBanner();
     await refresh();
-    status(getAddress(owner) === account ? "Vault connected." : "Vault connected, but you are not its owner. Changes are disabled.");
+    status(getAddress(owner) === account ? `Vault ${address} connected.` : `Vault ${address} connected, but you are not its owner. Changes are disabled.`);
   } catch (error) {
     status(`Could not read that vault: ${errorText(error)}`, true);
   }
@@ -258,6 +382,7 @@ async function openVault(address: Address): Promise<void> {
 
 async function refresh(): Promise<void> {
   if (!pub || !vault || !account) return;
+  const mine = vault;
   const read = <T extends (typeof vaultAbi)[number]["name"]>(functionName: T, args?: unknown[]) =>
     pub!.readContract({ address: vault!, abi: vaultAbi, functionName, args } as never) as Promise<never>;
   const [owner, token, agent, version, per, daily, until, paused] = (await Promise.all([
@@ -271,8 +396,12 @@ async function refresh(): Promise<void> {
     hasAgent ? balanceOf(agent) : Promise.resolve(0n),
     hasAgent ? pub.getBalance({ address: agent }) : Promise.resolve(0n),
   ]);
+  // The owner may have switched vaults while these reads were in flight. Draw nothing from a stale answer.
+  if (vault !== mine) return;
   balances = { vault: vaultTokens, owner: ownerTokens };
-  const isOwner = getAddress(owner) === account;
+  vaultOwner = getAddress(owner);
+  renderBanner();
+  const isOwner = vaultOwner === account;
   const sameMoney = chainId === ARC_TESTNET_ID;
 
   setText("v-address", vault);
@@ -294,6 +423,8 @@ async function refresh(): Promise<void> {
   const warning = `Saving moves the policy from version ${version} to ${next}. Every approval you have signed but the agent has not yet used becomes invalid, and the agent must ask again. Spending already counted today is not reset.`;
   setText("policy-warning", warning);
   setText("vendor-warning", `Allowing or removing a vendor also moves the policy to version ${next} and invalidates unused approvals.`);
+  $("code-warning").hidden = codeMatches !== false;
+  $("unlock-funding").hidden = codeMatches !== false || fundingUnlocked;
   const agentInput = $<HTMLInputElement>("policy-agent");
   if (!agentInput.value && hasAgent) agentInput.value = agent;
 
@@ -325,10 +456,11 @@ let ownerFlag = false;
 function setControls(isOwner = ownerFlag): void {
   ownerFlag = isOwner;
   const off = busy || !isOwner;
-  for (const id of ["save-policy", "add-vendor", "fund", "toggle-pause", "withdraw", "withdraw-confirm", "deploy"]) {
-    $<HTMLButtonElement>(id).disabled = id === "deploy" ? busy || !account : off;
-  }
-  for (const button of document.querySelectorAll<HTMLButtonElement>("#vendors button")) button.disabled = off;
+  const fundBlocked = codeMatches === false && !fundingUnlocked;
+  for (const id of ["save-policy", "add-vendor", "toggle-pause", "withdraw", "withdraw-confirm"]) $<HTMLButtonElement>(id).disabled = off;
+  for (const id of ["fund", "fund-confirm", "fund-max"]) $<HTMLButtonElement>(id).disabled = off || fundBlocked;
+  for (const id of ["deploy", "deploy-yes", "load-vault"]) $<HTMLButtonElement>(id).disabled = busy || !account;
+  for (const button of document.querySelectorAll<HTMLButtonElement>("#vendors button, #recent button")) button.disabled = button.closest("#recent") ? busy : off;
 }
 
 async function listVendors(isOwner: boolean): Promise<void> {
@@ -406,10 +538,9 @@ async function savePolicy(): Promise<void> {
   );
 }
 
-async function fund(): Promise<void> {
-  if (!wallet || !vault || !account) return;
-  const token = tokenAddress();
-  if (!token) return;
+/** Step one: show exactly where the money goes. Nothing is sent yet. */
+function reviewFund(): void {
+  if (!vault || !account) return;
   let amount: bigint;
   try {
     amount = parseUsdc($<HTMLInputElement>("fund-amount").value);
@@ -418,8 +549,22 @@ async function fund(): Promise<void> {
   }
   if (amount === 0n) return status("Enter an amount above zero.", true);
   if (amount > balances.owner) return status(`You hold only ${formatUsdc(balances.owner)} USDC.`, true);
-  await run(`Move ${formatUsdc(amount)} USDC into the vault`, () =>
-    wallet!.writeContract({ address: token, abi: erc20Abi, functionName: "transfer", args: [vault!, amount], account: account!, chain: wallet!.chain }),
+  pendingFund = { amount };
+  setText("fund-review", `Move ${formatUsdc(amount)} USDC from your wallet ${account} into vault ${vault}. That vault holds ${formatUsdc(balances.vault)} USDC now. Check the vault address matches the one in the banner at the top.`);
+  $("fund-review").hidden = false;
+  $("fund-confirm").hidden = false;
+  status("Check where the money goes, then confirm.");
+}
+
+async function fund(): Promise<void> {
+  const pending = pendingFund;
+  if (!pending || !wallet || !vault || !vaultToken || !account) return;
+  const token = vaultToken;
+  pendingFund = undefined;
+  $("fund-review").hidden = true;
+  $("fund-confirm").hidden = true;
+  await run(`Move ${formatUsdc(pending.amount)} USDC into the vault`, () =>
+    wallet!.writeContract({ address: token, abi: erc20Abi, functionName: "transfer", args: [vault!, pending.amount], account: account!, chain: wallet!.chain }),
   );
 }
 
@@ -434,7 +579,7 @@ function reviewWithdrawal(): void {
   }
   if (amount === 0n || amount > balances.vault) return status(`Enter an amount between 0 and ${formatUsdc(balances.vault)} USDC.`, true);
   pendingWithdrawal = { to, amount };
-  setText("withdraw-review", `Withdraw ${formatUsdc(amount)} USDC from the vault to ${to}. After this the vault protects ${formatUsdc(balances.vault - amount)} USDC.`);
+  setText("withdraw-review", `Withdraw ${formatUsdc(amount)} USDC from vault ${vault} to ${to}. After this the vault protects ${formatUsdc(balances.vault - amount)} USDC.`);
   $("withdraw-review").hidden = false;
   $("withdraw-confirm").hidden = false;
   status("Check the withdrawal, then confirm.");
@@ -482,7 +627,12 @@ async function exportConfig(): Promise<void> {
 
 $("connect").addEventListener("click", () => void connect());
 $("switch-arc").addEventListener("click", () => void switchToArc());
-$("deploy").addEventListener("click", () => void deploy());
+$("deploy").addEventListener("click", () => void reviewDeploy());
+$("deploy-yes").addEventListener("click", () => void deploy());
+$("deploy-no").addEventListener("click", () => {
+  $("deploy-confirm").hidden = true;
+  status("Deploy cancelled. Nothing was sent.");
+});
 $("load-vault").addEventListener("click", () => {
   const address = readAddress("vault-input", "The vault address");
   if (address) void openVault(address);
@@ -499,7 +649,15 @@ $("check-vendor").addEventListener("click", async () => {
   status(allowed ? `${address} is allowed.` : `${address} is not allowed.`);
 });
 $("export-config").addEventListener("click", () => void exportConfig());
-$("fund").addEventListener("click", () => void fund());
+$("fund").addEventListener("click", reviewFund);
+$("fund-confirm").addEventListener("click", () => void fund());
+$("unlock-funding").addEventListener("click", () => {
+  fundingUnlocked = true;
+  $("code-warning").hidden = true;
+  $("unlock-funding").hidden = true;
+  setControls();
+  status("Funding unlocked for this vault. It stays unlocked only until you switch vaults or reload.");
+});
 $("fund-max").addEventListener("click", () => {
   const reserve = chainId === ARC_TESTNET_ID ? OWNER_RESERVE : 0n;
   if (balances.owner <= reserve) return status("Nothing to move after keeping your gas reserve.", true);
@@ -519,3 +677,13 @@ $("withdraw-confirm").addEventListener("click", () => void confirmWithdrawal());
 // Changing account or chain invalidates everything on screen, so start over rather than guess.
 window.ethereum?.on?.("accountsChanged", () => location.reload());
 window.ethereum?.on?.("chainChanged", () => location.reload());
+
+// A vault named in the page's address is opened after the wallet connects, never before.
+{
+  const param = new URLSearchParams(window.location.search).get("vault");
+  if (param) {
+    if (isAddress(param, { strict: false })) linkedVault = getAddress(param);
+    else status("The vault in this page's address is not a valid address, so it was ignored.", true);
+  }
+}
+renderBanner();
