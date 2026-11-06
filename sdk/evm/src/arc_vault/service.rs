@@ -63,6 +63,9 @@ pub enum Request {
         authorization_expiry: u64,
         /// Where to write the pending file.
         pending_file: PathBuf,
+        /// V2 approver address. Defaults to the immutable owner.
+        #[serde(default)]
+        signer: Option<String>,
     },
     /// Submits a journaled payment, or reconciles an earlier attempt.
     Submit {
@@ -77,6 +80,11 @@ pub enum Request {
         /// Payment ID.
         payment_id: String,
     },
+    /// Independently verifies a v2 record with the configured code pin.
+    VerifyRecord {
+        /// Private record path.
+        record_file: PathBuf,
+    },
     /// Writes the reviewer record for a settled payment.
     ExportRecord {
         /// Payment ID.
@@ -88,6 +96,9 @@ pub enum Request {
 
 /// Runs one request.
 pub async fn handle(request: Request) -> Result<Value, VaultError> {
+    if super::v2::selected()? {
+        return super::v2::service::handle(request).await;
+    }
     if matches!(request, Request::Version) {
         return Ok(json!({"status": "ok", "protocol": 1}));
     }
@@ -95,6 +106,9 @@ pub async fn handle(request: Request) -> Result<Value, VaultError> {
     let rpc = VaultRpc::new(&config.rpc_urls, config.rpc_timeout, config.chain_id)?;
     match request {
         Request::Version => unreachable!("handled above"),
+        Request::VerifyRecord { .. } => Err(VaultError::invalid(
+            "record verification requires vault version 2",
+        )),
         Request::Propose {
             recipient,
             amount,
@@ -117,7 +131,13 @@ pub async fn handle(request: Request) -> Result<Value, VaultError> {
             payment_id,
             authorization_expiry,
             pending_file,
+            signer,
         } => {
+            if signer.is_some() {
+                return Err(VaultError::invalid(
+                    "signer selection requires vault version 2",
+                ));
+            }
             request_approval(
                 &config,
                 &rpc,
@@ -143,14 +163,14 @@ fn parse_payment_id(text: &str) -> Result<[u8; 32], VaultError> {
     parse_hex(text).map_err(|error| VaultError::invalid(format!("payment_id: {error}")))
 }
 
-fn random<const N: usize>() -> Result<[u8; N], VaultError> {
+pub(super) fn random<const N: usize>() -> Result<[u8; N], VaultError> {
     let mut bytes = [0u8; N];
     getrandom::getrandom(&mut bytes)
         .map_err(|_| VaultError::invalid("the system random source failed"))?;
     Ok(bytes)
 }
 
-fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>, VaultError> {
+pub(super) fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>, VaultError> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)
         .and_then(|file| file.take(maximum + 1).read_to_end(&mut bytes))
@@ -162,7 +182,7 @@ fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>, VaultError> {
 }
 
 /// Writes a new owner-only file, refusing to replace an existing one.
-fn write_new_private(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
+pub(super) fn write_new_private(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -177,17 +197,20 @@ fn write_new_private(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
 
 /// Loads the agent's key from an owner-only file holding 32 raw bytes or 64 hex digits.
 fn load_agent_key() -> Result<TransactionKey, VaultError> {
-    let path = VaultConfig::agent_key_file()?;
+    load_agent_key_from(&VaultConfig::agent_key_file()?)
+}
+
+pub(super) fn load_agent_key_from(path: &Path) -> Result<TransactionKey, VaultError> {
     #[cfg(unix)]
     {
-        let metadata = std::fs::metadata(&path)
+        let metadata = std::fs::metadata(path)
             .map_err(|_| VaultError::invalid("the agent key file cannot be read"))?;
         if metadata.permissions().mode() & 0o077 != 0 {
             return Err(VaultError::invalid("the agent key file must be owner-only"));
         }
     }
     let contents = Zeroizing::new(
-        read_bounded(&path, 128)
+        read_bounded(path, 128)
             .map_err(|_| VaultError::invalid("the agent key file cannot be read"))?,
     );
     let bytes: Zeroizing<Vec<u8>> = if contents.len() == 32 {
@@ -436,7 +459,7 @@ fn load_signature(
     Ok(file.signature)
 }
 
-fn revert_error(data: &[u8]) -> VaultError {
+pub(super) fn revert_error(data: &[u8]) -> VaultError {
     match classify_revert(data) {
         RevertMeaning::Policy(name) => {
             VaultError::new(VaultCode::PolicyLimit, format!("the vault refused: {name}"))

@@ -14,6 +14,9 @@ pub mod record;
 pub mod rpc;
 pub mod service;
 pub mod types;
+/// Explicit organization-vault protocol, isolated from v1.
+#[allow(missing_docs)]
+pub mod v2;
 pub mod verify;
 
 pub use config::VaultConfig;
