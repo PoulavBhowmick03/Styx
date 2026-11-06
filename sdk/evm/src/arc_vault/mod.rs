@@ -19,3 +19,6 @@ pub mod verify;
 pub use config::VaultConfig;
 pub use error::{VaultCode, VaultError};
 pub use types::{ExceptionAuthorization, Payment};
+
+#[cfg(test)]
+mod security_tests;

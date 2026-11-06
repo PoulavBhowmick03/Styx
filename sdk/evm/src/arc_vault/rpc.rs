@@ -67,6 +67,20 @@ impl VaultRpc {
     async fn request(&self, method: &'static str, params: Value) -> Result<Value, RpcFailure> {
         let mut rejected = None;
         for provider in &self.providers {
+            // Failover changes the source of evidence. Check that source before every
+            // operation, including reads and rebroadcasts; a prior endpoint's check
+            // says nothing about this one.
+            if method != "eth_chainId" {
+                let chain = provider
+                    .client()
+                    .request::<Value, Value>("eth_chainId", json!([]));
+                match tokio::time::timeout(self.timeout, chain).await {
+                    Ok(Ok(value))
+                        if quantity(&value, "chain ID").ok() == Some(u128::from(self.chain_id)) => {
+                    }
+                    _ => continue,
+                }
+            }
             let call = provider
                 .client()
                 .request::<Value, Value>(method, params.clone());
@@ -99,6 +113,12 @@ impl VaultRpc {
         self.request(method, params)
             .await
             .map_err(|_| VaultError::unavailable(format!("{method} is unavailable")))
+    }
+
+    /// The chain this RPC instance is configured to serve.
+    #[must_use]
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
     }
 
     /// Fails unless the endpoint serves the configured chain.
