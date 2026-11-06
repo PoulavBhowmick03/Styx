@@ -15,6 +15,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const WORK = mkdtempSync(join(tmpdir(), "setup-page-e2e-"));
 const SHOTS = process.env.E2E_SCREENSHOTS;
+// E2E_VIEWPORT=360x900 makes every page this wide, so the screenshots can be taken at phone width.
+const [VIEW_W, VIEW_H] = (process.env.E2E_VIEWPORT ?? "").match(/^(\d+)x(\d+)$/)?.slice(1).map(Number) ?? [];
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const RPC_PORT = 18761, PAGE_PORT = 18762, HOSTED_PORT = 18764, BUILT_PORT = 18765;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
@@ -93,7 +95,7 @@ try {
 
   async function openPage(options = {}) { return openPageAt("", options); }
   async function openPageAt(query, { account = owner, chainId = "0x7a69", rejectNext = false, port = PAGE_PORT, path = "" } = {}) {
-    const context = await browser.newContext({ viewport: { width: 1000, height: 1400 }, acceptDownloads: true });
+    const context = await browser.newContext({ viewport: { width: VIEW_W ?? 1000, height: VIEW_H ?? 1400 }, acceptDownloads: true });
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -136,7 +138,7 @@ try {
   }
   const sends = (prompts) => prompts.filter((m) => m === "eth_sendTransaction").length;
   const status = (page) => page.locator("#status").textContent();
-  const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true }); };
+  const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, `${name}${VIEW_W ? `-${VIEW_W}` : ""}.png`), fullPage: true }); };
   const statusIs = (page, re, label) => waitFor(async () => re.test(await status(page)), label ?? String(re), 200).catch(async (e) => { throw new Error(`${e.message}; status was: ${await status(page)}`); });
   const connect = async (page, tokenAddress) => {
     await page.click("#connect");
@@ -765,6 +767,11 @@ try {
     await page.click("#v2-cap-save");
     await page.locator("#v2-confirm").waitFor({ state: "visible" });
     let text = await confirmText(page);
+    await shot(page, "v2-confirm-cap");
+    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(sideways <= 0, `no horizontal scrolling, got ${sideways}px`);
+    assert.ok(await page.locator("#v2-confirm").isVisible() && await page.evaluate(() => document.activeElement?.id === "v2-confirm"), "the confirmation panel is shown and holds focus");
+    assert.match(await page.locator("#v2-confirm-title").textContent(), /Step 2 of 2\. Nothing has been sent yet/);
     assert.ok(text.toLowerCase().includes(v2Vault.toLowerCase()), "the confirmation names the vault");
     assert.match(text, /daily cap to 5 USDC \(it is 0 now\)/);
     assert.equal(sends(prompts), before, "asking is not sending");

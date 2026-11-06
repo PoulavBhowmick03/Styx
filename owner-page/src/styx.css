@@ -39,6 +39,7 @@ h1 { font-size: 1.5rem; line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
 h2 { font-size: 1.125rem; line-height: 1.3; margin: 0 0 0.5rem; }
 h3 { font-size: 1rem; margin: 1rem 0 0.25rem; }
 p { margin: 0 0 0.75rem; }
+p, li, dd, summary, label, .callout { overflow-wrap: anywhere; }
 a { color: var(--fore); text-underline-offset: 0.2em; text-decoration-color: var(--ember); text-decoration-thickness: 2px; }
 .mono, code { font-family: var(--mono); font-size: 0.875rem; overflow-wrap: anywhere; word-break: break-all; }
 .note { color: var(--fore-2); font-size: 0.875rem; }
