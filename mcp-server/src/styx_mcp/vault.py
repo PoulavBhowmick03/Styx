@@ -121,7 +121,8 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", request_id):
                 raise ValueError("unexpected relay response")
             Path(settings.artifact(f"relay-{stem}.txt")).write_text(request_id)
-            return {"owner_alerted": sent.get("alerted") is True}
+            needs_link = {"approver_needs_to_link_telegram": True} if sent.get("needsLink") is True else {}
+            return {"owner_alerted": sent.get("alerted") is True, **needs_link}
         except (OSError, ValueError, KeyError):
             return {"owner_alerted": False}
 
@@ -171,6 +172,13 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         Leave authorization_expiry out unless you were given a time: it defaults to one hour from now.
         On a v2 vault, signer names the approver who should sign. Leave it out to ask the owner.
         """
+        # A registered agent asks whoever the vault's owner chose for it.
+        if signer is None and is_v2 and settings.relay_url:
+            try:
+                chosen = await asyncio.to_thread(relay_call, "/agents/me")
+                signer = chosen.get("approver") if isinstance(chosen.get("approver"), str) else None
+            except (OSError, ValueError):
+                signer = None  # Not registered, or the relay is down: the binary defaults to the owner.
         if signer is not None and not is_v2:
             return invalid(VaultError(_INVALID, "this vault only accepts the owner's signature"))
         if signer is not None and not re.fullmatch(r"0x[0-9a-fA-F]{40}", signer, flags=re.ASCII):

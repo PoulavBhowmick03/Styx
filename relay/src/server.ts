@@ -2,6 +2,8 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+import { getAddress, isAddress } from "viem";
+
 import { Relay, RelayError, tokenMatches, type RelayConfig } from "./relay";
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -57,6 +59,17 @@ export function relayServer(relay: Relay, config: RelayConfig): Server {
       // Checked inside: a v2 token belongs to one agent, which only the request can name.
       const body = (await readJson(request)) as { pending?: unknown };
       reply(200, await relay.submit(body?.pending, bearer(request)));
+    } else if (request.method === "POST" && url.pathname === "/links/start" && config.people) {
+      reply(200, await config.people.startLink(await readJson(request)));
+    } else if (request.method === "GET" && parts[0] === "links" && parts.length === 2 && config.people) {
+      if (!isAddress(parts[1]!, { strict: false })) throw new RelayError(400, "invalid address");
+      reply(200, { linked: config.people.isLinked(getAddress(parts[1]!)) });
+    } else if (request.method === "POST" && url.pathname === "/agents/register" && config.people) {
+      reply(200, { ...(await config.people.register(await readJson(request))), relay: config.relayUrl });
+    } else if (request.method === "GET" && url.pathname === "/agents/me" && config.people) {
+      const agent = config.people.agentByToken(bearer(request));
+      if (!agent) throw new RelayError(401, "unauthorized");
+      reply(200, { vault: agent.vault, agent: agent.agent, approver: agent.approver });
     } else if (request.method === "POST" && url.pathname === "/alerts") {
       if (!tokenMatches(bearer(request), config.watcherToken)) throw new RelayError(401, "unauthorized");
       reply(200, await relay.notice(await readJson(request)));

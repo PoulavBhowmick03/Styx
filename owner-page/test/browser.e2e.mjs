@@ -31,6 +31,7 @@ const sh = (cmd, args, cwd) => {
   assert.equal(r.status, 0, `${cmd} ${args[0]}: ${r.stderr}`);
   return r.stdout.trim();
 };
+const getAddr = (a) => sh("cast", ["to-check-sum-address", a]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(check, label) {
   for (let i = 0; i < 100; i++) { if (await check().catch(() => false)) return; await sleep(100); }
@@ -251,9 +252,16 @@ try {
 
   // ---- The whole alert path: agent request, Telegram alert, link, signature, settlement ----
   const alerts = [];
+  const updates = [];
   const telegram = createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
+    if (req.url.includes("/getUpdates")) {
+      const offset = Number(new URL(req.url, "http://t").searchParams.get("offset") ?? 0);
+      res.writeHead(200, { "content-type": "application/json" });
+      setTimeout(() => res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= offset) })), 150);
+      return;
+    }
     alerts.push({ path: req.url, ...JSON.parse(raw) });
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, result: { message_id: alerts.length } }));
@@ -267,6 +275,7 @@ try {
     env: { ...process.env, RELAY_PORT: String(RELAY_PORT), RELAY_CHAIN_ID: "31337", RELAY_VAULT: vault, RELAY_OWNER: owner, RELAY_TOKEN: token,
       RELAY_PAGE_URL: `http://127.0.0.1:${PAGE_PORT}/`, RELAY_PUBLIC_URL: RELAY, RELAY_AGENT_TOKEN: agentToken, RELAY_MAX_ALERTS_PER_HOUR: "100",
       RELAY_V2_VAULT: vaultV2, RELAY_V2_AGENT_TOKENS: JSON.stringify({ [agent]: agentTokenV2 }),
+      RELAY_BOT_USERNAME: "test_bot", RELAY_RPC_URLS: RPC, RELAY_STATE_DIR: join(WORK, "relay-state"),
       TELEGRAM_BOT_TOKEN: "1:fake", TELEGRAM_CHAT_ID: "42", TELEGRAM_API_BASE: `http://127.0.0.1:${TELEGRAM_PORT}` },
   });
   await waitFor(async () => (await fetch(`${RELAY}/requests/nope`)).status === 404, "relay");
@@ -456,6 +465,69 @@ try {
     await waitFor(async () => /could not be read/.test(await status(down.page)), "read refusal");
     assert.equal(await down.page.locator("#sign").isVisible(), false);
     await down.context.close();
+  });
+  // ---- People: a wallet links Telegram, the owner registers an agent, and only that person is alerted ----
+  const signAs = (key, message) => sh("cast", ["wallet", "sign", "--private-key", key, message]);
+  const registerAgent = async (approverAddress) => {
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const v = getAddr(vaultV2), a = getAddr(agent), b = getAddr(approverAddress);
+    const message = ["Register a Styx agent", "Chain: 31337", `Vault: ${v}`, `Agent: ${a}`, `Approver: ${b}`, `Issued: ${issuedAt}`].join("\n");
+    return fetch(`${RELAY}/agents/register`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chainId: "31337", vault: v, agent: a, approver: b, issuedAt, signature: signAs(ownerKey, message) }) });
+  };
+  await scenario("a wallet links Telegram from the page, and the bot's Start finishes it", async () => {
+    const { page, context, errors } = await openPage(HOSTED_PORT, { account: approver });
+    await allowHosted(page);
+    await page.goto(`http://127.0.0.1:${HOSTED_PORT}/?link`);
+    await page.locator("#link-view").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#landing").isVisible(), false);
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    await shot(page, "link");
+    await page.click("#link-connect");
+    await page.locator("#link-bot").waitFor({ state: "visible" });
+    const href = await page.locator("#link-bot").getAttribute("href");
+    assert.match(href, /^https:\/\/t\.me\/test_bot\?start=/);
+    updates.push({ update_id: updates.length + 1, message: { chat: { id: 4242 }, text: `/start ${new URL(href).searchParams.get("start")}` } });
+    await waitFor(async () => (await (await fetch(`${RELAY}/links/${getAddr(approver)}`)).json()).linked === true, "linked", 200);
+    await page.locator("#link-done").waitFor({ state: "visible", timeout: 15000 });
+    assert.equal(errors.length, 0, errors.join());
+    await context.close();
+  });
+  await scenario("a registered agent's alert reaches only its approver's chat, and a wallet not chosen is refused", async () => {
+    const reply = await registerAgent(approver);
+    assert.equal(reply.status, 200);
+    const { token } = await reply.json();
+    const me = await (await fetch(`${RELAY}/agents/me`, { headers: { authorization: `Bearer ${token}` } })).json();
+    assert.equal(me.approver, getAddr(approver));
+    const send = async (signer) => {
+      const proposed = cliV2({ method: "propose", recipient: VENDOR, amount: "6000000", invoice_file: invoice, invoice_reference: "INV-PEOPLE", valid_until: now + 3000 });
+      const pendingFile = join(WORK, `pending-people-${counterV2++}.json`);
+      assert.equal(cliV2({ method: "request_approval", payment_id: proposed.payment_id, authorization_expiry: now + 600, pending_file: pendingFile, signer }).status, "ok");
+      return fetch(`${RELAY}/requests`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ pending: JSON.parse(readFileSync(pendingFile, "utf8")) }) });
+    };
+    const ok = await send(approver);
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).alerted, true);
+    assert.equal(String(alerts.at(-1).chat_id), "4242");
+    assert.equal((await send(owner)).status, 403);
+  });
+  await scenario("only the vault's owner can register an agent", async () => {
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const v = getAddr(vaultV2), a = getAddr(agent), b = getAddr(approver);
+    const message = ["Register a Styx agent", "Chain: 31337", `Vault: ${v}`, `Agent: ${a}`, `Approver: ${b}`, `Issued: ${issuedAt}`].join("\n");
+    const reply = await fetch(`${RELAY}/agents/register`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chainId: "31337", vault: v, agent: a, approver: b, issuedAt, signature: signAs(strangerKey, message) }) });
+    assert.equal(reply.status, 403);
+  });
+  await scenario("the landing page offers the two paths and the Telegram link", async () => {
+    const { page, context } = await openPage(HOSTED_PORT);
+    await allowHosted(page);
+    await page.goto(`http://127.0.0.1:${HOSTED_PORT}/`);
+    await page.locator("#landing").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#path-me").getAttribute("href"), "/setup/?path=me");
+    assert.equal(await page.locator("#path-team").getAttribute("href"), "/setup/?path=team");
+    assert.equal(await page.locator("#path-link").getAttribute("href"), "/?link");
+    await context.close();
   });
   await scenario("v2: the owner can also sign when named", async () => {
     const { link } = await askApprover(owner);
@@ -679,7 +751,7 @@ try {
     const { page, context } = await openPage(PAGE_PORT);
     await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
     await page.locator("#landing").waitFor({ state: "visible" });
-    assert.equal(await page.locator('#landing a[href="/setup/"]').count(), 1);
+    assert.equal(await page.locator('#landing a[href^="/setup/?path="]').count(), 2);
     assert.match(await page.locator("#landing").textContent(), /Testnet only, and not audited/);
     await shot(page, "landing");
     const widest = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

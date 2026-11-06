@@ -28,6 +28,9 @@ import {
   type PendingV2,
 } from "../../owner-page/src/approval-v2";
 
+import { RelayError } from "./errors";
+import type { People } from "./people";
+
 export interface RelayConfig {
   chainId: bigint;
   vault: Address;
@@ -42,6 +45,8 @@ export interface RelayConfig {
   stateDir?: string;
   /** A v2 vault, and each of its agents' own token. One agent's token never acts for another. */
   v2?: { vault: Address; agentTokens: Map<Address, string> };
+  /** Agents registered by their vault's owner, and who to alert. Any vault can join this way. */
+  people?: People;
 }
 
 export interface Alert {
@@ -50,8 +55,9 @@ export interface Alert {
   url?: string;
 }
 
-export type Notify = (alert: Alert) => Promise<boolean>;
-type AlertKind = "approval" | "notice";
+/** With no chat named, the alert goes to the relay's own configured chat. */
+export type Notify = (alert: Alert, chatId?: string) => Promise<boolean>;
+type AlertKind = string;
 
 /** A request cannot stay open longer than this, so an agent token cannot fill the store for good. */
 export const MAX_REQUEST_LIFETIME_SECONDS = 86_400;
@@ -67,15 +73,7 @@ interface Stored {
   signature?: { schema: string; paymentId: Hex; approvalDigest: Hex; signature: Hex; signer?: Address; signerVersion?: string };
 }
 
-/** A failure with the HTTP status it should produce. Messages never echo submitted values. */
-export class RelayError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export { RelayError };
 
 export function tokenMatches(presented: string | undefined, expected: string | undefined): boolean {
   if (!presented || !expected) return false;
@@ -88,7 +86,7 @@ export class Relay {
   private readonly byDigest = new Map<string, string>();
   private readonly sending = new Map<string, Promise<boolean>>();
   // Separate budgets, so a burst of watcher notices cannot use up the owner's approval alerts.
-  private readonly alertTimes: Record<AlertKind, number[]> = { approval: [], notice: [] };
+  private readonly alertTimes: Record<AlertKind, number[]> = {};
 
   constructor(
     private readonly config: RelayConfig,
@@ -167,19 +165,21 @@ export class Relay {
   /** Takes a slot before anything is awaited, so concurrent requests cannot all see the same free one. */
   private reserveAlertSlot(kind: AlertKind): number | undefined {
     const cutoff = this.now() - 3600;
-    this.alertTimes[kind] = this.alertTimes[kind].filter((at) => at > cutoff);
-    if (this.alertTimes[kind].length >= this.config.maxAlertsPerHour) return undefined;
+    const times = (this.alertTimes[kind] ?? []).filter((at) => at > cutoff);
+    this.alertTimes[kind] = times;
+    if (times.length >= this.config.maxAlertsPerHour) return undefined;
     const at = this.now();
-    this.alertTimes[kind].push(at);
+    times.push(at);
     return at;
   }
 
   /** Only a delivered alert counts against the budget, so an outage cannot use it up. */
-  private async send(kind: AlertKind, alert: Alert, reserved: number): Promise<boolean> {
-    const delivered = await this.notify(alert).catch(() => false);
+  private async send(kind: AlertKind, alert: Alert, reserved: number, chatId?: string): Promise<boolean> {
+    const delivered = await this.notify(alert, chatId).catch(() => false);
     if (!delivered) {
-      const index = this.alertTimes[kind].indexOf(reserved);
-      if (index >= 0) this.alertTimes[kind].splice(index, 1);
+      const times = this.alertTimes[kind] ?? [];
+      const index = times.indexOf(reserved);
+      if (index >= 0) times.splice(index, 1);
     }
     return delivered;
   }
@@ -201,21 +201,35 @@ export class Relay {
     }
   }
 
-  private validateV2(input: unknown, token: string | undefined): PendingV2 {
-    const known = [...(this.config.v2?.agentTokens.values() ?? [])].some((expected) => tokenMatches(token, expected));
-    if (!this.config.v2) throw new RelayError(400, "this relay has no v2 vault");
-    if (!known) throw new RelayError(401, "unauthorized");
+  private async validateV2(input: unknown, token: string | undefined): Promise<PendingV2> {
+    const registered = this.config.people?.agentByToken(token);
+    const configured = [...(this.config.v2?.agentTokens.values() ?? [])].some((expected) => tokenMatches(token, expected));
+    if (!this.config.v2 && !this.config.people) throw new RelayError(400, "this relay has no v2 vault");
+    if (!registered && !configured) throw new RelayError(401, "unauthorized");
     let pending: PendingV2;
     try {
       pending = parsePendingV2(input);
     } catch {
       throw new RelayError(400, "invalid pending approval");
     }
-    if (pending.chainId !== this.config.chainId || pending.vault !== this.config.v2.vault || pending.payment.token !== this.config.token) {
+    if (pending.chainId !== this.config.chainId || pending.payment.token !== this.config.token) {
       throw new RelayError(400, "this request is for another vault");
     }
-    if (!tokenMatches(token, this.config.v2.agentTokens.get(pending.payment.agent))) {
-      throw new RelayError(403, "this token is for another agent");
+    if (registered) {
+      if (pending.vault !== registered.vault || pending.payment.agent !== registered.agent) {
+        throw new RelayError(403, "this token is for another agent");
+      }
+      if (pending.authorization.signer !== registered.approver) {
+        throw new RelayError(403, "the owner chose a different approver for this agent");
+      }
+      if (!(await this.config.people!.stillApprover(pending.vault, pending.authorization.signer))) {
+        throw new RelayError(403, "the vault no longer lists this approver");
+      }
+    } else {
+      if (pending.vault !== this.config.v2?.vault) throw new RelayError(400, "this request is for another vault");
+      if (!tokenMatches(token, this.config.v2.agentTokens.get(pending.payment.agent))) {
+        throw new RelayError(403, "this token is for another agent");
+      }
     }
     if (paymentHashV2(pending.payment) !== pending.authorization.paymentHash) {
       throw new RelayError(400, "the authorization does not match the payment");
@@ -231,9 +245,9 @@ export class Relay {
   }
 
   /** Stores a request and alerts the owner. Repeating one request never alerts twice. */
-  async submit(input: unknown, token: string | undefined): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean }> {
+  async submit(input: unknown, token: string | undefined): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean; needsLink?: boolean }> {
     if (isPendingV2(input)) {
-      const pending = this.validateV2(input, token);
+      const pending = await this.validateV2(input, token);
       // Typed fields only. The agent's invoice reference is shown on the page, marked as unverified.
       const lines = (url: string) => [
         "An agent wants to spend over its limit.",
@@ -246,7 +260,14 @@ export class Relay {
         "This message proves nothing. Check the details on the approval page before signing.",
         url,
       ];
-      return this.store(input, approvalDigestV2(pending), Number(pending.authorization.authorizationExpiry) + 1, pending.payment.agent, lines);
+      // A registered agent's alert goes only to its approver's own chat. The configured vault can still
+      // use the relay's own chat, so nothing is lost if its approver has not linked yet.
+      const registered = Boolean(this.config.people?.agentByToken(token));
+      const linked = this.config.people?.chatFor(pending.authorization.signer);
+      if (registered && !linked) {
+        return { ...(await this.hold(input, approvalDigestV2(pending), Number(pending.authorization.authorizationExpiry) + 1, pending.payment.agent)), needsLink: true };
+      }
+      return this.store(input, approvalDigestV2(pending), Number(pending.authorization.authorizationExpiry) + 1, pending.payment.agent, lines, linked);
     }
     if (!tokenMatches(token, this.config.agentToken)) throw new RelayError(401, "unauthorized");
     const pending = this.validate(input);
@@ -263,13 +284,14 @@ export class Relay {
     return this.store(input, approvalDigest(pending), Number(pending.authorization.authorizationExpiry), undefined, lines);
   }
 
-  private async store(
-    input: unknown,
-    digest: Hex,
-    expiresAt: number,
-    agent: Address | undefined,
-    lines: (url: string) => string[],
-  ): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean }> {
+  /** Keeps a request without alerting anyone, so asking again after the approver links finds the same one. */
+  private async hold(input: unknown, digest: Hex, expiresAt: number, agent: Address | undefined): Promise<{ requestId: string; alerted: boolean }> {
+    const request = this.remember(input, digest, expiresAt, agent);
+    this.save();
+    return { requestId: request.id, alerted: request.alerted };
+  }
+
+  private remember(input: unknown, digest: Hex, expiresAt: number, agent: Address | undefined): Stored {
     this.prune();
     const known = this.byDigest.get(digest);
     let request = known ? this.requests.get(known) : undefined;
@@ -286,17 +308,31 @@ export class Relay {
       this.requests.set(request.id, request);
       this.byDigest.set(digest, request.id);
     }
+    return request;
+  }
+
+  private async store(
+    input: unknown,
+    digest: Hex,
+    expiresAt: number,
+    agent: Address | undefined,
+    lines: (url: string) => string[],
+    chatId?: string,
+  ): Promise<{ requestId: string; alerted: boolean; rateLimited?: boolean }> {
+    const request = this.remember(input, digest, expiresAt, agent);
     if (request.alerted) return { requestId: request.id, alerted: true };
     // A repeat while the first send is still going reports its result, and never alerts twice.
     const sending = this.sending.get(request.id);
     if (sending) return { requestId: request.id, alerted: await sending };
-    const reserved = this.reserveAlertSlot("approval");
+    // Each person has their own budget, so one vault's agent cannot use up another's alerts.
+    const budget = chatId ? `approval:${chatId}` : "approval";
+    const reserved = this.reserveAlertSlot(budget);
     if (reserved === undefined) {
       this.save();
       return { requestId: request.id, alerted: false, rateLimited: true };
     }
     const url = this.link(request.id);
-    const delivery = this.send("approval", { text: lines(url).join("\n"), url }, reserved);
+    const delivery = this.send(budget, { text: lines(url).join("\n"), url }, reserved, chatId);
     this.sending.set(request.id, delivery);
     try {
       request.alerted = await delivery;
@@ -342,7 +378,9 @@ export class Relay {
   signature(id: string, token: string | undefined): { status: "pending" } | { status: "signed"; signature: NonNullable<Stored["signature"]> } {
     const request = this.find(id);
     const expected = request.agent ? this.config.v2?.agentTokens.get(request.agent) : this.config.agentToken;
-    if (!tokenMatches(token, expected)) throw new RelayError(401, "unauthorized");
+    const registered = this.config.people?.agentByToken(token);
+    const asRegistered = request.agent !== undefined && registered?.agent === request.agent && isPendingV2(request.pending) && parsePendingV2(request.pending).vault === registered?.vault;
+    if (!asRegistered && !tokenMatches(token, expected)) throw new RelayError(401, "unauthorized");
     return request.signature ? { status: "signed", signature: request.signature } : { status: "pending" };
   }
 

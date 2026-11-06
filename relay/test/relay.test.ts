@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { paymentHash, parsePending, typedDataRequest, SIGNATURE_SCHEMA, approvalDigest, type Pending } from "../../owner-page/src/approval";
 import { approvalDigestV2, buildSignatureFileV2, parsePendingV2, paymentHashV2, typedDataRequestV2 } from "../../owner-page/src/approval-v2";
+import { linkMessage, registerMessage } from "../../owner-page/src/messages";
+import { People } from "../src/people";
 import { Relay, type RelayConfig } from "../src/relay";
 import { relayServer } from "../src/server";
 import { telegramNotifier } from "../src/telegram";
@@ -441,5 +443,103 @@ describe("v2 requests", () => {
     const again = new Relay(r.config, async () => true);
     expect(again.signature(requestId, TOKEN_A)).toEqual({ status: "pending" });
     expect(() => again.signature(requestId, TOKEN_B)).toThrow(/unauthorized/);
+  });
+});
+
+describe("per-person alerts", () => {
+  const V2_VAULT = getAddress("0x2000000000000000000000000000000000000002");
+  const AGENT = getAddress("0xa00000000000000000000000000000000000000a");
+  const owner = privateKeyToAccount(generatePrivateKey());
+  const person = privateKeyToAccount(generatePrivateKey());
+  const other = privateKeyToAccount(generatePrivateKey());
+  const reader = (enabled: (signer: string) => boolean = () => true) => ({
+    contractVersion: async () => 2n, owner: async () => owner.address, token: async () => getAddress(TOKEN),
+    signerEnabled: async (_v: string, signer: string) => enabled(signer),
+  });
+  function pending(signer: string = person.address, suffix = "people") {
+    const now = Math.floor(Date.now() / 1000);
+    const payment = { paymentId: keccak256(toHex(`pay-${suffix}`)), agent: AGENT, token: TOKEN, recipient: VENDOR, amount: "6000000",
+      evidenceCommitment: keccak256(toHex("invoice")), policyVersion: "1", recipientVersion: "1", validUntil: String(now + 3000) };
+    const base = { schema: "vault-pending-approval/2", chainId: "5042002", vault: V2_VAULT, payment,
+      authorization: { paymentHash: "0x" + "00".repeat(32), signer, signerVersion: "1", approvalNonce: "7", authorizationExpiry: String(now + 600) },
+      invoiceReference: "x", exceededRule: "perPaymentLimit", perPaymentLimit: "1000000" };
+    base.authorization.paymentHash = paymentHashV2(parsePendingV2(base).payment);
+    return base;
+  }
+  async function world(enabled?: (signer: string) => boolean) {
+    const sent: { chat?: string; text: string }[] = [];
+    const people = new People({ chain: reader(enabled), chainId: 5042002n, token: getAddress(TOKEN), botUsername: "bot" });
+    const config: RelayConfig = { chainId: 5042002n, vault: getAddress(VAULT), owner: owner.address, token: getAddress(TOKEN), pageUrl: "https://a.example/", relayUrl: "https://b.example", agentToken: AGENT_TOKEN, maxAlertsPerHour: 3, maxRequests: 50, people };
+    const relay = new Relay(config, async (alert, chat) => { sent.push({ ...(chat ? { chat } : {}), text: alert.text }); return true; });
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const registered = await people.register({ chainId: "5042002", vault: V2_VAULT, agent: AGENT, approver: person.address, issuedAt, signature: await owner.signMessage({ message: registerMessage(5042002n, V2_VAULT, AGENT, person.address, issuedAt) }) });
+    const link = async (account = person, chat = "555") => {
+      const body = { wallet: account.address, issuedAt, signature: await account.signMessage({ message: linkMessage(account.address, issuedAt) }) };
+      people.completeLink((await people.startLink(body)).code, chat);
+    };
+    return { relay, sent, token: registered.token, link, people };
+  }
+
+  it("alerts only the named person's own chat", async () => {
+    const w = await world();
+    await w.link();
+    expect((await w.relay.submit(pending(), w.token)).alerted).toBe(true);
+    expect(w.sent.map((s) => s.chat)).toEqual(["555"]);
+  });
+  it("says when the approver has not linked Telegram, and alerts when asked again after they do", async () => {
+    const w = await world();
+    const first = await w.relay.submit(pending(), w.token);
+    expect(first).toMatchObject({ alerted: false, needsLink: true });
+    expect(w.sent).toEqual([]);
+    await w.link();
+    const again = await w.relay.submit(pending(), w.token);
+    expect(again).toMatchObject({ requestId: first.requestId, alerted: true });
+    expect(w.sent).toHaveLength(1);
+  });
+  it("refuses an approver other than the one the owner chose for this agent", async () => {
+    const w = await world();
+    await w.link(other, "999");
+    await expect(w.relay.submit(pending(other.address), w.token)).rejects.toMatchObject({ status: 403 });
+    expect(w.sent).toEqual([]);
+  });
+  it("refuses when the chain says the approver was removed", async () => {
+    const w = await world(() => true);
+    await w.link();
+    w.people.setChainForTest(reader(() => false));
+    await expect(w.relay.submit(pending(), w.token)).rejects.toMatchObject({ status: 403 });
+  });
+  it("still alerts when the chain cannot be read, because the vault decides anyway", async () => {
+    const w = await world();
+    await w.link();
+    w.people.setChainForTest({ ...reader(), signerEnabled: async () => { throw new Error("rpc"); } });
+    expect((await w.relay.submit(pending(), w.token)).alerted).toBe(true);
+  });
+  it("refuses another agent or vault with a registered token, and lets only that token read the signature", async () => {
+    const w = await world();
+    await w.link();
+    const otherVault = pending();
+    otherVault.vault = getAddress(VAULT);
+    await expect(w.relay.submit(otherVault, w.token)).rejects.toMatchObject({ status: 403 });
+    const { requestId } = await w.relay.submit(pending(), w.token);
+    expect(w.relay.signature(requestId, w.token)).toEqual({ status: "pending" });
+    expect(() => w.relay.signature(requestId, AGENT_TOKEN)).toThrow(/unauthorized/);
+  });
+  it("keeps each person's alert budget separate, so one vault cannot use up another's", async () => {
+    const w = await world();
+    await w.link();
+    for (const suffix of ["a", "b", "c", "d"]) await w.relay.submit(pending(person.address, suffix), w.token);
+    expect(w.sent).toHaveLength(3);
+    expect(w.relay.notice).toBeDefined();
+  });
+  it("sends an accepted signature back through the same path", async () => {
+    const w = await world();
+    await w.link();
+    const json = pending();
+    const { requestId } = await w.relay.submit(json, w.token);
+    const parsed = parsePendingV2(json);
+    const request = JSON.parse(typedDataRequestV2(parsed));
+    const signature = await person.signTypedData({ domain: { ...request.domain, chainId: parsed.chainId }, types: { ExceptionAuthorization: request.types.ExceptionAuthorization }, primaryType: "ExceptionAuthorization", message: { ...parsed.authorization } });
+    await w.relay.sign(requestId, JSON.parse(await buildSignatureFileV2(parsed, signature)));
+    expect(w.relay.signature(requestId, w.token).status).toBe("signed");
   });
 });

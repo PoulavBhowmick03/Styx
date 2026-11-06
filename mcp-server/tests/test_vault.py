@@ -393,3 +393,55 @@ def test_a_named_approver_reaches_the_binary_on_v2_and_is_refused_on_v1(tmp_path
         forwarded = [json.loads(line) for line in capture.read_text().splitlines()]
         sent = [request for request in forwarded if request["method"] == "request_approval"]
         assert [request.get("signer") for request in sent] == ([approver] if expected_ok else [])
+
+
+def test_a_registered_agent_asks_the_approver_its_owner_chose_and_reports_when_they_must_link(tmp_path):
+    import http.server
+    import threading
+
+    approver = "0x" + "ef" * 20
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _reply(self, body):
+            data = json.dumps(body).encode()
+            self.send_response(200)
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        def do_GET(self):
+            self._reply({"vault": "0x" + "11" * 20, "agent": "0x" + "22" * 20, "approver": approver})
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            self._reply({"requestId": "a" * 22, "alerted": False, "needsLink": True})
+        def log_message(self, *_):
+            pass
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    directory = private_dir(tmp_path / "agent")
+    capture = directory / "requests.log"
+    script = directory / "fake-vault"
+    script.write_text(textwrap.dedent(f"""\
+        #!{sys.executable}
+        import json, sys
+        request = json.load(sys.stdin)
+        open({str(capture)!r}, "a").write(json.dumps(request) + "\\n")
+        if request["method"] == "version":
+            print(json.dumps({{"status": "ok", "protocol": 1, "contract_version": 2}}))
+        else:
+            open(request["pending_file"], "w").write("{{}}")
+            print(json.dumps({{"status": "ok", "pending_file": request["pending_file"], "approval_digest": "0x" + "11" * 32}}))
+        """))
+    script.chmod(0o700)
+
+    async def body(session):
+        reply = result(await session.call_tool("styx_request_owner_approval", {"payment_id": "0x" + "cd" * 32}))
+        assert reply["ok"] is True, reply
+        assert reply["result"]["owner_alerted"] is False
+        assert reply["result"]["approver_needs_to_link_telegram"] is True
+
+    try:
+        run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(script),
+                     "STYX_VAULT_RELAY_URL": f"http://127.0.0.1:{server.server_port}", "STYX_VAULT_RELAY_TOKEN": "t" * 32}, body)
+    finally:
+        server.shutdown()
+    sent = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [request.get("signer") for request in sent if request["method"] == "request_approval"] == [approver]

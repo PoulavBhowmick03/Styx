@@ -12,9 +12,9 @@ export function telegramNotifier(options: {
 }): Notify {
   const send = options.fetch ?? fetch;
   const base = options.apiBase ?? "https://api.telegram.org";
-  return async (alert: Alert): Promise<boolean> => {
+  return async (alert: Alert, chatId?: string): Promise<boolean> => {
     const body: Record<string, unknown> = {
-      chat_id: options.chatId,
+      chat_id: chatId ?? options.chatId,
       text: alert.text,
       link_preview_options: { is_disabled: true },
     };

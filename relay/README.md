@@ -60,6 +60,25 @@ Set `RELAY_V2_VAULT` and `RELAY_V2_AGENT_TOKENS`, which is JSON of `{"0xagent": 
 
 The page and relay support plain-account signers only. The contract accepts ERC-1271 wallets, but no wallet path for them exists here, so a Safe cannot approve through this page yet.
 
+## Alerts for each person
+
+With `RELAY_BOT_USERNAME` and `RELAY_RPC_URLS` set, any vault can use this relay, and each alert goes to one person.
+
+1. **Link.** Someone opens `https://styxco.xyz/?link`, signs once to prove the wallet is theirs, and presses Start in the bot. The relay keeps only wallet and chat ID. An alert never moves money, so a wrong link can misdirect a notice but cannot approve anything.
+2. **Register.** A vault's owner signs to choose an agent's approver. The relay checks the owner, the vault and the approver against the chain, and returns that agent's token once, keeping only its hash. Registering again replaces the token.
+3. **Alert.** The relay refuses a different approver than the one chosen, or one the vault no longer lists, and alerts only that person's chat. If they have not linked, it answers `needsLink` and alerts nobody, and asking again after they link sends it. An unreadable chain does not stop an alert, because the vault still decides. Each chat has its own hourly budget.
+
+The agent's MCP server asks the relay for its chosen approver, so an agent need not know who that is. The vault named in `RELAY_V2_VAULT` keeps its configured tokens and falls back to `TELEGRAM_CHAT_ID`.
+
+| Call | Auth | Purpose |
+| --- | --- | --- |
+| `POST /links/start` | Wallet signature | Returns a one-time bot link |
+| `GET /links/<wallet>` | None | `{"linked": true\|false}` |
+| `POST /agents/register` | Owner's signature | Returns `{"token", "relay"}` |
+| `GET /agents/me` | Agent token | Returns its vault, agent and approver |
+
+`scripts/agent_setup.sh` makes an agent's key on its own machine and prints the address to give the owner.
+
 ## API
 
 All bodies are JSON.

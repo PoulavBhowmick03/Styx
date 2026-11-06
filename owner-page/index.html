@@ -20,14 +20,36 @@
       <p>Styx holds USDC in a vault on Arc testnet. An AI agent can pay routine invoices up to the limits you set. For anything above a limit, the vault needs a signature from you or from an approver, over the exact payment. A reviewer can check one disclosed record against the chain.</p>
       <p class="note">Testnet only, and not audited. Approvers sign from a plain wallet; a smart-contract wallet such as a Safe cannot approve through these pages.</p>
       <p>This page is where you review and sign an exception. You normally arrive here from an alert link that carries the request, so there is nothing to sign yet.</p>
+      <h2>Who is this for?</h2>
+      <div class="paths">
+        <a class="path" id="path-me" href="/setup/?path=me">
+          <strong>Just me</strong>
+          <span>Give your agent a budget, not your wallet. Over budget, your phone buzzes and you approve the exact payment.</span>
+        </a>
+        <a class="path" id="path-team" href="/setup/?path=team">
+          <strong>A team</strong>
+          <span>One vault, many agents with their own limits, and approvers signing from their own wallets.</span>
+        </a>
+      </div>
       <div class="links">
-        <a class="button" href="/setup/">Set up a vault</a>
+        <a class="button secondary" id="path-link" href="/?link">Get approval alerts on Telegram</a>
         <a class="button secondary" href="https://github.com/PoulavBhowmick03/Styx">Source code</a>
         <a class="button secondary" href="https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8">Demo vault on Arc</a>
       </div>
     </section>
 
     <h1 id="page-title">Approve an exception</h1>
+    <section id="link-view" hidden>
+      <h1>Get approval alerts on Telegram</h1>
+      <p>Connect the wallet that approves payments, sign once to prove it is yours, then open the bot. Signing costs nothing and moves no money. An alert never moves money either: you always review and sign on this page.</p>
+      <button id="link-connect" type="button">Connect wallet and sign</button>
+      <dl id="link-wallet-row" hidden>
+        <dt>Wallet</dt>
+        <dd id="link-wallet" class="mono"></dd>
+      </dl>
+      <a id="link-bot" class="button" hidden>Open Telegram</a>
+      <p id="link-done" hidden>Linked. Requests for this wallet will come to your Telegram chat.</p>
+    </section>
     <section id="first-use" hidden>
       <h2>Is this your vault?</h2>
       <p>You only confirm this once in this browser. Everything else is read from the vault.</p>

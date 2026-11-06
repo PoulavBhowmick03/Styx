@@ -2,6 +2,8 @@
 
 import { getAddress, isAddress, type Address } from "viem";
 
+import { chainReader } from "./chain";
+import { People, runBot } from "./people";
 import { Relay, type RelayConfig } from "./relay";
 import { relayServer } from "./server";
 import { telegramNotifier } from "./telegram";
@@ -64,11 +66,29 @@ const config: RelayConfig = {
   ...(process.env.RELAY_STATE_DIR ? { stateDir: process.env.RELAY_STATE_DIR } : {}),
   ...(process.env.RELAY_V2_VAULT ? { v2: { vault: address("RELAY_V2_VAULT"), agentTokens: agentTokens() } } : {}),
 };
+// With a bot name and RPCs set, any vault's owner can register agents and anyone can link Telegram.
+if (process.env.RELAY_BOT_USERNAME) {
+  config.people = new People({
+    chain: chainReader(required("RELAY_RPC_URLS").split(",")),
+    chainId: config.chainId,
+    token: config.token,
+    botUsername: process.env.RELAY_BOT_USERNAME,
+    ...(config.stateDir ? { stateDir: config.stateDir } : {}),
+  });
+}
 const notify = telegramNotifier({
   botToken: required("TELEGRAM_BOT_TOKEN"),
   chatId: required("TELEGRAM_CHAT_ID"),
   ...(process.env.TELEGRAM_API_BASE ? { apiBase: process.env.TELEGRAM_API_BASE } : {}),
 });
+if (config.people) {
+  void runBot({
+    botToken: required("TELEGRAM_BOT_TOKEN"),
+    ...(process.env.TELEGRAM_API_BASE ? { apiBase: process.env.TELEGRAM_API_BASE } : {}),
+    people: config.people,
+    send: (chatId, text) => notify({ text }, chatId),
+  });
+}
 relayServer(new Relay(config, notify), config).listen(port, process.env.RELAY_HOST ?? "127.0.0.1", () => {
   console.log(`relay listening on port ${port}`);
 });

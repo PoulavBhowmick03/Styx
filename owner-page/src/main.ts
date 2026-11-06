@@ -1,4 +1,4 @@
-import { getAddress, pad, type Address, type Hex } from "viem";
+import { getAddress, pad, toHex, type Address, type Hex } from "viem";
 
 import {
   ApprovalError,
@@ -23,6 +23,7 @@ import {
   type RelayLink,
   type VaultTrust,
 } from "./approval";
+import { linkMessage } from "./messages";
 import {
   buildSignatureFileV2,
   callData,
@@ -533,6 +534,78 @@ function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
   };
 }
 
+// ---- Linking Telegram to a wallet, so alerts reach the right person ----
+
+function showLinkView(): void {
+  element("link-view").hidden = false;
+  element("config-details").hidden = true;
+  element("pending-label").hidden = true;
+  if (!BUILT_IN_RELAY) showStatus("This build has no relay to link with.", true);
+}
+
+async function linkTelegram(): Promise<void> {
+  const wallet = window.ethereum;
+  if (!wallet) {
+    const { host, pathname, search } = window.location;
+    element<HTMLAnchorElement>("open-wallet").href = `https://link.metamask.io/dapp/${host}${pathname}${search}`;
+    element("wallet-help").hidden = false;
+    showStatus("Open this page in your wallet's browser to connect.");
+    return;
+  }
+  if (!BUILT_IN_RELAY) return;
+  const relay = new URL(BUILT_IN_RELAY).origin;
+  const button = element<HTMLButtonElement>("link-connect");
+  button.disabled = true;
+  try {
+    const accounts = (await wallet.request({ method: "eth_requestAccounts" })) as string[];
+    if (!accounts[0]) throw new ApprovalError("Connect a wallet, then try again.");
+    const account = getAddress(accounts[0]);
+    element("link-wallet").textContent = account;
+    element("link-wallet-row").hidden = false;
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const message = linkMessage(account, issuedAt);
+    const signature = (await wallet.request({ method: "personal_sign", params: [toHex(message), account] })) as Hex;
+    const response = await fetch(`${relay}/links/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wallet: account, issuedAt, signature }),
+    });
+    const body = (await response.json()) as { botUrl?: string; error?: string };
+    if (!response.ok || !body.botUrl?.startsWith("https://t.me/")) throw new ApprovalError(body.error ?? "The relay did not answer. Try again.");
+    const bot = element<HTMLAnchorElement>("link-bot");
+    bot.href = body.botUrl;
+    bot.hidden = false;
+    button.hidden = true;
+    showStatus("Now open Telegram and press Start. This link works once, for 10 minutes.");
+    void watchLink(relay, account);
+  } catch (error) {
+    showStatus(error instanceof ApprovalError ? error.message : "The wallet did not sign. Nothing was linked.", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function watchLink(relay: string, account: Address): Promise<void> {
+  for (let tries = 0; tries < 200; tries += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const reply = (await (await fetch(`${relay}/links/${account}`)).json()) as { linked?: boolean };
+      if (reply.linked) {
+        element("link-bot").hidden = true;
+        element("link-done").hidden = false;
+        showStatus("Signed. Your wallet is linked to Telegram.");
+        return;
+      }
+    } catch {
+      // Asked again on the next pass.
+    }
+  }
+}
+
+element("link-connect").addEventListener("click", () => {
+  void linkTelegram();
+});
+
 // ---- A v2 request: the signer may be an approver with their own wallet ----
 
 // Arc's own public endpoints, from https://docs.arc.io/arc/references/connect-to-arc. Used only if the
@@ -745,5 +818,7 @@ if (relayLink) void openFromLink(relayLink);
 // The landing text shows only when the URL carries no approval link at all.
 {
   const params = new URLSearchParams(window.location.search);
-  if (!params.has("relay") && !params.has("request")) element("landing").hidden = false;
+  const asking = params.has("relay") || params.has("request");
+  if (params.has("link") && !asking) showLinkView();
+  else if (!asking) element("landing").hidden = false;
 }
