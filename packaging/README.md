@@ -36,7 +36,7 @@ continue to work without a Rust compiler.
 
 Locally verified: macOS arm64 release wheel, isolated installation with Cargo and rustc absent
 from PATH, real `erebus-vault` version request, disclosure key generation, MCP entry point.
-Linux x86_64 and macOS x86_64 builds are defined in CI but have not been run locally.
+Linux x86_64 builds are defined in CI but have not been run locally. macOS x86_64 is an untested build target.
 Linux wheels use the native `linux_x86_64` tag, not an unverified manylinux tag; build-host
 libc compatibility applies. Windows is not supported by this build configuration.
 
