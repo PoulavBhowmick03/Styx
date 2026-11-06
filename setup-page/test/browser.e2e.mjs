@@ -38,7 +38,8 @@ async function scenario(name, run) { await run(); results.push(name); console.lo
 let browser;
 try {
   const config = join(WORK, "anvil.json");
-  start("anvil", ["--port", String(RPC_PORT), "--silent", "--config-out", config]);
+  // Keeps old state so the page can ask what the vault's code was at an old block, as Arc's public RPC lets it.
+  start("anvil", ["--port", String(RPC_PORT), "--silent", "--prune-history", "400000", "--config-out", config]);
   await waitFor(async () => spawnSync("cast", ["chain-id", "--rpc-url", RPC]).status === 0 && JSON.parse(readFileSync(config, "utf8")), "anvil");
   const keys = JSON.parse(readFileSync(config, "utf8")).private_keys;
   const addr = (k) => sh("cast", ["wallet", "address", "--private-key", k]);
@@ -69,11 +70,23 @@ try {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     const prompts = [];
-    const control = { reject: rejectNext };
+    // `control` makes the stand-in RPC behave like Arc's public one when a test asks it to.
+    const control = { reject: rejectNext, logCalls: [], flakyLogs: 0, noHistory: false, rateLimited: 0, oldCodeCalls: 0 };
     await page.exposeFunction("__wallet", async (method, params) => {
       prompts.push(method);
       if (method === "eth_requestAccounts") return [account];
       if (method === "eth_chainId") return chainId;
+      if (method === "eth_getLogs") {
+        const { fromBlock, toBlock } = params[0];
+        const span = BigInt(toBlock) - BigInt(fromBlock) + 1n;
+        control.logCalls.push([BigInt(fromBlock), BigInt(toBlock)]);
+        if (control.flakyLogs > 0) { control.flakyLogs--; throw new Error("RPC error -32014: block not imported yet"); }
+        if (span > 10000n) throw new Error("RPC error -32012: block range exceeds 10000");
+      }
+      if (method === "eth_getCode" && params[1] !== "latest") control.oldCodeCalls++;
+      // Like Arc's public endpoint, which answers HTTP 429 / -32005 once a request budget is spent.
+      if ((method === "eth_getLogs" || method === "eth_getCode") && control.rateLimited > 0) { control.rateLimited--; throw new Error("HTTP request failed. Status: 429. rate limit exceeded (-32005)"); }
+      if (method === "eth_getCode" && control.noHistory && params[1] !== "latest") throw new Error("missing trie node: historical state is not available");
       if (method === "eth_sendTransaction" && control.reject) {
         throw Object.assign(new Error("User rejected the request."), { code: 4001 });
       }
@@ -139,7 +152,7 @@ try {
     await page.click("#add-vendor");
     await statusIs(page, /Allow vendor on vault .*: confirmed/);
     assert.equal(call(vault, "allowedRecipient(address)(bool)", VENDOR), "true");
-    await page.locator("#vendors li").first().waitFor();
+    await page.locator("#vendors li").first().waitFor({ timeout: 8000 }).catch(async (e) => { throw new Error(`${e.message}; vendors-note was: ${await page.locator("#vendors-note").textContent()}`); });
     assert.equal(await page.locator("#vendors img").count(), 0); // a hostile label stays text
     assert.ok((await page.locator("#vendors li").first().textContent()).includes(XSS));
 
@@ -435,6 +448,111 @@ try {
     const vaultTokens = BigInt(call(token, "balanceOf(address)(uint256)", vault));
     send(ownerKey, token, "transfer(address,uint256)", vault, "1");
     assert.equal(BigInt(call(token, "balanceOf(address)(uint256)", vault)), vaultTokens + 1n);
+  });
+
+  // ---- Task: list vendors on an RPC that limits log ranges, as Arc's public one does ----
+  let farVault, farCreated;
+  await scenario("vendors are listed across many blocks without ever asking for more than 9,999 at once", async () => {
+    const beforeCreate = BigInt(sh("cast", ["block-number", "--rpc-url", RPC]));
+    farVault = forgeVault();
+    farCreated = beforeCreate + 1n; // automine: the deployment is the next block
+    send(ownerKey, farVault, "configurePolicy(address,uint256,uint256,uint64)", agent, "1000000", "10000000", String(Math.floor(Date.now() / 1000) + 86400));
+    send(ownerKey, farVault, "setRecipient(address,bool)", VENDOR, "true");
+    sh("cast", ["rpc", "anvil_mine", "0x61a8", "--rpc-url", RPC]); // 25,000 blocks: more than two pages
+    const { page, control, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, farVault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    await page.locator("#vendors li").first().waitFor({ timeout: 20000 });
+    assert.ok((await page.locator("#vendors li").first().textContent()).toLowerCase().includes(VENDOR));
+    assert.equal(await page.locator("#vendors-note").textContent(), ""); // complete: no partial-list message
+    assert.ok(control.logCalls.length >= 3, `expected several pages, saw ${control.logCalls.length}`);
+    for (const [from, to] of control.logCalls) assert.ok(to - from + 1n <= 9999n, `range ${from}-${to} is too wide`);
+    await shot(page, "vendors-paged");
+    await context.close();
+  });
+
+  await scenario("a flaky -32014 from the load balancer is retried and the list still arrives", async () => {
+    const { page, control, context } = await openPage();
+    control.flakyLogs = 2;
+    await connect(page, token);
+    await openVaultByAddress(page, farVault);
+    await page.locator("#vendors li").first().waitFor({ timeout: 30000 });
+    assert.equal(await page.locator("#vendors-note").textContent(), "");
+    assert.ok(control.logCalls.length >= 5); // two failed calls were repeated
+    await context.close();
+  });
+
+  await scenario("a rate-limited RPC is waited out, and the page says it is waiting", async () => {
+    const { page, control, context } = await openPage();
+    await connect(page, token);
+    control.rateLimited = 3; // the next three lookups are refused with 429
+    await page.fill("#vault-input", farVault);
+    await page.click("#load-vault");
+    await waitFor(async () => /rate-limiting requests\. Waiting \d+s/.test(await status(page)), "a waiting message", 300); // it says so instead of looking stuck
+    await page.locator("#vendors li").first().waitFor({ timeout: 30000 });
+    assert.equal(await page.locator("#vendors-note").textContent(), ""); // recovered: complete, no partial message
+    assert.equal(control.rateLimited, 0);
+    await context.close();
+  });
+
+  await scenario("a creation-block hint is checked in two lookups, and a wrong hint is ignored", async () => {
+    // The vault's own block: verified with two historical lookups, then the scan starts there.
+    const good = await openPageAt(`?created=${farCreated}`);
+    await connect(good.page, token);
+    await openVaultByAddress(good.page, farVault);
+    await good.page.locator("#vendors li").first().waitFor({ timeout: 20000 });
+    assert.equal(good.control.oldCodeCalls, 2, `a true hint should cost 2 lookups, cost ${good.control.oldCodeCalls}`);
+    await good.context.close();
+    // A wrong hint costs its two checks, is dropped, and the page still finds the vendor by searching.
+    const bad = await openPageAt(`?created=${farCreated + 7n}`);
+    await connect(bad.page, token);
+    await openVaultByAddress(bad.page, farVault);
+    await bad.page.locator("#vendors li").first().waitFor({ timeout: 30000 });
+    assert.ok(bad.control.oldCodeCalls > 2);
+    assert.equal(await bad.page.locator("#vendors-note").textContent(), "");
+    await bad.context.close();
+  });
+
+  await scenario("after the first full read, a refresh reads only the new blocks", async () => {
+    const { page, control, context } = await openPage();
+    await connect(page, token);
+    await openVaultByAddress(page, farVault);
+    await page.locator("#vendors li").first().waitFor({ timeout: 20000 });
+    const firstRead = control.logCalls.length;
+    assert.ok(firstRead >= 3);
+    const headBefore = BigInt(sh("cast", ["block-number", "--rpc-url", RPC]));
+    await page.fill("#vendor-address", "0x00000000000000000000000000000000000000d4");
+    await page.click("#add-vendor");
+    await statusIs(page, /Allow vendor on vault .*: confirmed/);
+    await waitFor(async () => (await page.locator("#vendors li").count()) === 2, "both vendors listed");
+    const extra = control.logCalls.slice(firstRead);
+    assert.equal(extra.length, 1, `a refresh should make one log call, made ${extra.length}`);
+    assert.ok(extra[0][0] > headBefore - 5n && extra[0][1] - extra[0][0] < 50n, "and only over the newest blocks");
+    await context.close();
+  });
+
+  await scenario("when the RPC cannot say when the vault was created, the list is marked partial and a lookup still works", async () => {
+    sh("cast", ["rpc", "anvil_mine", "0x1ADB0", "--rpc-url", RPC]); // 110,000 more: the vendor is now older than the fallback window
+    const { page, control, context } = await openPage();
+    control.noHistory = true;
+    await connect(page, token);
+    await openVaultByAddress(page, farVault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    await waitFor(async () => /Partial list/.test(await page.locator("#vendors-note").textContent()), "partial note", 300);
+    const note = await page.locator("#vendors-note").textContent();
+    assert.match(note, /could not say when the vault was created/);
+    assert.match(note, /A vendor allowed earlier may be missing/);
+    // Only the recent vendor (added by the previous scenario) is inside what could be read. The old one is not.
+    assert.equal(await page.locator("#vendors li").count(), 1);
+    const listed = (await page.locator("#vendors li").first().textContent()).toLowerCase();
+    assert.ok(listed.includes("d4") && !listed.includes(VENDOR));
+    for (const [from, to] of control.logCalls) assert.ok(to - from + 1n <= 9999n);
+    await page.fill("#vendor-address", VENDOR);
+    await page.click("#check-vendor");
+    await statusIs(page, /is allowed/); // the way out the note points to
+    await shot(page, "vendors-partial");
+    await context.close();
   });
 
   await scenario("a non-owner can read the vault but every change is disabled", async () => {

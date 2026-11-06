@@ -26,3 +26,12 @@ export function chainFor(id: number) {
 export function explorerTx(chainId: number, hash: string): string | undefined {
   return chainId === ARC_TESTNET_ID ? `${arcTestnet.blockExplorers.default.url}/tx/${hash}` : undefined;
 }
+
+/**
+ * Creation blocks the page may try first, so a vault whose history is long does not cost a search against a
+ * rate-limited RPC. Source: the deployment table in docs/mumbai/STATUS.md. A hint is only a guess: the page
+ * checks it on-chain (code at that block and none one block earlier) before using it.
+ */
+export const KNOWN_CREATION_BLOCKS: Record<string, bigint> = {
+  [`${ARC_TESTNET_ID}:0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1`]: 71_050_472n,
+};

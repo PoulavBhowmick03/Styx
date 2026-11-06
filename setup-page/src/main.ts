@@ -14,7 +14,8 @@ import {
 import { erc20Abi, vaultAbi } from "./abi";
 import { AmountError, formatNative, formatUsdc, parseUsdc, TOKEN_DECIMALS } from "./amounts";
 import { matchesBuild, type Artifact } from "./build";
-import { ARC_TESTNET_ID, ARC_USDC, arcTestnet, chainFor, explorerTx } from "./chains";
+import { ARC_TESTNET_ID, ARC_USDC, arcTestnet, chainFor, explorerTx, KNOWN_CREATION_BLOCKS } from "./chains";
+import { findFirstBlockWithCode, MAX_LOG_RANGE, pageLogs, retryRpc, verifyCreationBlock } from "./logs";
 import { assessProtection, isProtected } from "./protection";
 
 interface Eip1193 {
@@ -37,6 +38,20 @@ const setText = (id: string, text: string) => void ($(id).textContent = text);
 // What the owner keeps for gas on their own address (assumption, see protection.ts).
 const OWNER_RESERVE = 200_000n;
 
+/**
+ * Reads go through this wrapper so a rate-limited or briefly lagging RPC is waited out, as Arc's public one
+ * needs. Anything that signs or sends is never retried here: a retried send could pay twice.
+ */
+const isRead = (method: string) => /^eth_(get|call$|blockNumber$|chainId$|feeHistory$|gasPrice$)/.test(method);
+function readProvider(provider: Eip1193): Eip1193 {
+  return {
+    request: (args) =>
+      isRead(args.method)
+        ? retryRpc(() => provider.request(args), { onWait: (ms, why) => status(`The RPC is ${why === "rate limit" ? "rate-limiting requests" : "not ready yet"}. Waiting ${Math.ceil(ms / 1000)}s, then trying again...`) })
+        : provider.request(args),
+  };
+}
+
 let account: Address | undefined;
 let chainId = 0;
 let pub: PublicClient | undefined;
@@ -53,6 +68,8 @@ let vaultToken: Address | undefined;
 /** False when the vault's code differs from this page's build. Funding then needs a deliberate unlock. */
 let codeMatches: boolean | undefined;
 let fundingUnlocked = false;
+/** What the vendor scan has read for the connected vault, so later refreshes read only new blocks. */
+let vendorScan: { vault: Address; seen: Set<Address>; scannedTo: bigint } | undefined;
 // A vault named in the page's address (?vault=0x...). It is opened only after the wallet connects.
 let linkedVault: Address | undefined;
 
@@ -152,6 +169,7 @@ function renderBanner(): void {
 /** Forgets everything typed or computed for the previous vault, so nothing from it can be saved on another. */
 function resetForVault(): void {
   vaultOwner = undefined;
+  vendorScan = undefined;
   codeMatches = undefined;
   fundingUnlocked = false;
   pendingWithdrawal = undefined;
@@ -231,7 +249,7 @@ async function connect(): Promise<void> {
     return status(errorText(error), true);
   }
   const chain = chainFor(chainId);
-  pub = createPublicClient({ chain, transport: custom(window.ethereum) });
+  pub = createPublicClient({ chain, transport: custom(readProvider(window.ethereum)) });
   wallet = createWalletClient({ account, chain, transport: custom(window.ethereum) });
   setText("account", account);
   setText("chain", chainId === ARC_TESTNET_ID ? "Arc Testnet" : `Chain ${chainId}: not Arc Testnet. Rehearsal only; set the token address yourself.`);
@@ -326,6 +344,7 @@ async function deploy(): Promise<void> {
     const hash = await wallet!.deployContract({ abi: built.abi, bytecode: built.bytecode, args: [account, token], account: account!, chain: wallet!.chain });
     const receipt = await pub!.waitForTransactionReceipt({ hash, timeout: 90_000 });
     deployedAt = receipt.contractAddress ?? undefined;
+    if (deployedAt) remember(`vault-setup:created:${chainId}:${deployedAt.toLowerCase()}`, receipt.blockNumber.toString());
     setText("deploy-note", `Deploy transaction ${hash}, block ${receipt.blockNumber}. Keep these for your records.`);
   }, false);
   if (ok && deployedAt) await openVault(deployedAt);
@@ -463,19 +482,91 @@ function setControls(isOwner = ownerFlag): void {
   for (const button of document.querySelectorAll<HTMLButtonElement>("#vendors button, #recent button")) button.disabled = button.closest("#recent") ? busy : off;
 }
 
+/** Pages used when the vault's creation block cannot be found: roughly the last 120,000 blocks. */
+const FALLBACK_PAGES = 12;
+
+/**
+ * The block the vault was created in: remembered, else a hint checked on-chain (the page's address ?created=
+ * or a known vault), else found by searching old state. Undefined if the RPC cannot say.
+ */
+async function creationBlock(address: Address, head: bigint): Promise<bigint | undefined> {
+  const key = `vault-setup:created:${chainId}:${address.toLowerCase()}`;
+  const saved = remembered(key);
+  if (saved && /^[0-9]+$/.test(saved) && BigInt(saved) <= head) return BigInt(saved);
+  const hasCode = async (block: bigint) => {
+    const code = await pub!.getCode({ address, blockNumber: block });
+    return !!code && code !== "0x";
+  };
+  try {
+    const hints: bigint[] = [];
+    const known = KNOWN_CREATION_BLOCKS[`${chainId}:${address.toLowerCase()}`];
+    if (known !== undefined) hints.push(known);
+    const param = new URLSearchParams(window.location.search).get("created");
+    if (param && /^[0-9]{1,12}$/.test(param)) hints.push(BigInt(param));
+    for (const hint of hints) {
+      if (hint > head) continue;
+      const verified = await verifyCreationBlock(hasCode, hint);
+      if (verified !== undefined) {
+        remember(key, verified.toString());
+        return verified;
+      }
+    }
+    const found = await findFirstBlockWithCode(hasCode, head);
+    if (found !== undefined) remember(key, found.toString());
+    return found;
+  } catch {
+    return undefined;
+  }
+}
+
 async function listVendors(isOwner: boolean): Promise<void> {
   if (!pub || !vault) return;
+  const mine = vault;
   const list = $("vendors");
   const names = labels();
   let candidates: Address[] = [];
   try {
-    const logs = await pub.getLogs({ address: vault, event: vaultAbi.find((x) => x.type === "event" && x.name === "RecipientSet") as never, fromBlock: "earliest", toBlock: "latest" });
-    const seen = new Set<Address>();
-    for (const log of logs as unknown as { args: { recipient: Address } }[]) seen.add(getAddress(log.args.recipient));
-    candidates = [...seen];
-    setText("vendors-note", candidates.length ? "" : "No vendors yet. Payments to any other address are refused.");
-  } catch {
-    setText("vendors-note", "Could not list vendors: the RPC may limit log queries. Use Check address to look one up.");
+    const event = vaultAbi.find((x) => x.type === "event" && x.name === "RecipientSet");
+    // viem caches the block number for a few seconds, which would hide a vendor allowed a moment ago.
+    const head = await pub.getBlockNumber({ cacheTime: 0 });
+    const fetchRange = async (fromBlock: bigint, toBlock: bigint) =>
+      (await pub!.getLogs({ address: mine, event: event as never, fromBlock, toBlock })) as unknown as { args: { recipient: Address } }[];
+    const previous = vendorScan?.vault === mine ? vendorScan : undefined;
+    if (previous) {
+      // Already read everything up to `scannedTo`: read only what is new.
+      const fresh = await pageLogs(fetchRange, previous.scannedTo + 1n, head, { retry: false });
+      if (fresh.complete) {
+        for (const log of fresh.items) previous.seen.add(getAddress(log.args.recipient));
+        previous.scannedTo = head;
+        candidates = [...previous.seen];
+        if (vault !== mine) return;
+        setText("vendors-note", candidates.length ? "" : "No vendors yet. Payments to any other address are refused.");
+      } else {
+        vendorScan = undefined; // something went wrong: next refresh starts over
+        throw new Error(fresh.reason ?? "the RPC stopped answering");
+      }
+    } else {
+      setText("vendors-note", "Looking up your vendors...");
+      const created = await creationBlock(mine, head);
+      const start = created ?? (head >= MAX_LOG_RANGE * BigInt(FALLBACK_PAGES) ? head - MAX_LOG_RANGE * BigInt(FALLBACK_PAGES) + 1n : 0n);
+      const result = await pageLogs(fetchRange, start, head, { maxPages: created === undefined ? FALLBACK_PAGES : 400, retry: false });
+      if (vault !== mine) return; // the owner switched vaults while this was loading
+      const seen = new Set<Address>();
+      for (const log of result.items) seen.add(getAddress(log.args.recipient));
+      candidates = [...seen];
+      if (result.complete && created !== undefined) {
+        vendorScan = { vault: mine, seen, scannedTo: head };
+        setText("vendors-note", candidates.length ? "" : "No vendors yet. Payments to any other address are refused.");
+      } else {
+        const scope = created === undefined ? `the most recent blocks, from ${result.scannedFrom}, because this RPC could not say when the vault was created` : `block ${result.scannedFrom} to ${head}`;
+        setText(
+          "vendors-note",
+          `Partial list: this page read ${scope}${result.reason ? `, then ${result.reason}` : ""}. A vendor allowed earlier may be missing. Use Check address to look one up.`,
+        );
+      }
+    }
+  } catch (error) {
+    setText("vendors-note", `Could not list vendors (${errorText(error).slice(0, 120)}). Use Check address to look one up.`);
   }
   const allowed = await Promise.all(candidates.map((a) => pub!.readContract({ address: vault!, abi: vaultAbi, functionName: "allowedRecipient", args: [a] })));
   const items = candidates.filter((_, i) => allowed[i]).map((address) => {
