@@ -233,7 +233,7 @@ def main():
             try:
                 watcher.tick()
             except (Unknown, OSError) as error:
-                print(f"watcher: unknown/unavailable ({type(error).__name__}); retaining state", file=sys.stderr)
+                print(f"watcher: unknown/unavailable ({error}); retaining state", file=sys.stderr)
                 if args.once:
                     return 1
             if args.once:
