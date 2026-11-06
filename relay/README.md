@@ -54,6 +54,12 @@ The root `.dockerignore` is an allowlist, so `.env` and keys cannot enter the im
 
 A real Telegram bot has been used on Arc testnet. The automated tests use a fake Telegram server that follows the Bot API docs.
 
+## v2
+
+Set `RELAY_V2_VAULT` and `RELAY_V2_AGENT_TOKENS`, which is JSON of `{"0xagent": "that agent's token"}`. Each agent has its own token and can only submit and read its own requests, and the relay refuses to start if two share one. A signature is accepted only if it recovers to the signer the request names, over that exact request. The relay does not read the chain: the page and the vault check that the signer is an enabled approver.
+
+The page and relay support plain-account signers only. The contract accepts ERC-1271 wallets, but no wallet path for them exists here, so a Safe cannot approve through this page yet.
+
 ## API
 
 All bodies are JSON.
