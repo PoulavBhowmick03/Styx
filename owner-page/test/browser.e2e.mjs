@@ -107,17 +107,20 @@ try {
   browser = await chromium.launch({ channel: "chrome", headless: true });
 
   /** A page whose wallet is Anvil, connected as `account`, on `chainId`. */
-  async function openPage(port, { account = owner, chainId = "0x7a69" } = {}) {
+  async function openPage(port, { account = owner, chainId = "0x7a69", refuseCalls = 0 } = {}) {
     const context = await browser.newContext({ viewport: { width: 1100, height: 1000 } });
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     const prompts = [];
+    let refusals = 0;
     await page.exposeFunction("__wallet", async (method, params) => {
       // Reads show the owner nothing, so only the requests a wallet would prompt for are recorded.
       if (method !== "eth_call" && method !== "eth_chainId") prompts.push(method);
       if (method === "eth_requestAccounts") return [account];
       if (method === "eth_chainId") return chainId;
+      // A wallet endpoint that refuses the first reads, as a rate-limited one does.
+      if (method === "eth_call" && refusals < refuseCalls) { refusals += 1; throw new Error("rate limited"); }
       const r = await (await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json();
       if (r.error) throw new Error(r.error.message);
       return r.result;
@@ -435,6 +438,20 @@ try {
     assert.equal(balance(VENDOR) - before, 6000000n);
     assert.equal(errors.length, 0, errors.join());
     await context.close();
+  });
+  await scenario("v2: a wallet endpoint that refuses some reads still reaches review, and one that always refuses never shows a sign button", async () => {
+    const { link } = await askApprover();
+    const flaky = await openPage(HOSTED_PORT, { account: approver, refuseCalls: 2 });
+    await allowHosted(flaky.page);
+    await flaky.page.goto(link);
+    await flaky.page.locator("#sign").waitFor({ state: "visible" });
+    await flaky.context.close();
+    const down = await openPage(HOSTED_PORT, { account: approver, refuseCalls: 1000 });
+    await allowHosted(down.page);
+    await down.page.goto(link);
+    await waitFor(async () => /could not be read/.test(await status(down.page)), "read refusal");
+    assert.equal(await down.page.locator("#sign").isVisible(), false);
+    await down.context.close();
   });
   await scenario("v2: the owner can also sign when named", async () => {
     const { link } = await askApprover(owner);
