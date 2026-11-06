@@ -123,6 +123,17 @@ class Watcher:
             raise Unknown("RPC read unavailable")
         return response["result"]
 
+    def rpc_batch(self, calls):
+        """One HTTP request for many reads. Any missing or failed answer fails the whole batch."""
+        replies = post(self.rpc_url, [dict(jsonrpc="2.0", id=index, method=method, params=params)
+                                      for index, (method, params) in enumerate(calls)])
+        if not isinstance(replies, list) or any(not isinstance(reply, dict) for reply in replies):
+            raise Unknown("RPC batch unavailable")
+        results = {reply.get("id"): reply for reply in replies if "error" not in reply and "result" in reply}
+        if any(index not in results for index in range(len(calls))):
+            raise Unknown("RPC batch unavailable")
+        return [results[index]["result"] for index in range(len(calls))]
+
     def block(self, number, full=False):
         block = self.rpc("eth_getBlockByNumber", [hex(number), full])
         if not isinstance(block, dict) or quantity(block.get("number")) != number:
@@ -167,6 +178,44 @@ class Watcher:
             del self.state["pending"][tx_hash]
             self.save()
 
+    def scan(self, numbers):
+        """Commits a run of blocks together, so a failed read leaves the cursor where it was."""
+        replies = self.rpc_batch([("eth_getBlockByNumber", [hex(number), True]) for number in numbers])
+        last_hash, pending, last_block_of_day = self.state["last_hash"], {}, {}
+        for number, block in zip(numbers, replies):
+            if not isinstance(block, dict) or quantity(block.get("number")) != number:
+                raise Unknown("block unavailable")
+            block_hash = fixed(block.get("hash"), 32)
+            if last_hash and fixed(block.get("parentHash"), 32) != last_hash:
+                raise Unknown("parent hash mismatch; operator review required")
+            transactions = block.get("transactions")
+            if not isinstance(transactions, list) or any(not isinstance(tx, dict) for tx in transactions):
+                raise Unknown("full transaction list unavailable")
+            for tx in transactions:
+                if (isinstance(tx.get("to"), str) and tx["to"].lower() == self.binding["vault"] and
+                    isinstance(tx.get("from"), str) and tx["from"].lower() == self.binding["agent"]):
+                    pending[fixed(tx.get("hash"), 32)] = dict(number=number, hash=block_hash)
+            last_block_of_day[quantity(block.get("timestamp")) // 86400] = number
+            last_hash = block_hash
+        # A day's spend only rises, so its last block in this run shows whether the threshold was passed.
+        # Selector taken from the contract ABI: cast sig 'spentByDay(uint256)'.
+        spent_by_day = {day: int(fixed(self.rpc("eth_call", [{"to": self.binding["vault"],
+            "data": "0x" + SPENT_SELECTOR + f"{day:064x}"}, hex(number)]), 32), 16)
+            for day, number in last_block_of_day.items()}
+        if self.block(numbers[-1])["hash"].lower() != last_hash:
+            raise Unknown("block changed while reading; retry required")
+        self.state["pending"].update(pending)
+        for day, spent in spent_by_day.items():
+            if spent > int(self.binding["threshold"]) and day not in self.state["threshold_days"]:
+                self.state["outbox"][f"daily:{day}"] = dict(kind="daily_spend", text=(
+                    f"Chain {self.binding['chain_id']}: vault {self.binding['vault']} spent {spent} token base units "
+                    f"on UTC day {day}, above threshold {self.binding['threshold']}; observed at block "
+                    f"{last_block_of_day[day]}."))
+                self.state["threshold_days"].append(day)
+        self.state["next_block"] = numbers[-1] + 1
+        self.state["last_hash"] = last_hash
+        self.save()
+
     def tick(self, max_blocks=100):
         self.check_chain()
         # Recheck the cursor before delivering alerts derived from its history.
@@ -174,40 +223,15 @@ class Watcher:
         if self.state["last_hash"] and self.block(cursor - 1)["hash"].lower() != self.state["last_hash"]:
             raise Unknown("reorganization detected; operator review required")
         target = quantity(self.rpc("eth_blockNumber", [])) - self.binding["confirmations"]
-        for number in range(cursor, min(target + 1, cursor + max_blocks)):
-            block = self.block(number, True)
-            block_hash = fixed(block["hash"], 32)
-            if self.state["last_hash"] and fixed(block.get("parentHash"), 32) != self.state["last_hash"]:
-                raise Unknown("parent hash mismatch; operator review required")
-            transactions = block.get("transactions")
-            if not isinstance(transactions, list) or any(not isinstance(tx, dict) for tx in transactions):
-                raise Unknown("full transaction list unavailable")
-            pending = {}
-            for tx in transactions:
-                if (isinstance(tx.get("to"), str) and tx["to"].lower() == self.binding["vault"] and
-                    isinstance(tx.get("from"), str) and tx["from"].lower() == self.binding["agent"]):
-                    pending[fixed(tx.get("hash"), 32)] = dict(number=number, hash=block_hash)
-            day = quantity(block.get("timestamp")) // 86400
-            # Selector taken from the contract ABI: cast sig 'spentByDay(uint256)'.
-            spent_word = self.rpc("eth_call", [{"to": self.binding["vault"],
-                "data": "0x" + SPENT_SELECTOR + f"{day:064x}"}, hex(number)])
-            spent = int(fixed(spent_word, 32), 16)
-            if self.block(number)["hash"].lower() != block_hash:
-                raise Unknown("block changed while reading; retry required")
-            self.state["pending"].update(pending)
-            if spent > int(self.binding["threshold"]) and day not in self.state["threshold_days"]:
-                self.state["outbox"][f"daily:{day}"] = dict(kind="daily_spend", text=(
-                    f"Chain {self.binding['chain_id']}: vault {self.binding['vault']} spent {spent} token base units "
-                    f"on UTC day {day}, above threshold {self.binding['threshold']}; observed at block {number}."))
-                self.state["threshold_days"].append(day)
-            self.state["next_block"] = number + 1
-            self.state["last_hash"] = block_hash
-            self.save()
+        last = min(target + 1, cursor + max_blocks)
+        for start in range(cursor, last, BLOCKS_PER_REQUEST):
+            self.scan(range(start, min(start + BLOCKS_PER_REQUEST, last)))
         self.resolve_receipts()
         self.flush()
 
 
 SPENT_SELECTOR = '224e86fe'
+BLOCKS_PER_REQUEST = 25
 
 
 def main():

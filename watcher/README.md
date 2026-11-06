@@ -16,6 +16,10 @@ python3 watcher/watcher.py \
   --state "$HOME/.styx-watcher/vault.json"
 ```
 
+On Arc testnet use `https://rpc.testnet.arc.io`. Blocks are read in JSON-RPC batches of 25, because
+one request per block cannot keep up with Arc. The Blockdaemon endpoint answered a string `id` when
+tested, which the watcher refuses.
+
 No Python dependency installation is needed. Supply real addresses and a known deployment
 block. The watcher reads historical `spentByDay` at each scanned block: the endpoint must
 support those historical calls. Start at or after deployment. The first scan alerts if spend is
