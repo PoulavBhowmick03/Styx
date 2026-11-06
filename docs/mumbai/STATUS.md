@@ -67,6 +67,18 @@ Balances after: vault 50.30 USDC, vendor A 9.70 USDC, and 9.70 of today's 10 USD
 
 The Blockdaemon RPC returned a string JSON-RPC `id` and, to `cast`, undecodable bytes when tested. Use the primary RPC for the watcher.
 
+## Hosting
+
+| | |
+| --- | --- |
+| **Approval page** | https://styx-approve.vercel.app |
+| **Setup page** | https://styx-approve.vercel.app/setup/ |
+| **Relay** | https://styx-vault-relay.fly.dev, in Singapore, for this one vault and owner |
+
+Owners no longer need a config file to approve from an alert. The page confirms the vault once per browser, then reads the owner, token, limits and allowlist from the vault through the wallet. Tested on a local chain in headless Chrome (26 scenarios), where Anvil stands in for the wallet.
+
+**Not yet shown:** an approval through the hosted pages and relay, any phone, and the MetaMask deep link. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
+
 ## Gates
 
 | Gate | Status | Notes |
@@ -75,7 +87,7 @@ The Blockdaemon RPC returned a string JSON-RPC `id` and, to `cast`, undecodable 
 | G1 | **Passed on Arc testnet** | See "Live run" below |
 | G2 | **Passed on Arc testnet** | Signed in MetaMask. See "Live run" below |
 | G3 | Passed on one machine, not yet on a second | The gate needs a second machine or clean profile with its own RPC |
-| G4 | Not run | Needs tGLM and an Arkiv access key |
+| G4 | Not run | Access key set. Publisher `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258` reads a balance of 0 on Rabdi, so it cannot publish yet. `scripts/arkiv_gate.sh` is ready |
 | G5 | Not run | Needs a World client |
 
 **Review:** the team reported reviewing an earlier local version of the contract and signing code. On 6 November, after the live run, Poulav reported reviewing the work, including the contract and signing code this run depends on. This is the team's own review, not an audit.
