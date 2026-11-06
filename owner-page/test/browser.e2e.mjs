@@ -84,7 +84,7 @@ try {
     return pendingFile;
   };
   const ownerConfig = join(WORK, "owner.json");
-  writeFileSync(ownerConfig, JSON.stringify({ chainId: "31337", vault, owner, token, vendors: { [VENDOR]: "Acme Supplies" } }));
+  writeFileSync(ownerConfig, JSON.stringify({ chainId: "31337", vault, owner, token, vendors: { [VENDOR]: "Acme Supplies" }, relay: `http://127.0.0.1:${RELAY_PORT}` }));
 
   const vite = join(ROOT, "owner-page/node_modules/.bin/vite");
   start(vite, ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "owner-page") });
@@ -272,7 +272,7 @@ try {
     assert.equal(await page.locator("#amount").textContent(), "6 USDC");
     await shot(page, "from-alert");
     await page.click("#sign");
-    await waitFor(async () => /sent to your agent/.test(await status(page)), "relay confirmation");
+    await waitFor(async () => /relay accepted it/.test(await status(page)), "relay confirmation");
     const signed = await (await fetch(`${RELAY}/requests/${requestId}/signature`, { headers: { authorization: `Bearer ${agentToken}` } })).json();
     assert.equal(signed.status, "signed");
     const file = join(WORK, "relay-signature.json");
@@ -302,6 +302,29 @@ try {
     await waitFor(async () => /does not match/.test(await status(page)), "refusal");
     assert.equal(await page.locator("#sign").isVisible(), false);
     assert.equal(prompts.length, 0);
+    await context.close();
+  });
+  await scenario("a crafted link cannot choose where the signature goes", async () => {
+    const { link } = await askOwner();
+    const crafted = new URL(link);
+    crafted.searchParams.set("relay", "http://attacker.invalid");
+    const { page, context } = await openPage(PAGE_PORT);
+    await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
+    await page.setInputFiles("#config-file", ownerConfig);
+    const posted = [];
+    await page.route("http://attacker.invalid/**", async (route) => {
+      if (route.request().method() === "POST") posted.push(route.request().url());
+      // The attacker serves the genuine request so the page has something real to sign.
+      const original = new URL(link).searchParams.get("request");
+      const genuine = await (await fetch(`${RELAY}/requests/${original}`)).json();
+      await route.fulfill({ json: genuine, headers: { "access-control-allow-origin": "*" } });
+    });
+    await page.goto(crafted.toString());
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await page.click("#sign");
+    await waitFor(async () => /not sent/.test(await status(page)), "refusal to post");
+    assert.equal(posted.length, 0);
+    assert.ok((await page.locator("#output-text").inputValue()).includes("vault-owner-signature/1"));
     await context.close();
   });
   await scenario("if the relay is down, the page says so, and the owner can still save the signature", async () => {
