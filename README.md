@@ -21,7 +21,16 @@ ARKIV_PUBLISHER_KEY_FILE=... ARKIV_ACCESS_KEY=... npm run publish-grant -- payme
 npm run fetch-grant -- <lookup-tag> <writer-address> fetched.grant
 ```
 
-**Writer address:** none yet; nothing has been published.
+**Writer address:** `0xbF21009ffB20f219513EAAE6E19DeC69d73cf258`
+
+**One query to run,** which needs no key and returns one encrypted record, or nothing once it expires on about 14 November 2026:
+
+```bash
+cd arkiv && npm install --legacy-peer-deps
+npm run fetch-grant -- ffa18dd008d8a0e8ebc14d2d1424a861 0xbF21009ffB20f219513EAAE6E19DeC69d73cf258 fetched.grant
+```
+
+It is sealed to one reviewer, so only that reviewer's key can open it.
 
 ## World
 

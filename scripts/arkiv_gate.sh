@@ -3,6 +3,7 @@
 #
 # Needs: ARKIV_PUBLISHER_KEY_FILE, ARKIV_ACCESS_KEY, GRANT_FILE, REVIEWER_KEY_FILE, EXPECTED_ISSUER, OUT.
 # Optional: REVIEWER_RPC_URL (default Arc's primary RPC), VAULT (default the deployed vault).
+# To check an entity already published, set LOOKUP_TAG and WRITER, and nothing new is written.
 set -euo pipefail
 
 : "${ARKIV_PUBLISHER_KEY_FILE:?}" "${ARKIV_ACCESS_KEY:?}" "${GRANT_FILE:?}" "${REVIEWER_KEY_FILE:?}" "${EXPECTED_ISSUER:?}" "${OUT:?}"
@@ -22,10 +23,15 @@ if [ -n "$running" ]; then
 fi
 
 cd "$ROOT/arkiv"
-echo "== publish"
-npm run --silent publish-grant -- "$GRANT_FILE" | tee "$RUN/published.json"
-field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$RUN/published.json" "$1"; }
-TAG="$(field lookupTag)"; WRITER="$(field writer)"
+if [ -n "${LOOKUP_TAG:-}" ] && [ -n "${WRITER:-}" ]; then
+  TAG="$LOOKUP_TAG"
+  echo "== using the entity already published under $TAG"
+else
+  echo "== publish"
+  npm run --silent publish-grant -- "$GRANT_FILE" | tee "$RUN/published.json"
+  field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$RUN/published.json" "$1"; }
+  TAG="$(field lookupTag)"; WRITER="$(field writer)"
+fi
 
 echo "== fetch as a reviewer, with no access key and nothing of ours running"
 env -u ARKIV_ACCESS_KEY -u ARKIV_PUBLISHER_KEY_FILE npm run --silent fetch-grant -- "$TAG" "$WRITER" "$RUN/fetched.grant"
@@ -49,9 +55,15 @@ verify() {
 }
 
 echo "== verify the fetched copy against Arc"
-RESULT="$(verify "$RUN/fetched.grant" || true)"
+# Public RPCs drop requests under load. Unavailable means not known yet, so it is asked again.
+for attempt in 1 2 3 4 5; do
+  RESULT="$(verify "$RUN/fetched.grant" || true)"
+  printf '%s' "$RESULT" | grep -q '"unavailable"' || break
+  echo "the RPC could not answer (attempt $attempt); waiting"
+  sleep $((attempt * 5))
+done
 printf '%s\n' "$RESULT" | tee "$RUN/verified.json"
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get("status")=="ok" and d.get("record_integrity")=="verified" and d.get("settlement")=="verified" else 1)' "$RESULT" \
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d.get("status")=="ok" and all(d.get(k)=="verified" for k in ("record_integrity","authorization","settlement","policy_at_execution")) else 1)' "$RESULT" \
   || { echo "FAIL: the fetched copy did not verify"; exit 1; }
 
 echo "== a tampered ciphertext is refused"
