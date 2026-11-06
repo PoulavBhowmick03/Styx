@@ -38,10 +38,16 @@ authorization_tuple() { # paymentHash approvalNonce authorizationExpiry
 expect_revert() { # label signature args...
   local label="$1"
   shift
-  local result status tx
-  result="$(cast send --json --rpc-url "$RPC_URL" --private-key "$agent_key" "${GAS_ARGS[@]}" "$VAULT" "$@" 2>&1)" || true
-  status="$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || true)"
-  tx="$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transactionHash",""))' 2>/dev/null || true)"
+  local result status tx attempt
+  # Public RPCs drop requests under load. A dropped send has no receipt, so it is retried, and an
+  # attack that lands twice only reverts twice.
+  for attempt in 1 2 3 4; do
+    result="$(cast send --json --rpc-url "$RPC_URL" --private-key "$agent_key" "${GAS_ARGS[@]}" "$VAULT" "$@" 2>&1)" || true
+    status="$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || true)"
+    tx="$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transactionHash",""))' 2>/dev/null || true)"
+    [ -n "$status" ] && break
+    sleep $((attempt * 4))
+  done
   case "$status" in
     0x0 | 0) printf 'PASS %s reverted on chain: %s\n' "$label" "$tx" ;;
     0x1 | 1)
@@ -50,6 +56,7 @@ expect_revert() { # label signature args...
       ;;
     *)
       printf 'UNKNOWN %s produced no receipt; check the explorer before trusting this run.\n' "$label"
+      printf '%s\n' "$result" | tail -2 | cut -c1-200
       exit 2
       ;;
   esac
@@ -70,6 +77,7 @@ redirected="$(payment_tuple "$payment_id" "$VENDOR_B" "$amount")"
 
 echo "Agent: $agent"
 
+if [[ "${SETTLED:-}" != "1" ]]; then
 # A1: the agent calls pay() directly for the exception amount, skipping the tools.
 expect_revert "A1 over the per-payment limit" "$PAY" "$fresh"
 
@@ -82,10 +90,9 @@ expect_revert "A2 signer is not the owner" "$PAY_EXCEPTION" "$original" \
 expect_revert "A3 digest mismatch" "$PAY_EXCEPTION" "$redirected" \
   "$(authorization_tuple "$payment_hash" "$nonce" "$expiry")" "$owner_signature"
 
-if [[ "${SETTLED:-}" == "1" ]]; then
+else
   # A4: the agent resubmits the exception that already settled.
   expect_revert "A4 payment ID already used" "$PAY_EXCEPTION" "$original" \
     "$(authorization_tuple "$payment_hash" "$nonce" "$expiry")" "$owner_signature"
-else
-  echo "A4 skipped: run again with SETTLED=1 after the owner-approved payment settles."
 fi
+[[ "${SETTLED:-}" == "1" ]] || echo "A4 skipped: run again with SETTLED=1 after the owner-approved payment settles."
