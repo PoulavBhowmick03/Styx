@@ -275,3 +275,28 @@ def test_partial_receipt_is_not_a_revert(chain, relay, tmp_path):
     watcher.tick()
     assert not relay["notices"] and tx in watcher.state["pending"]
     watcher.close()
+
+
+def test_requests_do_not_use_python_default_user_agent():
+    # Arc's public RPC answers 403 to urllib's default agent, which stopped the watcher on Arc.
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen["agent"] = self.headers.get("User-Agent", "")
+            body = b"{}"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        module.post(f"http://127.0.0.1:{server.server_port}/", {})
+    finally:
+        server.shutdown()
+    assert seen["agent"] and not seen["agent"].startswith("Python-urllib")

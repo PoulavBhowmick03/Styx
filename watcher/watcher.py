@@ -24,7 +24,8 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def post(url, body, token=None):
-    headers = {"Content-Type": "application/json"}
+    # Arc's public RPC answers 403 to urllib's default agent.
+    headers = {"Content-Type": "application/json", "User-Agent": "vault-watcher/0.1"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
