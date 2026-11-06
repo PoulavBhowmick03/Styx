@@ -3,7 +3,8 @@
 // Needs anvil, forge, cast and Chrome, and `forge build` in contracts/evm. Run: npm run e2e
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +16,7 @@ const ROOT = resolve(HERE, "../..");
 const WORK = mkdtempSync(join(tmpdir(), "setup-page-e2e-"));
 const SHOTS = process.env.E2E_SCREENSHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-const RPC_PORT = 18761, PAGE_PORT = 18762, HOSTED_PORT = 18764;
+const RPC_PORT = 18761, PAGE_PORT = 18762, HOSTED_PORT = 18764, BUILT_PORT = 18765;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
 const XSS = '<img src=x onerror="window.__pwned=1">';
 const VENDOR = "0x00000000000000000000000000000000000000a1";
@@ -67,12 +68,31 @@ try {
   start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2" } });
   // The hosted site is built with a relay address. This one stands in for it, so the approvals section can be tested.
   start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(HOSTED_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2", VITE_RELAY_URL: "https://relay.example/ignored/path" } });
+  // The production build, made the way scripts/build_site.sh makes the setup page (base /setup/, a relay baked in)
+  // and served under /setup/ the way the hosted site serves it. The dev servers above do not exercise that.
+  {
+    const out = join(WORK, "built-setup");
+    const built = spawnSync(join(ROOT, "setup-page/node_modules/.bin/vite"), ["build", "--base", "/setup/", "--outDir", out, "--emptyOutDir"], {
+      cwd: join(ROOT, "setup-page"), encoding: "utf8", env: { ...process.env, VITE_RELAY_URL: "https://relay.example" },
+    });
+    assert.equal(built.status, 0, `the production build failed: ${built.stderr}`);
+    const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+    const server = createServer((request, response) => {
+      const pathname = new URL(request.url, "http://x").pathname;
+      const file = pathname.startsWith("/setup/") ? join(out, pathname.slice("/setup/".length) || "index.html") : "";
+      if (!file || !file.startsWith(out) || !existsSync(file) || !statSync(file).isFile()) { response.writeHead(404); response.end("not found"); return; }
+      response.writeHead(200, { "content-type": types[file.slice(file.lastIndexOf("."))] ?? "application/octet-stream" });
+      response.end(readFileSync(file));
+    });
+    await new Promise((resolve) => server.listen(BUILT_PORT, "127.0.0.1", resolve));
+    children.push({ kill: () => server.close() });
+  }
   await waitFor(async () => (await fetch(`http://127.0.0.1:${PAGE_PORT}`)).ok, "page");
   await waitFor(async () => (await fetch(`http://127.0.0.1:${HOSTED_PORT}`)).ok, "hosted-style page");
   browser = await chromium.launch({ channel: "chrome", headless: true });
 
   async function openPage(options = {}) { return openPageAt("", options); }
-  async function openPageAt(query, { account = owner, chainId = "0x7a69", rejectNext = false, port = PAGE_PORT } = {}) {
+  async function openPageAt(query, { account = owner, chainId = "0x7a69", rejectNext = false, port = PAGE_PORT, path = "" } = {}) {
     const context = await browser.newContext({ viewport: { width: 1000, height: 1400 }, acceptDownloads: true });
     const page = await context.newPage();
     const errors = [];
@@ -110,7 +130,7 @@ try {
         }),
       };
     });
-    await page.goto(`http://127.0.0.1:${port}/${query}`);
+    await page.goto(`http://127.0.0.1:${port}/${path}${query}`);
     await page.waitForLoadState("networkidle");
     return { page, errors, prompts, control, context };
   }
@@ -692,6 +712,19 @@ try {
     assert.match(await approvalsText(page), /not connected to an alert relay/);
     assert.deepEqual(await trustRecords(page), {});
     for (const id of ["approvals-use", "approvals-forget", "approvals-steps"]) assert.equal(await page.locator(`#${id}`).isVisible(), false, id);
+    await context.close();
+  });
+
+  await scenario("the production build, served under /setup/ as the hosted site serves it, loads its contract build and sets approvals up", async () => {
+    const { page, errors, context } = await openPageAt("", { port: BUILT_PORT, path: "setup/" });
+    await connect(page, token);
+    await openVaultByAddress(page, vault);
+    await page.locator("#dashboard").waitFor({ state: "visible" });
+    // Matching means the page found its contract build at /setup/vault-artifact.json and compared it.
+    assert.match(await dd(page, "v-code"), /^Matches this repository/);
+    await waitFor(async () => /^Ready in this browser/.test(await approvalsText(page)), "approvals ready on the production build");
+    assert.deepEqual(Object.keys(await trustRecords(page)), [`vault-trust/31337/${vault.toLowerCase()}`]);
+    assert.equal(errors.length, 0, errors.join());
     await context.close();
   });
 
