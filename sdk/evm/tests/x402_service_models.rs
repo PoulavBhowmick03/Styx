@@ -261,7 +261,12 @@ async fn chain() -> (Anvil, DynProvider, DynProvider, DynProvider) {
         )
         .await
         .unwrap();
-    (anvil, reader, wallet(&BUYER_KEY), wallet(&anvil_seller_key()))
+    (
+        anvil,
+        reader,
+        wallet(&BUYER_KEY),
+        wallet(&anvil_seller_key()),
+    )
 }
 
 async fn send(

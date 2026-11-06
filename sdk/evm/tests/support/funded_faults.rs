@@ -169,7 +169,9 @@ async fn drive(
 async fn every_public_bound_operation_write_recovers_one_actual_payment() {
     let fixture = fixture().await;
     let reader = read_only_provider(&fixture.rpc_url);
-    let signer = TransactionKey::from_bytes(&anvil_relayer_key()).unwrap().address();
+    let signer = TransactionKey::from_bytes(&anvil_relayer_key())
+        .unwrap()
+        .address();
     let buyer_before = token_balance(&reader, fixture.token, &BUYER_KEY_ADDRESS).await;
     let mut boundaries = 0;
     let mut fail = 0;
@@ -320,7 +322,9 @@ async fn finalized_expiry_releases_spending_but_never_an_unconsumed_signer_nonce
         coordinator.ledger().unwrap().reservations()[0].state,
         ReservationState::Released
     );
-    let signer = TransactionKey::from_bytes(&anvil_relayer_key()).unwrap().address();
+    let signer = TransactionKey::from_bytes(&anvil_relayer_key())
+        .unwrap()
+        .address();
     assert!(matches!(
         journal.release(&chain.verified_finalized_nonce(signer).await.unwrap()),
         Err(erebus_evm::chain::NonceError::NotConsumed)
@@ -412,7 +416,9 @@ async fn internally_consistent_rpc_histories_can_disagree_about_one_deal() {
     assert!(paid
         .verified_finalized_nonce_agreed(
             &unpaid,
-            TransactionKey::from_bytes(&anvil_relayer_key()).unwrap().address()
+            TransactionKey::from_bytes(&anvil_relayer_key())
+                .unwrap()
+                .address()
         )
         .await
         .is_err());
@@ -552,7 +558,9 @@ async fn optional_two_provider_reads_require_matching_anchors_and_hold_on_timeou
     coordinator
         .reconcile(prepared.operation_ref, &evidence, now())
         .unwrap();
-    let signer = TransactionKey::from_bytes(&anvil_relayer_key()).unwrap().address();
+    let signer = TransactionKey::from_bytes(&anvil_relayer_key())
+        .unwrap()
+        .address();
     journal
         .release(
             &chain
