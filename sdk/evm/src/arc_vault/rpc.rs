@@ -283,6 +283,33 @@ impl VaultRpc {
         Ok((!value.is_null()).then_some(value))
     }
 
+    /// Reads a transaction to bind disclosed signature bytes to actual execution.
+    pub async fn transaction(&self, hash: &[u8; 32]) -> Result<Option<Value>, VaultError> {
+        let value = self
+            .read(
+                "eth_getTransactionByHash",
+                json!([format!("0x{}", hex::encode(hash))]),
+            )
+            .await?;
+        Ok((!value.is_null()).then_some(value))
+    }
+
+    /// Reads the canonical block hash for a receipt observation. This is not a finality check.
+    pub async fn canonical_block_hash(&self, number: u64) -> Result<[u8; 32], VaultError> {
+        let block = self
+            .read(
+                "eth_getBlockByNumber",
+                json!([format!("0x{number:x}"), false]),
+            )
+            .await?;
+        parse_hex(
+            block["hash"]
+                .as_str()
+                .ok_or_else(|| VaultError::unavailable("missing canonical block hash"))?,
+        )
+        .map_err(|_| VaultError::unavailable("invalid canonical block hash"))
+    }
+
     /// keccak256 of the runtime code at `address`.
     pub async fn code_hash(&self, address: &[u8; 20]) -> Result<[u8; 32], VaultError> {
         let value = self

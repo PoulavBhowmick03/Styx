@@ -1,0 +1,36 @@
+{
+  "domain": {
+    "name": "StyxVault",
+    "version": "2",
+    "chainId": "31337",
+    "verifyingContract": "0x1111111111111111111111111111111111111111"
+  },
+  "paymentType": "Payment(bytes32 paymentId,address agent,address token,address recipient,uint256 amount,bytes32 evidenceCommitment,uint256 policyVersion,uint256 recipientVersion,uint64 validUntil)",
+  "authorizationType": "ExceptionAuthorization(bytes32 paymentHash,address signer,uint256 signerVersion,uint256 approvalNonce,uint64 authorizationExpiry)",
+  "payment": {
+    "paymentId": "0x0101010101010101010101010101010101010101010101010101010101010101",
+    "agent": "0x2222222222222222222222222222222222222222",
+    "token": "0x3333333333333333333333333333333333333333",
+    "recipient": "0x4444444444444444444444444444444444444444",
+    "amount": "6000000",
+    "evidenceCommitment": "0x0505050505050505050505050505050505050505050505050505050505050505",
+    "policyVersion": "3",
+    "recipientVersion": "2",
+    "validUntil": "1800000000"
+  },
+  "authorization": {
+    "paymentHash": "0xde5f4caf50fab61c41387225690fa7bc32e60fa2bd14cadee26c9e80697e3fe0",
+    "signer": "0x5555555555555555555555555555555555555555",
+    "signerVersion": "4",
+    "approvalNonce": "7",
+    "authorizationExpiry": "1799999900"
+  },
+  "expected": {
+    "paymentTypeHash": "0x15d3e62976183acb16dd9c5e3a105fac50978894b73572a44ee5bbd680c06ff1",
+    "authorizationTypeHash": "0x07b3e3056d0dbc43fc752e8be644f4d501e35738773443d766313a340719b99d",
+    "domainSeparator": "0x669681f970de9638a9ff6218c382c474c54ffe9757cc4c345814b20ccd3b7cf8",
+    "paymentHash": "0xde5f4caf50fab61c41387225690fa7bc32e60fa2bd14cadee26c9e80697e3fe0",
+    "authorizationHash": "0x55fa6b6cf177014cbdcb756a19607eff7e260d5262c60e9090fddae8db152af5",
+    "approvalDigest": "0x2472381b45ceb643cdd0abb7b7e3f522ee153e02b55f7ab69048148374e4b2ca"
+  }
+}

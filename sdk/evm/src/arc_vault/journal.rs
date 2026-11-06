@@ -4,7 +4,9 @@
 
 use std::path::Path;
 
-use erebus_journal::{IdentityLock, JournalRecord, RecordId, RecordLock, Store};
+pub(super) use erebus_journal::{
+    IdentityLock, JournalRecord, RecordId, RecordLock, Store, StoreError,
+};
 use serde::{Deserialize, Serialize};
 
 use super::error::VaultError;
