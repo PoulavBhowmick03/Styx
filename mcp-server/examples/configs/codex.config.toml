@@ -1,0 +1,18 @@
+# Add to ~/.codex/config.toml, or to .codex/config.toml in a trusted project.
+# env_vars forwards these variables from the environment Codex was started in.
+[mcp_servers.erebus-vault]
+command = "erebus-mcp-server"
+args = []
+env_vars = [
+  "EREBUS_VAULT_DIR",
+  "EREBUS_VAULT_CLI",
+  "EREBUS_VAULT_CHAIN_ID",
+  "EREBUS_VAULT_RPC_URLS",
+  "EREBUS_VAULT_ADDRESS",
+  "EREBUS_VAULT_TOKEN",
+  "EREBUS_VAULT_STATE_ROOT",
+  "EREBUS_VAULT_AGENT_KEY_FILE",
+]
+
+[mcp_servers.erebus-vault.env]
+EREBUS_BACKEND = "vault"

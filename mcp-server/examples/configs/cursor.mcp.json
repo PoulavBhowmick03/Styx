@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "erebus-vault": {
+      "type": "stdio",
+      "command": "erebus-mcp-server",
+      "args": [],
+      "env": {
+        "EREBUS_BACKEND": "vault",
+        "EREBUS_VAULT_DIR": "${env:EREBUS_VAULT_DIR}",
+        "EREBUS_VAULT_CLI": "${env:EREBUS_VAULT_CLI}",
+        "EREBUS_VAULT_CHAIN_ID": "${env:EREBUS_VAULT_CHAIN_ID}",
+        "EREBUS_VAULT_RPC_URLS": "${env:EREBUS_VAULT_RPC_URLS}",
+        "EREBUS_VAULT_ADDRESS": "${env:EREBUS_VAULT_ADDRESS}",
+        "EREBUS_VAULT_TOKEN": "${env:EREBUS_VAULT_TOKEN}",
+        "EREBUS_VAULT_STATE_ROOT": "${env:EREBUS_VAULT_STATE_ROOT}",
+        "EREBUS_VAULT_AGENT_KEY_FILE": "${env:EREBUS_VAULT_AGENT_KEY_FILE}"
+      }
+    }
+  }
+}
