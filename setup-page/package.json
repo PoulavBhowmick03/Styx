@@ -1,0 +1,24 @@
+{
+  "name": "vault-setup-page",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "prepare-artifact": "node scripts/prepare-artifact.mjs",
+    "dev": "npm run prepare-artifact && vite --host 127.0.0.1",
+    "build": "npm run prepare-artifact && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "npm run prepare-artifact && node test/browser.e2e.mjs"
+  },
+  "dependencies": {
+    "viem": "2.57.10"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "playwright-core": "1.65.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "4.1.12"
+  }
+}
