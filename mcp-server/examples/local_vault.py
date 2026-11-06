@@ -106,7 +106,9 @@ def main() -> int:
     print("  to sign an approval as the owner (rehearsal only), from owner-page:")
     print(f"    npx tsx test/sign_with_rpc.mts {work}/owner.json <pending-file> {env['EREBUS_VAULT_RPC_URLS']} <signature-file>")
     print("\nCtrl-C to stop and delete everything.", flush=True)
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    # A shell starts background jobs with SIGINT ignored, so Ctrl-C and `kill -INT` need an explicit handler.
+    for stop in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(stop, lambda *_: sys.exit(0))
     try:
         anvil.wait()
     except (KeyboardInterrupt, SystemExit):
