@@ -753,7 +753,7 @@ try {
     assert.match(await page.locator("#v2-cap-section").textContent(), /starts at 0, and while it is 0 no agent can pay anything/);
     await waitFor(async () => /vault's daily cap is 0, so no agent can pay anything/.test(await page.locator("#v2-checks").textContent()), "cap check");
     assert.match(await page.locator("#v2-verdict").textContent(), /^Not yet/);
-    assert.match(await dd(page, "v2-code"), /^Matches this repository's version 2 build/);
+    assert.match(await dd(page, "v2-code"), /^Matches this repository's build/);
     assert.match(await page.locator("#v2-agent-list").textContent(), /No agent yet/);
     assert.equal(errors.length, 0, errors.join());
     await shot(page, "v2-empty");

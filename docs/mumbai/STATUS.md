@@ -105,6 +105,7 @@ Codex also deployed the same source with Forge at `0x8b1D755B5e6957a7384d676baFE
 | Agent 2 routine, 0.2 USDC | Settled | `0x82d53b98d08004cef834f2535b57815a850a228908beadd2927d950dd48d9324` |
 | Agent 2 asks for 0.6 USDC, over its own limit | Tool answers `exception_required`, not sent | |
 | Agent 1 exception, 2 USDC: Telegram alert, approver signs in MetaMask on a phone, agent collects and submits | Settled | `0xbcc4bd5447ba95a517e3ad95ee0613e4011955a816b730856dcc51f40bb464cd` |
+| Rehearsal on the redesigned page: 1.5 USDC exception, approver signs on a phone, settled | Settled | `0xdd7dea1e414cf9240e1c2fc83bb5fd792234141a8ef1bb34051348511e4e547e` |
 | A1: agent pays over its limit directly | Reverted | `0x280c5d0a4bf151411fd87a054c650ff348edd132961b1235632781c4d7529a84` |
 | A2: agent signs the exception itself | Reverted | `0xbf831e28edb3ac10ff69a41c7f6de424d53fe9f356f8e6cf93ec4acad297dea7` |
 | A3: approver's signature on a payment to another vendor | Reverted | `0xacf2271c693669e261b6c79b8b2c7d054a7049dd0c89e10218c25b8d6d55b47e` |
