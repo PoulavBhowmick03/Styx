@@ -677,3 +677,188 @@ async fn attack_script_reports_every_attack_as_reverted() {
     assert_eq!(chain.balance(VENDOR_A).await, 6 * ONE_USDC);
     assert_eq!(chain.balance(VENDOR_B).await, 0);
 }
+
+struct Reviewer {
+    key_file: PathBuf,
+    public_key: String,
+}
+
+fn disclosure_cli(request: Value) -> (Value, bool) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_erebus-disclosure"))
+        .env_clear()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(request.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    (
+        serde_json::from_slice(&output.stdout).unwrap(),
+        output.status.success(),
+    )
+}
+
+fn new_reviewer(directory: &Path, name: &str) -> Reviewer {
+    let root = directory.join(name);
+    std::fs::create_dir(&root).unwrap();
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let key_file = root.join("reviewer.key");
+    let (response, ok) = disclosure_cli(json!({"method": "keygen", "key_file": key_file}));
+    assert!(ok, "{response}");
+    Reviewer {
+        key_file,
+        public_key: response["recipient_public_key"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires anvil and forge from a Foundry install"]
+async fn reviewer_opens_only_their_own_grant_and_checks_it_with_their_own_rpc() {
+    let chain = Chain::start().await;
+    let reviewer = new_reviewer(&chain.dir, "reviewer");
+    let other_reviewer = new_reviewer(&chain.dir, "other-reviewer");
+
+    let issuer_key = chain.dir.join("issuer.key");
+    std::fs::write(&issuer_key, [0x42u8; 32]).unwrap();
+    std::fs::set_permissions(&issuer_key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let issuer = TransactionKey::from_bytes(&[0x42; 32]).unwrap().address();
+    let issuer_hex = format!("0x{}", hex::encode(issuer));
+    let expires = chain.now().await + 86_400;
+
+    let export = |record_file: &Path, public_key: &str, name: &str| {
+        let grant_file = chain.dir.join(name);
+        let (response, ok) = disclosure_cli(json!({
+            "method": "export_vault_payment",
+            "record_file": record_file,
+            "issuer_key_file": issuer_key,
+            "recipient_public_key": public_key,
+            "grant_file": grant_file,
+            "expires_at": expires,
+        }));
+        assert!(ok, "{response}");
+        assert_eq!(response["issuer"], issuer_hex);
+        grant_file
+    };
+
+    let exception = id_of(
+        &chain
+            .propose(VENDOR_A, 6 * ONE_USDC, b"exception invoice")
+            .await,
+    );
+    let (_, signature_file) = chain.approve(&exception).await;
+    assert_eq!(
+        chain.submit(&exception, Some(&signature_file), 30)["state"],
+        "settled"
+    );
+    let record = chain.export(&exception, "exception.record");
+    let grant_file = export(
+        &chain.dir.join("exception.record"),
+        &reviewer.public_key,
+        "exception.grant",
+    );
+
+    let ordinary = id_of(
+        &chain
+            .propose(VENDOR_A, ONE_USDC / 4, b"ordinary invoice")
+            .await,
+    );
+    assert_eq!(chain.submit(&ordinary, None, 30)["state"], "settled");
+    chain.export(&ordinary, "ordinary.record");
+    let other_grant = export(
+        &chain.dir.join("ordinary.record"),
+        &other_reviewer.public_key,
+        "ordinary.grant",
+    );
+
+    let pins = |rpc_url: &str| {
+        json!({
+            "chain_id": CHAIN_ID,
+            "rpc_urls": [rpc_url],
+            "vault": chain.vault,
+            "vault_code_hash": format!("0x{}", hex::encode(record.vault_code_hash)),
+        })
+    };
+    let verify = |grant: &Path, key: &Path, rpc_url: &str, opened: Option<&Path>| {
+        disclosure_cli(json!({
+            "method": "verify_vault_payment",
+            "grant_file": grant,
+            "key_file": key,
+            "expected_issuer": issuer_hex,
+            "deployment": pins(rpc_url),
+            "opened_file": opened,
+        }))
+    };
+
+    // The reviewer verifies all four results, and can read the invoice.
+    let opened = chain.dir.join("reviewer/opened.json");
+    let (report, ok) = verify(
+        &grant_file,
+        &reviewer.key_file,
+        &chain.rpc_url,
+        Some(&opened),
+    );
+    assert!(ok, "{report}");
+    for result in [
+        "record_integrity",
+        "authorization",
+        "settlement",
+        "policy_at_execution",
+    ] {
+        assert_eq!(report[result], "verified", "{report}");
+    }
+    assert_eq!(report["delivery_verified"], false);
+    assert!(!report
+        .to_string()
+        .contains(&hex::encode(b"exception invoice")));
+    let opened: VaultPaymentRecord =
+        serde_json::from_slice(&std::fs::read(&opened).unwrap()).unwrap();
+    assert_eq!(
+        opened.evidence.invoice_hex,
+        format!("0x{}", hex::encode(b"exception invoice"))
+    );
+
+    // A second record, sealed to someone else, does not open.
+    let (response, ok) = verify(&other_grant, &reviewer.key_file, &chain.rpc_url, None);
+    assert!(!ok, "{response}");
+    assert_eq!(response["error"], "cannot open vault payment grant");
+    // Nor does this reviewer's grant open for that other reviewer.
+    let (response, ok) = verify(&grant_file, &other_reviewer.key_file, &chain.rpc_url, None);
+    assert!(!ok, "{response}");
+
+    // A tampered copy does not open.
+    let mut tampered = std::fs::read(&grant_file).unwrap();
+    let middle = tampered.len() / 2;
+    tampered[middle] ^= 1;
+    let tampered_file = chain.dir.join("tampered.grant");
+    std::fs::write(&tampered_file, tampered).unwrap();
+    std::fs::set_permissions(&tampered_file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let (response, ok) = verify(&tampered_file, &reviewer.key_file, &chain.rpc_url, None);
+    assert!(!ok, "{response}");
+
+    // An issuer the reviewer does not expect is refused.
+    let (response, ok) = disclosure_cli(json!({
+        "method": "verify_vault_payment",
+        "grant_file": grant_file,
+        "key_file": reviewer.key_file,
+        "expected_issuer": format!("0x{}", "11".repeat(20)),
+        "deployment": pins(&chain.rpc_url),
+        "opened_file": null,
+    }));
+    assert!(!ok, "{response}");
+
+    // An unreachable RPC reads as unavailable, never as unpaid.
+    let (report, ok) = verify(&grant_file, &reviewer.key_file, "http://127.0.0.1:1", None);
+    assert!(ok, "{report}");
+    assert_eq!(report["record_integrity"], "verified");
+    assert_eq!(report["settlement"], "unavailable");
+    assert_eq!(report["policy_at_execution"], "unavailable");
+}
