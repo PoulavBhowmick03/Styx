@@ -117,7 +117,9 @@ Owners no longer need a config file to approve from an alert. The page confirms 
 
 **Through the hosted pages and relay:** a 2 USDC exception settled on Arc. The agent used the MCP tools, the alert came through the hosted relay, the owner confirmed the vault and signed in MetaMask on a Mac with no file, and the page posted the signature back. Transaction `0xde1c50dc5d6312ea536319554e3008561f24a50fac2c7e2a822006a12a90b1a0`. Balances after: vault 48.30 USDC, vendor A 11.70 USDC. The daily limit was raised to 20 USDC for this test, policy version 7.
 
-**Not yet shown:** a signature by the owner on a phone. MetaMask showed a phishing warning for the hosted address on the Mac, and the reason is not known. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
+**On styxco.xyz:** a 1.5 USDC exception settled the same way, with the owner signing from the page on the new domain. Transaction `0xee613790a5a05e34ab459286cf1f0e13c90a3363f461e42ead62bd4a90797458`. Balances after: vault 46.80 USDC, vendor A 13.20 USDC.
+
+**Not yet shown:** a signature by the owner on a phone. MetaMask showed a phishing warning for the earlier `vercel.app` address on the Mac, and the reason is not known. The setup page's browser suite passes 16 scenarios and then stops at a step where Anvil is asked to mine 110,000 blocks and the connection drops, so the scenarios after it did not run against this change. The watcher is stopped and has not been pointed at the hosted relay.
 
 ## Gates
 
@@ -151,7 +153,7 @@ Until this is resolved, nothing should state that the whole project was built at
 
 ## How the owner is alerted
 
-With the relay running, an over-cap request sends the owner a Telegram alert with a link to the approval page, and the signature goes back to the agent automatically. See `relay/README.md`. This has run on Arc with a real bot; see "Live product run". The page and relay ran on the owner's Mac, so the link does not open on a phone yet.
+With the relay running, an over-cap request sends the owner a Telegram alert with a link to the approval page, and the signature goes back to the agent automatically. See `relay/README.md`. This has run on Arc with a real bot; see "Live product run". The page and relay are now hosted, so the link opens on a phone. See "Hosting".
 
 Without the relay, the tool writes a pending file and someone carries it to the owner by hand. An agent that skips the tools sends no alert: the vault still refuses the payment, and the planned watcher covers those attempts.
 
