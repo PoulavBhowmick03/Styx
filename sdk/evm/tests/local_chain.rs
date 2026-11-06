@@ -453,7 +453,8 @@ async fn one_authorized_agreement_settles_exactly_once() {
     assert!(estimate.balance_is_sufficient());
     assert!(estimate.gas > 21_000);
 
-    let DealEvidence::Observed(reads) = settle_coordinated(&fixture, &anvil_relayer_key()).await else {
+    let DealEvidence::Observed(reads) = settle_coordinated(&fixture, &anvil_relayer_key()).await
+    else {
         panic!("verified payment evidence");
     };
     assert_eq!(reads.deal_nullifier, prepared.deal_nullifier);
@@ -1373,7 +1374,8 @@ async fn coordinated_settlement_finalizes_commits_and_releases_the_signer() {
     );
 
     // The gas payer's claimed nonce is consumed at a finalized block, so the slot is free.
-    let signer = address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
+    let signer =
+        address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
     let finalized = chain
         .verified_finalized_nonce(signer)
         .await
@@ -1444,7 +1446,8 @@ async fn a_foreign_winner_resolves_an_unknown_attempt_and_holds_the_unconsumed_n
 
     // Our gas payer's nonce was never consumed, so the signer slot stays held. A resolved deal
     // is not permission to reuse a nonce, and the claim must not be cleared on a timeout.
-    let signer = address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
+    let signer =
+        address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
     let finalized = chain
         .verified_finalized_nonce(signer)
         .await
@@ -1562,7 +1565,8 @@ async fn crash_phase(
         policy_for(fixture),
     )
     .expect("reopen coordinator");
-    let signer = address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
+    let signer =
+        address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
     let journal = SignerJournal::open(root.join("signer"), 31_337, signer).expect("reopen journal");
     (reopened, journal, prepared)
 }
@@ -1618,7 +1622,8 @@ async fn crashes_at_durable_boundaries_yield_one_payment_and_recoverable_state()
             "crash {crash:?}: exactly one fee"
         );
 
-        let signer = address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
+        let signer =
+            address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
         let finalized = chain
             .verified_finalized_nonce(signer)
             .await
@@ -1652,7 +1657,8 @@ async fn the_relayer_fails_over_providers_and_reports_funding_shortfall() {
 
     // The first provider is a dead port; the second is the live chain. Admission and funding
     // are local reads against the first provider, so funding uses the live one.
-    let live = EvmSettlementBackend::connect(deployment.clone(), &anvil_relayer_key()).expect("live");
+    let live =
+        EvmSettlementBackend::connect(deployment.clone(), &anvil_relayer_key()).expect("live");
     let service = RelayService::new(policy, vec![live], AccessLimits::new(4, 60)).expect("service");
     let admitted = service
         .admit("buyer", &evidence.encode(), now)
@@ -1664,7 +1670,8 @@ async fn the_relayer_fails_over_providers_and_reports_funding_shortfall() {
 
     // Drain the gas payer and observe the shortfall without sending a transaction.
     let provider = read_only_provider(&fixture.rpc_url);
-    let signer = address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
+    let signer =
+        address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
     let _: serde_json::Value = provider
         .client()
         .request("anvil_setBalance", (Address::from(signer), "0x0"))
@@ -2236,8 +2243,11 @@ async fn journaled_relayer_failover_never_resigns_an_uncertain_payment() {
             )
             .unwrap(),
             vec![
-                EvmSettlementBackend::connect(proxied_deployment(&fixture, &proxy), &anvil_relayer_key())
-                    .unwrap(),
+                EvmSettlementBackend::connect(
+                    proxied_deployment(&fixture, &proxy),
+                    &anvil_relayer_key(),
+                )
+                .unwrap(),
                 EvmSettlementBackend::connect(deployment(&fixture), &anvil_relayer_key()).unwrap(),
             ],
             AccessLimits::default(),
@@ -2305,7 +2315,8 @@ async fn rejected_relay_admission_does_not_record_a_broadcast_attempt() {
     let fixture = fixture().await;
     let root = tempfile::tempdir().expect("state dir");
     let (coordinator, _, prepared, _) = coordinated_setup(&fixture, root.path()).await;
-    let backend = EvmSettlementBackend::connect(deployment(&fixture), &anvil_relayer_key()).unwrap();
+    let backend =
+        EvmSettlementBackend::connect(deployment(&fixture), &anvil_relayer_key()).unwrap();
     let service = RelayService::new(
         RelayPolicy::new(
             deployment(&fixture),
@@ -2633,7 +2644,9 @@ async fn paired_observation_uses_a_shared_snapshot_despite_honest_finality_lag()
         .await
         .unwrap();
     fixture.verification_proxy.set(Fault::LagFinalized(3));
-    let signer = TransactionKey::from_bytes(&anvil_relayer_key()).unwrap().address();
+    let signer = TransactionKey::from_bytes(&anvil_relayer_key())
+        .unwrap()
+        .address();
     let nonce = chain
         .verified_finalized_nonce_agreed(&peer, signer)
         .await
@@ -3099,7 +3112,9 @@ async fn packaged_relayer_never_downgrades_verification_when_a_backup_is_healthy
         coordinator.ledger().unwrap().reservations()[0].state,
         ReservationState::Reserved
     );
-    let signer = TransactionKey::from_bytes(&anvil_relayer_key()).unwrap().address();
+    let signer = TransactionKey::from_bytes(&anvil_relayer_key())
+        .unwrap()
+        .address();
     let journal = SignerJournal::open(root.path().join("signer"), 31_337, signer).unwrap();
     assert!(journal
         .resume(&deployment(&fixture), &service_prepared)
@@ -3532,8 +3547,11 @@ async fn funding_timeout_uses_backup_without_broadcasting() {
         )
         .unwrap(),
         vec![
-            EvmSettlementBackend::connect(proxied_deployment(&fixture, &proxy), &anvil_relayer_key())
-                .unwrap(),
+            EvmSettlementBackend::connect(
+                proxied_deployment(&fixture, &proxy),
+                &anvil_relayer_key(),
+            )
+            .unwrap(),
             EvmSettlementBackend::connect(deployment(&fixture), &anvil_relayer_key()).unwrap(),
         ],
         AccessLimits::default(),
@@ -3877,7 +3895,8 @@ async fn the_settle_cli_reports_funding_for_a_funded_buyer() {
     let fixture = fixture().await;
     let prepared = prepared(&fixture);
     let evidence = SettlementEvidence::decode(&prepared.backend_evidence).expect("evidence");
-    let signer = address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
+    let signer =
+        address_recover(&SigningKey::from_slice(&anvil_relayer_key()).expect("relayer key"));
     let request = serde_json::json!({
         "method": "funding",
         "deployment": {
