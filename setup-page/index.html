@@ -41,6 +41,14 @@
       ul.vendors { list-style:none; padding:0; }
       ul.vendors li { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; padding:.25rem 0; }
       [hidden] { display:none !important; }
+      .v2only { display:none; }
+      body[data-version="2"] .v2only { display:block; }
+      body[data-version="2"] .v1only { display:none !important; }
+      .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; padding:.375rem 0; border-top:1px solid var(--line); }
+      .row .grow { flex:1 1 18rem; min-width:0; overflow-wrap:anywhere; }
+      ul.plain { list-style:none; padding:0; margin:.5rem 0; }
+      #v2-confirm-text { white-space:pre-line; }
+      .badge { font-weight:700; } .badge.on { color:var(--ok); } .badge.off { color:var(--error); }
     </style>
   </head>
   <body>
@@ -49,6 +57,11 @@
     <div id="top">
       <div id="vault-banner" class="none" role="region" aria-label="Connected vault"></div>
       <div id="status" role="status" aria-live="polite"></div>
+      <div id="v2-confirm" class="callout" hidden>
+        <p id="v2-confirm-text"></p>
+        <button id="v2-confirm-yes" type="button">Confirm in my wallet</button>
+        <button id="v2-confirm-no" type="button" class="secondary">Cancel</button>
+      </div>
     </div>
 
     <section id="s-wallet">
@@ -84,14 +97,14 @@
     </section>
 
     <div id="dashboard" hidden>
-      <section>
+      <section class="v1only">
         <h2>Is your money protected?</h2>
         <p><strong>The vault protects only the USDC inside it.</strong> USDC left in the agent's wallet, or in any wallet the agent controls, is covered by no rule: the agent can send it anywhere. Move your funds into the vault and leave the agent's address with gas only.</p>
         <ul class="checks" id="checks"></ul>
         <p id="verdict"></p>
       </section>
 
-      <section>
+      <section class="v1only">
         <h2>Vault</h2>
         <dl>
           <dt>Address</dt><dd id="v-address" class="mono"></dd>
@@ -113,7 +126,7 @@
         <p id="not-owner" class="callout" hidden>The connected account is not this vault's owner, so every change below is disabled.</p>
       </section>
 
-      <section>
+      <section class="v1only">
         <h2>3. Limits</h2>
         <div class="callout" id="daily-meaning"><strong>The daily limit is the most the agent can pay in a day without your signature.</strong> The per-payment limit does not stop splitting: with a 1 USDC per-payment limit, six payments of 1 USDC to an allowed vendor are each within the limit and together spend 6 USDC, with no approval asked. So set the daily limit to the amount you would accept losing in a day. The per-payment limit decides only which single payments ask you first.</div>
         <div class="callout" id="policy-warning"></div>
@@ -127,6 +140,66 @@
         <input id="policy-days" value="7" inputmode="numeric" />
         <button id="save-policy">Save limits</button>
       </section>
+
+      <div id="v2" class="v2only">
+        <section id="v2-summary">
+          <h2>Vault, version 2: many agents, approvers</h2>
+          <dl>
+            <dt>Address</dt><dd id="v2-address" class="mono"></dd>
+            <dt>Owner</dt><dd id="v2-owner" class="mono"></dd>
+            <dt>Code</dt><dd id="v2-code"></dd>
+            <dt>State</dt><dd id="v2-paused"></dd>
+            <dt>Vault daily cap</dt><dd id="v2-cap"></dd>
+            <dt>Spent today, all agents</dt><dd id="v2-spent"></dd>
+            <dt>Vault balance</dt><dd id="v2-balance"></dd>
+            <dt>Your balance</dt><dd id="v2-owner-balance"></dd>
+          </dl>
+          <p id="v2-not-owner" class="callout" hidden>The connected account is not this vault's owner, so every change below is disabled.</p>
+          <div class="callout" id="v2-plain-send-warning"><strong>Do not send money to this address with your wallet's Send button.</strong> The vault cannot receive a plain transfer, so the transaction fails and you lose the gas. Use "Move into vault" below.</div>
+        </section>
+
+        <section id="v2-ready">
+          <h2>Ready to pay?</h2>
+          <ul class="checks" id="v2-checks"></ul>
+          <p id="v2-verdict"></p>
+        </section>
+
+        <section id="v2-cap-section">
+          <h2>A. Vault daily cap</h2>
+          <div class="callout"><strong>The vault's daily cap starts at 0, and while it is 0 no agent can pay anything.</strong> It is the most all agents together can pay in one UTC day, exceptions included, on top of each agent's own daily limit. Changing it takes effect at once and does not cancel approvals already signed.</div>
+          <label for="v2-cap-input">Vault daily cap (USDC)</label>
+          <input id="v2-cap-input" inputmode="decimal" />
+          <button id="v2-cap-save" type="button">Set the vault daily cap</button>
+        </section>
+
+        <section id="v2-agents">
+          <h2>B. Agents</h2>
+          <div class="callout">Each agent has its own limits and its own off switch. <strong>Changing one agent does not cancel approvals that are waiting for other agents.</strong> It does cancel approvals already signed for that same agent, which then has to ask again. An agent address cannot also be an approver, and the owner cannot be an agent.</div>
+          <ul class="plain" id="v2-agent-list"></ul>
+          <p class="note" id="v2-agent-note"></p>
+          <h3 id="v2-agent-heading">Add an agent</h3>
+          <label for="v2-agent-address">Agent address</label>
+          <input id="v2-agent-address" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+          <label for="v2-agent-per">Per-payment limit (USDC): a single payment above this asks for an approver's signature</label>
+          <input id="v2-agent-per" inputmode="decimal" value="1" />
+          <label for="v2-agent-daily">This agent's daily limit (USDC): the most it can pay in a day without a signature</label>
+          <input id="v2-agent-daily" inputmode="decimal" value="10" />
+          <label for="v2-agent-days">Policy valid for (whole days from now)</label>
+          <input id="v2-agent-days" inputmode="numeric" value="7" />
+          <button id="v2-agent-save" type="button">Save this agent, switched on</button>
+          <button id="v2-agent-off" type="button" class="secondary">Switch this agent off</button>
+          <button id="v2-agent-clear" type="button" class="secondary">Clear the form</button>
+        </section>
+
+        <section id="v2-approvers">
+          <h2>C. Approvers</h2>
+          <div class="callout">An approver signs exceptions from their own wallet. <strong>An approver can authorize an exception for any enabled agent, with no budget of their own:</strong> an exception lifts only the per-payment limit, and the agent's daily limit and the vault's daily cap still apply. The owner is always an approver and is not listed.</div>
+          <ul class="plain" id="v2-approver-list"></ul>
+          <label for="v2-approver-address">Approver address</label>
+          <input id="v2-approver-address" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+          <button id="v2-approver-add" type="button">Add this approver</button>
+        </section>
+      </div>
 
       <section>
         <h2>4. Vendors</h2>
@@ -175,7 +248,7 @@
         <button id="withdraw-confirm" hidden>Confirm withdrawal</button>
       </section>
 
-      <section id="s-approvals">
+      <section id="s-approvals" class="v1only">
         <h2>7. Approve exceptions from alerts</h2>
         <p id="approvals-state"></p>
         <ol id="approvals-steps" hidden>
