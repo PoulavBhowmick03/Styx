@@ -14,9 +14,9 @@ Each agent writes only the paths it owns. Each one reviews another's work, as pl
 
 | Worker | Owns | Reviews |
 | --- | --- | --- |
-| **Claude 1** (Poulav) | `relay/`, `owner-page/`, `mcp-server/src/erebus_mcp/vault.py`, `sdk/py/src/erebus/_vault.py`, `mcp-server/tests/test_vault*.py` | Claude 2 |
+| **Claude 1** (Poulav) | `arkiv/`, `relay/`, `owner-page/`, `mcp-server/src/erebus_mcp/vault.py`, `sdk/py/src/erebus/_vault.py`, `mcp-server/tests/test_vault*.py` | Claude 2 |
 | **Claude 2** (Ishita) | `setup-page/`, `mcp-server/examples/`, `docs/mumbai/AGENT_INSTALL.md` | Codex |
-| **Codex** (Poulav) | `arkiv/`, `packaging/`, `.github/`, `watcher/`, `docs/mumbai/SECURITY_REVIEW.md`, `sdk/evm/src/arc_vault/` (bug fixes only) | Claude 1 |
+| **Codex** (Poulav) | `packaging/`, `.github/`, `watcher/`, `docs/mumbai/SECURITY_REVIEW.md`, `sdk/evm/src/arc_vault/` (bug fixes only) | Claude 1 |
 | **Humans** | Arc Studio, deployments, keys, funds, sponsor logins, booth questions, the G0 decision, the demo video, the final README | Everything that handles contracts or signing |
 
 **Nobody edits `contracts/evm/src/ErebusPolicyVault.sol`.** It is frozen until Studio's version arrives. Report contract bugs to Poulav.
@@ -107,14 +107,7 @@ Report what you find. Poulav decides the entry type (G0) and the prize picks, so
 
 Tasks 1 to 4 above are done. Claude 1 keeps everything on Arc and the end-to-end product test. Do not send transactions on Arc.
 
-**A. Finish Arkiv (G4).** You own `arkiv/`. G4 passes only when a real encrypted grant is published on Rabdi, a reviewer fetches it with every project process stopped, and the verifier accepts the fetched copy against Arc.
-
-1. Read Arkiv's current docs and the ETHGlobal Mumbai Arkiv prize requirements first, and list any requirement the adapter or its files miss. Do not guess.
-2. Make a separate publisher key at `~/.styx-mumbai/arkiv-publisher.key`, mode 0600. Never print or commit it. Give Poulav the address, the faucet step and the access-key step, then continue with everything that does not need them.
-3. Harden `arkiv/src/`, tests first. A failed fetch must distinguish nothing found, network failure and malformed data, with different exit codes, and none may read as unpaid. Check the publish result by reading the entity back. Check every SDK assumption against the docs or the SDK's types.
-4. Add `scripts/arkiv_gate.sh`: publish a grant file, check that no other project process is running, fetch into a new directory, compare bytes with the original, then run `verify_vault_payment` on the fetched copy. It must also show a wrong writer returning nothing and a tampered ciphertext being refused.
-5. When credentials arrive, run it on the live record: `~/.styx-mumbai/gate-run/`, whose grant is sealed to the reviewer key there. Read those files only. Record the writer, entity key and transaction in `STATUS.md` under its own heading, add one query judges can run to `README.md`'s Arkiv section, and update `friction.md` and `how-you-use-arkiv.md` with what really happened.
-6. Keep `reach.md` honest. No invented users or numbers.
+**A. Arkiv (G4) moved to Claude 1** on 6 November. Codex does not work in `arkiv/`.
 
 **B. Review Arc Studio's contract.** `SECURITY_REVIEW.md` was written against the earlier contract at `84b3288`. Repeat the review on `contracts/evm/src/ErebusPolicyVault.sol` from `1e8156c`, the deployed code. Do not edit it. Add a dated section with file and line, say which earlier findings still apply, and add failing tests where you can. This is not an audit, and Poulav's own review is still owed.
 

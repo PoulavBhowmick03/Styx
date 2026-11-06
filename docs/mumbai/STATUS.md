@@ -53,7 +53,7 @@ The agent side used only the real MCP server over stdio, with a real relay, a re
 | Payment to a recipient not on the allowlist | Tool refuses, `POLICY_LIMIT` | |
 | 5 USDC, over what is left of the daily limit | Tool refuses, `POLICY_LIMIT`: "no approval can lift" | |
 | 1.2 USDC exception: alert, owner signs, the page posts to the relay by itself, agent collects and submits | Settled, no file carried | `0x3b9558c3c381af00ee12286ceb6c8bf6fd08f65449d8595e4032d1dea8428073` |
-| Watcher, threshold 8 USDC | Relay accepted its notices; no unresolved transactions | Telegram delivery of these to be confirmed by the owner |
+| Watcher, threshold 8 USDC | Both notices reached the owner in Telegram: daily spend at block 71059172, and the revert at block 71059279 | |
 
 Balances after: vault 50.30 USDC, vendor A 9.70 USDC, and 9.70 of today's 10 USDC limit spent.
 
@@ -78,7 +78,7 @@ The Blockdaemon RPC returned a string JSON-RPC `id` and, to `cast`, undecodable 
 | G4 | Not run | Needs tGLM and an Arkiv access key |
 | G5 | Not run | Needs a World client |
 
-**Review:** the team reported reviewing an earlier local version of the contract and signing code. The deployed contract comes from Arc Studio (`1e8156c`) and still needs its own human review. Review it before funding the vault with anything that matters.
+**Review:** the team reported reviewing an earlier local version of the contract and signing code. On 6 November, after the live run, Poulav reported reviewing the work, including the contract and signing code this run depends on. This is the team's own review, not an audit.
 
 ## Open conflict on G0
 
