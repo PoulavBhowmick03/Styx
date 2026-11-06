@@ -19,7 +19,7 @@ const WORK = mkdtempSync(join(tmpdir(), "owner-page-e2e-"));
 chmodSync(WORK, 0o700);
 const SHOTS = process.env.E2E_SCREENSHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-const RPC_PORT = 18661, PAGE_PORT = 18662, GATE_PORT = 18663, RELAY_PORT = 18664, TELEGRAM_PORT = 18665;
+const RPC_PORT = 18661, PAGE_PORT = 18662, GATE_PORT = 18663, RELAY_PORT = 18664, TELEGRAM_PORT = 18665, HOSTED_PORT = 18666;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
 const VENDOR = "0x00000000000000000000000000000000000000a1";
 const XSS = '<img src=x onerror="window.__pwned=1">';
@@ -89,6 +89,9 @@ try {
   const vite = join(ROOT, "owner-page/node_modules/.bin/vite");
   start(vite, ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "owner-page") });
   start(vite, ["--host", "127.0.0.1", "--port", String(GATE_PORT), "--strictPort"], { cwd: join(ROOT, "owner-page"), env: { ...process.env, VITE_WORLD_GATE: "1" } });
+  // A hosted build: it names its relay, so it asks the owner no question.
+  start(vite, ["--host", "127.0.0.1", "--port", String(HOSTED_PORT), "--strictPort"], { cwd: join(ROOT, "owner-page"), env: { ...process.env, VITE_RELAY_URL: `http://127.0.0.1:${RELAY_PORT}` } });
+  await waitFor(async () => (await fetch(`http://127.0.0.1:${HOSTED_PORT}`)).ok, "hosted page");
   await waitFor(async () => (await fetch(`http://127.0.0.1:${PAGE_PORT}`)).ok, "page");
   await waitFor(async () => (await fetch(`http://127.0.0.1:${GATE_PORT}`)).ok, "gated page");
   browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -293,6 +296,77 @@ try {
     await page.goto(next.link);
     await page.locator("#sign").waitFor({ state: "visible" });
     assert.equal(errors.length, 0, errors.join());
+    await context.close();
+  });
+  // The relay only allows the main page's origin, so these let the hosted build's origin through.
+  const allowHosted = async (page) => {
+    await page.route(`${RELAY}/**`, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, headers: { ...response.headers(), "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET, POST" } });
+    });
+  };
+  const hostedLink = (link) => { const url = new URL(link); url.port = String(HOSTED_PORT); return url.toString(); };
+  await scenario("on a hosted build, the owner goes from the alert straight to review, and the signature reaches the relay", async () => {
+    const { id, requestId, link } = await askOwner();
+    const { page, context, prompts } = await openPage(HOSTED_PORT);
+    await allowHosted(page);
+    await page.goto(hostedLink(link));
+    await page.locator("#sign").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#first-use").isVisible(), false);
+    assert.equal(await page.locator("#config-details").isVisible(), false);
+    assert.equal(await page.locator("#amount").textContent(), "6 USDC");
+    await shot(page, "hosted-review");
+    await page.click("#sign");
+    await waitFor(async () => /relay accepted it/.test(await status(page)), "relay confirmation");
+    assert.equal(prompts.includes("eth_signTypedData_v4"), true);
+    const signed = await (await fetch(`${RELAY}/requests/${requestId}/signature`, { headers: { authorization: `Bearer ${agentToken}` } })).json();
+    assert.equal(signed.status, "signed");
+    const file = join(WORK, "hosted-signature.json");
+    writeFileSync(file, JSON.stringify(signed.signature));
+    assert.equal(cli({ method: "submit", payment_id: id, signature_file: file }).state, "settled");
+    await context.close();
+  });
+  await scenario("on a hosted build, a wallet that is not the owner is refused and nothing is remembered", async () => {
+    const { link } = await askOwner();
+    const { page, context, prompts } = await openPage(HOSTED_PORT, { account: stranger });
+    await allowHosted(page);
+    await page.goto(hostedLink(link));
+    await waitFor(async () => /not the vault's owner/.test(await status(page)), "owner refusal");
+    assert.equal(await page.locator("#sign").isVisible(), false);
+    assert.equal(prompts.includes("eth_signTypedData_v4"), false);
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("vault-trust/")).length), 0);
+    await context.close();
+  });
+  await scenario("on a hosted build, a link naming another relay gets no signature posted to it", async () => {
+    const { link } = await askOwner();
+    const crafted = new URL(hostedLink(link));
+    crafted.searchParams.set("relay", "http://attacker.invalid");
+    const { page, context } = await openPage(HOSTED_PORT);
+    const posted = [];
+    await page.route("http://attacker.invalid/**", async (route) => {
+      if (route.request().method() === "POST") posted.push(route.request().url());
+      const original = new URL(link).searchParams.get("request");
+      const genuine = await (await fetch(`${RELAY}/requests/${original}`)).json();
+      await route.fulfill({ json: genuine, headers: { "access-control-allow-origin": "*" } });
+    });
+    await page.goto(crafted.toString());
+    await page.locator("#sign").waitFor({ state: "visible" });
+    await waitFor(async () => /would stay here as a file/.test(await status(page)), "warning before signing");
+    await page.click("#sign");
+    await waitFor(async () => /not sent/.test(await status(page)), "refusal to post");
+    assert.equal(posted.length, 0);
+    await context.close();
+  });
+  await scenario("on a hosted build, a browser that knows a different vault still gets the question", async () => {
+    const { link } = await askOwner();
+    const { page, context } = await openPage(HOSTED_PORT);
+    await allowHosted(page);
+    await page.evaluate(() => localStorage.setItem("vault-trust/31337/0x00000000000000000000000000000000000000d4",
+      JSON.stringify({ chainId: "31337", vault: "0x00000000000000000000000000000000000000d4" })));
+    await page.goto(hostedLink(link));
+    await page.locator("#first-use").waitFor({ state: "visible" });
+    assert.match(await page.locator("#first-use-warning").textContent(), /already knows a different vault/);
+    assert.equal(await page.locator("#sign").isVisible(), false);
     await context.close();
   });
   await scenario("with no file, a wallet that is not the vault's owner cannot confirm the vault", async () => {
