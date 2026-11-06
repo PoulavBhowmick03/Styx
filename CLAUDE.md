@@ -1,6 +1,6 @@
-# Erebus at ETHGlobal Mumbai
+# Styx at ETHGlobal Mumbai
 
-Full plan: `docs/mumbai/BUILD_PLAN.md`. Pre-existing code is listed in `PROVENANCE.md`.
+Full plan: `docs/mumbai/BUILD_PLAN.md`.
 
 Poulav reviews all contract and signing code.
 No keys in the repo.
@@ -17,11 +17,9 @@ A funded vault on Arc pays an agent's routine invoices within the owner's rules,
 
 **Out of scope:** shielding, stealth addresses, cross-chain settlement; a negotiation engine, delivery escrow, AP2 integration; budgets shared across several agents, an attack detector, production key management.
 
-## Rules (plan section 0)
+## Rules
 
-- **Track.** Continuity. Work on existing code is allowed only for an approved Continuity entry. Confirm it on the dashboard before G1, and keep the confirmation.
-- **Provenance.** The first commit imports Erebus `origin/main` at `d56c777036701138b535c22fb32f320e5c351979`, labelled as pre-existing. `PROVENANCE.md` lists every imported path. Every later commit is Mumbai work. Commit small and often.
 - **Secrets.** No key material, `.env` files or keystores in the repo, test keys included. Use testnet funds only.
 - **Review.** Poulav reviews every line of contract and signing code before it is trusted.
 - **Claims.** Claim only what a test or the live demo shows (plan section 13).
-- **AI use.** Record which files AI tools wrote or helped with in `docs/mumbai/ai-usage.md`, and keep the prompts there.
+- **Commits.** Small commits with conventional messages. Keep contract changes and agent/MCP changes separate.
