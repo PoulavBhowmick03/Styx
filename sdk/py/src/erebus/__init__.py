@@ -24,6 +24,7 @@ from importlib.metadata import version as _metadata_version
 
 from erebus._network import Network, NetworkPreset, identify_network, network_preset
 from erebus._disclosure import DisclosureError, DisclosureSeam
+from erebus._vault import VaultError, VaultSeam
 from erebus._proving import LocalProvingError, LocalProvingSeam
 from erebus._access import AccessError, AccessSeam
 from erebus._metropolis import MetropolisError, MetropolisSeam
@@ -39,6 +40,8 @@ __all__ = [
     "WalletPolicy",
     "DisclosureError",
     "DisclosureSeam",
+    "VaultError",
+    "VaultSeam",
     "LocalProvingError",
     "LocalProvingSeam",
     "PROTOCOL",
