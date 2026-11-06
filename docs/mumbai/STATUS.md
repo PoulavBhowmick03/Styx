@@ -36,6 +36,34 @@ The reviewer, on this same machine, verified all four results for the record, re
 
 Not shown by this run: an audit, any wallet besides MetaMask, or the reasons for the reverts from the receipts. The revert reason for A4 was confirmed separately by simulation: `PaymentAlreadyUsed`.
 
+## Live product run on Arc testnet
+
+The agent side used only the real MCP server over stdio, with a real relay, a real Telegram bot and the owner's MetaMask.
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Agent proposes 2 USDC, over the 1 USDC limit | Tool answers `exception_required` | |
+| Agent asks for approval | Relay reports the alert delivered; owner received it in Telegram and opened its link | |
+| Owner signs in MetaMask, config without `relay` | Page signs but refuses to post the signature | See below |
+| Tampered copy of the signature posted to the relay | 403 | |
+| Real signature posted to the relay, by hand | Accepted; `erebus_check_owner_approval` returned it | |
+| Agent submits through the tool | Settled | `0xbfaf884fd68aa72d4043a8bdf812c55f41bcda7c92c5d42788b4a90818fc1450` |
+| Settled exception resubmitted directly | Reverted | `0xaa17d6c6aeab1d2816093a824c84468a2a0a6e08d3a0d18a0d620e94075cf45d` |
+| 0.25 USDC routine payment through the tools | Settled | `0x5ed2e5e078b7c2d419037963471df405c031c43c95bbcc84eb6e99de6535f455` |
+| Payment to a recipient not on the allowlist | Tool refuses, `POLICY_LIMIT` | |
+| 5 USDC, over what is left of the daily limit | Tool refuses, `POLICY_LIMIT`: "no approval can lift" | |
+| Watcher, threshold 8 USDC | Relay accepted its notices; no unresolved transactions | Telegram delivery of these to be confirmed by the owner |
+
+**Not shown yet:** the page posting a signature to the relay by itself on Arc (that path has only run on a local chain), and opening the link on a phone.
+
+**What this run found, all fixed:**
+
+- Arc's RPC answers 403 to Python's default User-Agent, which stopped the watcher completely. Its tests used a local chain and could not see this.
+- The watcher made 3 requests per block, and Arc produces about 2 blocks a second, so it could never catch up. It now reads blocks in batches.
+- An owner config saved before the relay existed makes the page refuse to post the signature, correctly, but it only said so after signing. It now warns first.
+
+The Blockdaemon RPC returned a string JSON-RPC `id` and, to `cast`, undecodable bytes when tested. Use the primary RPC for the watcher.
+
 ## Gates
 
 | Gate | Status | Notes |
@@ -68,7 +96,7 @@ Until this is resolved, nothing should state that the whole project was built at
 
 ## How the owner is alerted
 
-With the relay running, an over-cap request sends the owner a Telegram alert with a link to the approval page, and the signature goes back to the agent automatically. See `relay/README.md`. This is tested against a fake Telegram server and a local chain. It has not run with a real bot, because that needs a token from @BotFather.
+With the relay running, an over-cap request sends the owner a Telegram alert with a link to the approval page, and the signature goes back to the agent automatically. See `relay/README.md`. This has run on Arc with a real bot; see "Live product run". The page and relay ran on the owner's Mac, so the link does not open on a phone yet.
 
 Without the relay, the tool writes a pending file and someone carries it to the owner by hand. An agent that skips the tools sends no alert: the vault still refuses the payment, and the planned watcher covers those attempts.
 
