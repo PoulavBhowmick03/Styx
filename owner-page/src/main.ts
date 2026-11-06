@@ -84,7 +84,12 @@ function render(): void {
       showStatus("Check every field, then verify with World before signing.");
     } else {
       signButton.hidden = false;
-      showStatus("Check every field, then sign with the owner wallet.");
+      showStatus(
+        relayLink && !mayPostSignature(relayLink, config)
+          ? "Your owner config does not name this link's relay, so a signature would stay here as a file and not reach the agent. If this is your own relay, choose a config with its relay set first."
+          : "Check every field, then sign with the owner wallet.",
+        Boolean(relayLink && !mayPostSignature(relayLink, config)),
+      );
     }
   } catch (error) {
     showStatus(error instanceof ApprovalError ? error.message : "This approval could not be read.", true);
