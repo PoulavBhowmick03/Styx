@@ -533,7 +533,7 @@ try {
   });
 
   await scenario("when the RPC cannot say when the vault was created, the list is marked partial and a lookup still works", async () => {
-    sh("cast", ["rpc", "anvil_mine", "0x1ADB0", "--rpc-url", RPC]); // 110,000 more: the vendor is now older than the fallback window
+    for (let i = 0; i < 11; i++) sh("cast", ["rpc", "anvil_mine", "0x2710", "--rpc-url", RPC]); // 110,000 more, in steps Anvil answers in time: the vendor is now older than the fallback window
     const { page, control, context } = await openPage();
     control.noHistory = true;
     await connect(page, token);

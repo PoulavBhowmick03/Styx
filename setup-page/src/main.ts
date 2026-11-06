@@ -231,7 +231,7 @@ async function run(label: string, action: () => Promise<Hex | void>, tagged = tr
 
 async function loadArtifact(): Promise<Artifact> {
   if (artifact) return artifact;
-  const response = await fetch("/vault-artifact.json");
+  const response = await fetch(`${import.meta.env.BASE_URL}vault-artifact.json`);
   if (!response.ok) throw new Error("vault-artifact.json is missing. Run `npm run prepare-artifact` (it needs Foundry).");
   artifact = (await response.json()) as Artifact;
   return artifact;
@@ -350,6 +350,17 @@ async function deploy(): Promise<void> {
   if (ok && deployedAt) await openVault(deployedAt);
 }
 
+/**
+ * On a hosted site, the approval page shares this page's storage. Connecting as the vault's owner
+ * counts as confirming it there, so the first alert goes straight to review. Without a relay built
+ * in, this stays out of the way and the approval page asks once.
+ */
+function rememberForApprovals(address: Address): void {
+  const relay: string | undefined = import.meta.env.VITE_RELAY_URL || undefined;
+  if (!relay) return;
+  remember(`vault-trust/${chainId}/${address.toLowerCase()}`, JSON.stringify({ chainId: String(chainId), vault: address, relay: new URL(relay).origin }));
+}
+
 async function openVault(address: Address, fromLink = false): Promise<void> {
   if (!pub || !account) return;
   try {
@@ -392,6 +403,7 @@ async function openVault(address: Address, fromLink = false): Promise<void> {
       /* the address bar is a convenience only */
     }
     renderBanner();
+    if (getAddress(owner) === account) rememberForApprovals(address);
     await refresh();
     status(getAddress(owner) === account ? `Vault ${address} connected.` : `Vault ${address} connected, but you are not its owner. Changes are disabled.`);
   } catch (error) {
