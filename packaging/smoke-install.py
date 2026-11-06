@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix="styx-install-") as directory:
     env = dict(os.environ, PATH=f"{tools}:/usr/bin:/bin", UV_TOOL_DIR=str(work / "envs"), UV_TOOL_BIN_DIR=str(tools))
     assert shutil.which("cargo", path=env["PATH"]) is None
     assert shutil.which("rustc", path=env["PATH"]) is None
-    subprocess.run(["/bin/bash", str(root / "packaging/install-mcp.sh"), str(wheels)], env=env, check=True)
+    subprocess.run(["/bin/bash", str(wheels / "install-mcp.sh"), str(wheels)], env=env, check=True)
 
     def run(name, request):
         output = subprocess.run([str(tools / name)], input=json.dumps(request), text=True,

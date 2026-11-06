@@ -10,6 +10,8 @@ export EREBUS_CLI_BIN_DIR="$ROOT/sdk/evm/target/release"
 uv build --wheel --package erebus-cli --out-dir "$ROOT/dist"
 uv build --wheel --package erebus-sdk --out-dir "$ROOT/dist"
 uv build --wheel --package erebus-mcp-server --out-dir "$ROOT/dist"
+cp packaging/install-mcp.sh dist/install-mcp.sh
+cp packaging/README.md dist/README.md
 python3 - <<'PY'
 import hashlib
 from pathlib import Path

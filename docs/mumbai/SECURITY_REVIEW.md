@@ -110,3 +110,16 @@ Local evidence so far: EVM full suite passed; seven Anvil vault tests passed; co
 passed; Foundry 84 passed; owner-page typecheck/tests passed and 13 browser scenarios passed;
 Arkiv typecheck/tests passed; local demo passed. Python raw run: 430 passed, 35 skipped,
 one documented failure. No hosted Actions run has been verified; a human must enable/run it.
+
+### Task 4: watcher
+
+Built `watcher/watcher.py`: full-block agent/vault transaction scanning, receipt-status revert
+alerts, historical daily-spend threshold checks, durable cursor/pending receipts/outbox, separate
+watcher bearer token, redirect refusal and process locking. No signing or transaction sending.
+Tests run against local Anvil with fresh random keys and a fake relay implementing `/alerts`.
+Missing/partial receipts stay unknown and are retried; the relay's `alerted:false` stays queued.
+
+Human/limits: no live Arc or Telegram run; historical state RPC support is required. Reorganizations
+stop processing for operator review. Delivery can duplicate after a crash between remote acceptance
+and saving the acknowledgement, since `/alerts` has no idempotency key. Never-visible receipts
+cannot yield definitive revert alerts. See `watcher/README.md` for commands and recovery.
