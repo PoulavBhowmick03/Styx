@@ -44,3 +44,15 @@ Followed on 6 November 2026, step by step, from a fresh clone of this repository
 ## Noise to expect
 
 `claude -p` prints `[mcp-sdk] SEP-2352 ... issuer stamp` on stderr, and "no stdin data received in 3s" when stdin is a terminal. Neither affected a run.
+
+## The agent configs, tested on 7 November
+
+| Agent | Result |
+| --- | --- |
+| Claude Code | Ran: the example's `.mcp.json` started the server and the agent paid and was refused (see above) |
+| Codex | **Partly.** Real Codex 0.154.0 accepted every key in `codex.config.toml` (`command`, `args`, `env`, `env_vars`) and listed the server as enabled. That check passed the keys as `-c` overrides: the file itself was not loaded from `~/.codex`, which was left alone. In a session on a local chain, Codex started the server and found all four tools. It then refused the tool call, because its non-interactive mode blocks MCP tools unless `default_tools_approval_mode` is set. With `approve` set, two sessions (300 s and 150 s) did not finish, the cause was not found, and no payment was made. **Not shown: a payment completed through Codex** |
+| Claude Desktop | **Not loaded.** The app is installed, but testing means editing its live config file and restarting it. That was left for Ishita |
+| Cursor | **Not loaded.** It is not installed on this machine |
+
+Three Codex sessions used Ishita's Codex login, on a throwaway local chain only. Nothing was sent to Arc.
+
