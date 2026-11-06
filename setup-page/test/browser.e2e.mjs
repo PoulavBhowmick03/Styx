@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
+import { verifyMessage } from "viem";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
@@ -18,7 +19,7 @@ const SHOTS = process.env.E2E_SCREENSHOTS;
 // E2E_VIEWPORT=360x900 makes every page this wide, so the screenshots can be taken at phone width.
 const [VIEW_W, VIEW_H] = (process.env.E2E_VIEWPORT ?? "").match(/^(\d+)x(\d+)$/)?.slice(1).map(Number) ?? [];
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-const RPC_PORT = 18761, PAGE_PORT = 18762, HOSTED_PORT = 18764, BUILT_PORT = 18765;
+const RPC_PORT = 18761, PAGE_PORT = 18762, HOSTED_PORT = 18764, BUILT_PORT = 18765, GUIDE_PORT = 18766, RELAY_PORT = 18767;
 const RPC = `http://127.0.0.1:${RPC_PORT}`;
 const XSS = '<img src=x onerror="window.__pwned=1">';
 const VENDOR = "0x00000000000000000000000000000000000000a1";
@@ -70,6 +71,32 @@ try {
   start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(PAGE_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2" } });
   // The hosted site is built with a relay address. This one stands in for it, so the approvals section can be tested.
   start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(HOSTED_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2", VITE_RELAY_URL: "https://relay.example/ignored/path" } });
+  // A stand-in relay with the API the guided path uses: GET /links/<wallet> and POST /agents/register. It checks the
+  // signature the way the real one must, so a wrong message or signer is refused here too.
+  const relayState = { linked: new Set(), registrations: [], failNext: undefined, urls: [] };
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET,POST,OPTIONS" };
+  const fakeRelay = createServer(async (req, res) => {
+    relayState.urls.push(req.url);
+    const send = (code, body) => { res.writeHead(code, { "content-type": "application/json", ...cors }); res.end(JSON.stringify(body)); };
+    if (req.method === "OPTIONS") return send(204, {});
+    const link = /^\/links\/(0x[0-9a-fA-F]{40})$/.exec(req.url ?? "");
+    if (req.method === "GET" && link) return send(200, { linked: relayState.linked.has(link[1].toLowerCase()) });
+    if (req.method === "POST" && req.url === "/agents/register") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      const body = JSON.parse(raw);
+      if (relayState.failNext) { const error = relayState.failNext; relayState.failNext = undefined; return send(400, { error }); }
+      const message = ["Register a Styx agent", `Chain: ${body.chainId}`, `Vault: ${body.vault}`, `Agent: ${body.agent}`, `Approver: ${body.approver}`, `Issued: ${body.issuedAt}`].join("\n");
+      const fresh = Math.abs(Date.now() / 1000 - body.issuedAt) < 600;
+      const signed = await verifyMessage({ address: owner, message, signature: body.signature }).catch(() => false);
+      if (!fresh || !signed) return send(401, { error: "the signature is not the owner's over this registration" });
+      relayState.registrations.push({ ...body, message });
+      return send(200, { token: `tok-${relayState.registrations.length}-secret`, relay: `http://127.0.0.1:${RELAY_PORT}` });
+    }
+    send(404, { error: "not found" });
+  }).listen(RELAY_PORT, "127.0.0.1");
+  children.push({ kill: () => fakeRelay.close() });
+  start(join(ROOT, "setup-page/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(GUIDE_PORT), "--strictPort"], { cwd: join(ROOT, "setup-page"), env: { ...process.env, VITE_LOG_FALLBACK_PAGES: "2", VITE_RELAY_URL: `http://127.0.0.1:${RELAY_PORT}` } });
   // The production build, made the way scripts/build_site.sh makes the setup page (base /setup/, a relay baked in)
   // and served under /setup/ the way the hosted site serves it. The dev servers above do not exercise that.
   {
@@ -90,6 +117,7 @@ try {
     children.push({ kill: () => server.close() });
   }
   await waitFor(async () => (await fetch(`http://127.0.0.1:${PAGE_PORT}`)).ok, "page");
+  await waitFor(async () => (await fetch(`http://127.0.0.1:${GUIDE_PORT}`)).ok, "guide page");
   await waitFor(async () => (await fetch(`http://127.0.0.1:${HOSTED_PORT}`)).ok, "hosted-style page");
   browser = await chromium.launch({ channel: "chrome", headless: true });
 
@@ -893,6 +921,229 @@ try {
     assert.equal(await one.page.locator("#v2:visible").count(), 0);
     assert.match(await dd(one.page, "v-code"), /^Matches this repository/);
     await one.context.close();
+  });
+
+  // ---- The two paths: one person, guided, and a team ----
+  let guideVault;
+  const stepNow = (page) => page.evaluate(() => document.body.dataset.gstep);
+  const stepIs = (page, n, label) => waitFor(async () => (await stepNow(page)) === String(n), label ?? `step ${n}`, 300).catch(async (e) => { throw new Error(`${e.message}; step was ${await stepNow(page)}; status: ${await status(page)}`); });
+  const marks = (page) => page.locator("#g-steps li").evaluateAll((els) => els.map((e) => `${e.dataset.step}:${e.className}`));
+  const confirmYes = async (page) => { await page.locator("#v2-confirm").waitFor({ state: "visible" }); const text = await page.locator("#v2-confirm-text").textContent(); await page.click("#v2-confirm-yes"); return text; };
+
+  await scenario("with no path chosen the page asks, and a vault link or a chosen path goes straight on", async () => {
+    const none = await openPageAt("", { port: GUIDE_PORT });
+    await none.page.locator("#choose").waitFor({ state: "visible" });
+    assert.match(await none.page.locator("#choose-me").textContent(), /Just me: my agent spends from my wallet/);
+    assert.match(await none.page.locator("#choose-team").textContent(), /A team: many agents and approvers/);
+    assert.equal(await none.page.locator("#choose-me").getAttribute("href"), "?path=me");
+    assert.equal(await none.page.locator("#s-wallet").isVisible(), true, "the existing screens are still there");
+    await none.context.close();
+    for (const query of ["?path=team", "?path=me", "?vault=0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8"]) {
+      const other = await openPageAt(query, { port: GUIDE_PORT });
+      assert.equal(await other.page.locator("#choose").isVisible(), false, query);
+      await other.context.close();
+    }
+  });
+
+  await scenario("just me: eight guided steps, each read from the chain, ending at the agent's settings", async () => {
+    const { page, prompts, errors, context } = await openPageAt("?path=me", { port: GUIDE_PORT });
+    assert.equal(await stepNow(page), "1");
+    assert.equal(await page.locator("#guide").isVisible(), true);
+    assert.equal(await page.locator("#s-wallet").isVisible(), true, "step 1 shows the wallet");
+    assert.equal(await page.locator("#dashboard").isVisible(), false);
+    await page.click("#connect");
+    await page.evaluate((t) => { document.getElementById("token-input").value = t; }, token); // a rehearsal chain has no known USDC
+    await stepIs(page, 2);
+    assert.deepEqual((await marks(page)).slice(0, 3), ["1:done", "2:now", "3:later"]);
+    await shot(page, "guide-step2");
+
+    // 2: a vault, and it is the repository's build, not the older one.
+    const before = sends(prompts);
+    await page.click("#g-deploy");
+    await page.locator("#v2-confirm").waitFor({ state: "visible" });
+    let text = await page.locator("#v2-confirm-text").textContent();
+    assert.match(text, /No vault yet/);
+    assert.match(text, /daily cap is 0, so no agent can pay/);
+    assert.equal(sends(prompts), before, "asking is not sending");
+    await page.click("#v2-confirm-yes");
+    await stepIs(page, 3);
+    assert.equal(sends(prompts), before + 1);
+    guideVault = (await dd(page, "v2-address")).trim();
+    assert.equal(call(guideVault, "contractVersion()(uint256)"), "2", "deploying made the current vault, not the older one");
+    assert.equal(call(guideVault, "owner()(address)").toLowerCase(), owner.toLowerCase());
+    assert.match(await dd(page, "v2-code"), /^Matches this repository's build/);
+    assert.ok((await page.locator("#vault-banner").textContent()).toLowerCase().includes(guideVault.toLowerCase()));
+
+    // 3: the agent's address. The owner's own address is refused.
+    await shot(page, "guide-step3");
+    assert.match(await page.locator('[data-gpanel="3"]').textContent(), /scripts\/agent_setup\.sh/);
+    assert.match(await page.locator('[data-gpanel="3"]').textContent(), /key never comes to this page/);
+    await page.fill("#g-agent", owner);
+    await page.click("#g-agent-use");
+    await statusIs(page, /your own wallet/);
+    assert.equal(await stepNow(page), "3");
+    await page.fill("#g-agent", agent);
+    await page.click("#g-agent-use");
+    await stepIs(page, 4);
+
+    // 4: limits, then the vault's cap, one confirmation each, with the defaults in plain words.
+    assert.equal(await page.inputValue("#g-per"), "1");
+    assert.equal(await page.inputValue("#g-daily"), "10");
+    assert.equal(await page.inputValue("#g-days"), "7");
+    await page.click("#g-limits-save");
+    text = await confirmYes(page);
+    assert.ok(text.toLowerCase().includes(agent.toLowerCase()), "the confirmation names the agent");
+    assert.match(text, /up to 1 USDC in one payment and 10 USDC in one day, for 7 days/);
+    await statusIs(page, /Save limits for agent .*: confirmed/);
+    await waitFor(async () => await page.locator("#g-limits-cap").isVisible(), "cap half");
+    assert.equal(await stepNow(page), "4", "the limits alone do not finish the step: the vault's cap is still 0");
+    assert.equal(call(guideVault, "vaultDailyLimit()(uint256)"), "0");
+    await page.click("#g-cap-save");
+    text = await confirmYes(page);
+    assert.match(text, /daily cap to 10 USDC/);
+    assert.match(text, /Until this is set, no agent can pay anything/);
+    await stepIs(page, 5);
+    assert.equal(call(guideVault, "vaultDailyLimit()(uint256)"), "10000000");
+    const policy = sh("cast", ["call", guideVault, "agentPolicy(address)(uint256,uint256,uint256,uint64,bool)", agent, "--rpc-url", RPC]).split("\n").map((l) => l.trim().split(" ")[0]);
+    assert.deepEqual([policy[1], policy[2], policy[4]], ["1000000", "10000000", "true"]);
+
+    // 5: the first vendor, with a label.
+    await shot(page, "guide-step5");
+    assert.equal(await page.locator('#dashboard [data-guide="vendors"]').isVisible(), true);
+    assert.equal(await page.locator('[data-guide="fund"]').isVisible(), false);
+    await page.fill("#vendor-address", VENDOR);
+    await page.fill("#vendor-label", "Acme");
+    await page.click("#add-vendor");
+    await stepIs(page, 6);
+    assert.equal(call(guideVault, "allowedRecipient(address)(bool)", VENDOR), "true");
+
+    // 6: funding, with the plain-send warning on the screen.
+    assert.match(await page.locator("#fund-send-warning").textContent(), /A plain send to the vault's address fails/);
+    await page.fill("#fund-amount", "4");
+    await page.click("#fund");
+    await page.locator("#fund-confirm").waitFor({ state: "visible" });
+    await page.click("#fund-confirm");
+    await stepIs(page, 7);
+    assert.equal(call(token, "balanceOf(address)(uint256)", guideVault), "4000000");
+
+    // 7: phone alerts. Not linked yet, so the step waits; once the relay says linked it moves on.
+    assert.match(await page.locator("#g-alerts-state").textContent(), /not linked to Telegram yet/);
+    assert.equal(await page.locator("#g-link").getAttribute("href"), "/?link");
+    await page.click("#g-alerts-check");
+    await page.waitForTimeout(300);
+    assert.equal(await stepNow(page), "7");
+    relayState.linked.add(owner.toLowerCase());
+    await page.click("#g-alerts-check");
+    await stepIs(page, 8);
+
+    // 8: connect the agent. The token is shown once, with the settings ready to paste, and never in a URL.
+    await shot(page, "guide-step8");
+    await page.click("#g-connect-agent");
+    await page.locator("#v2-confirm").waitFor({ state: "visible" });
+    text = await page.locator("#v2-confirm-text").textContent();
+    assert.ok(text.toLowerCase().includes(guideVault.toLowerCase()) && text.toLowerCase().includes(agent.toLowerCase()), "names the vault and the agent");
+    assert.match(text, /not a transaction|It is not a transaction/);
+    const sendsBefore = sends(prompts);
+    await page.click("#v2-confirm-yes");
+    await page.locator("#token-panel").waitFor({ state: "visible" });
+    assert.equal(sends(prompts), sendsBefore, "registering is a signed message, not a transaction");
+    assert.ok(prompts.includes("personal_sign"));
+    const config = JSON.parse(await page.inputValue("#token-config"));
+    const env = config.mcpServers["styx-vault"].env;
+    assert.equal(env.STYX_VAULT_RELAY_TOKEN, "tok-1-secret");
+    assert.equal(env.STYX_BACKEND, "vault");
+    assert.equal(env.STYX_VAULT_VERSION, "2");
+    assert.equal(env.STYX_VAULT_ADDRESS.toLowerCase(), guideVault.toLowerCase());
+    assert.equal(env.STYX_VAULT_CODE_HASH, sh("cast", ["keccak", sh("cast", ["code", guideVault, "--rpc-url", RPC])]), "the code hash is read from the chain");
+    assert.equal(env.STYX_VAULT_RELAY_URL, `http://127.0.0.1:${RELAY_PORT}`);
+    assert.match(await page.locator("#token-panel").textContent(), /shown once/);
+    assert.equal(page.url().includes("tok-1"), false, "the token is not in the page's address");
+    assert.equal(relayState.urls.some((u) => u.includes("tok-")), false, "the token is in no URL the page called");
+    const registered = relayState.registrations.at(-1);
+    assert.equal(registered.approver.toLowerCase(), owner.toLowerCase());
+    assert.equal(registered.agent.toLowerCase(), agent.toLowerCase());
+    assert.equal(registered.chainId, "31337");
+    assert.equal(registered.message.split("\n").length, 6);
+    await shot(page, "guide-token");
+    await page.click("#token-done");
+    assert.equal(await page.inputValue("#token-config"), "", "the token is cleared once stored");
+    assert.equal(await page.locator("#g-finish").isVisible(), true);
+    assert.match(await page.locator("#g-finish").textContent(), /over your per-payment limit|more than your per-payment limit/);
+    await shot(page, "guide-finish");
+    assert.equal(errors.length, 0, errors.join());
+    // Reload in the same browser: the steps come back from the chain, and only connecting the agent is open again.
+    await page.reload();
+    await page.click("#connect");
+    await page.evaluate((t) => { document.getElementById("token-input").value = t; }, token);
+    await stepIs(page, 8, "resumed at the last step after a reload");
+    assert.deepEqual((await marks(page)).map((m) => m.split(":")[1]), ["done", "done", "done", "done", "done", "done", "done", "now"]);
+    assert.ok((await page.locator("#vault-banner").textContent()).toLowerCase().includes(guideVault.toLowerCase()));
+    await context.close();
+  });
+
+  await scenario("just me: a browser with no note, or another wallet, starts at the vault step and is never resumed into someone else's vault", async () => {
+    // The note a browser keeps is only a pointer to a vault. Without it the page starts at the vault step.
+    const fresh = await openPageAt("?path=me", { port: GUIDE_PORT });
+    await fresh.page.click("#connect");
+    await stepIs(fresh.page, 2, "a browser with no note starts at the vault step");
+    await fresh.context.close();
+    const stranger_ = await openPageAt("?path=me", { port: GUIDE_PORT, account: stranger });
+    await stranger_.page.click("#connect");
+    await stepIs(stranger_.page, 2, "another wallet starts at the vault step");
+    await stranger_.context.close();
+  });
+
+  await scenario("just me: a vault someone else owns is not treated as yours, and a relay error is shown, not swallowed", async () => {
+    const other = await openPageAt(`?path=me&vault=${guideVault}`, { port: GUIDE_PORT, account: stranger });
+    await other.page.click("#connect");
+    await stepIs(other.page, 2, "someone else's vault leaves step 2 open");
+    await other.context.close();
+    const { page, context } = await openPageAt(`?path=me&vault=${guideVault}`, { port: GUIDE_PORT });
+    await page.click("#connect");
+    await stepIs(page, 8);
+    relayState.failNext = "the approver is not enabled";
+    await page.click("#g-connect-agent");
+    await confirmYes(page);
+    await statusIs(page, /Could not connect the agent: the approver is not enabled/);
+    assert.equal(await page.locator("#token-panel").isVisible(), false);
+    assert.equal(await stepNow(page), "8");
+    await context.close();
+  });
+
+  await scenario("team: every agent has an approver column and a connect action, and approvers show whether they are linked", async () => {
+    // Add an approver first, so there is a choice.
+    sh("cast", ["send", guideVault, "setApprover(address,bool)", "0x00000000000000000000000000000000000000d1", "true", "--rpc-url", RPC, "--private-key", ownerKey]);
+    relayState.linked.add("0x00000000000000000000000000000000000000d1");
+    relayState.linked.delete(owner.toLowerCase());
+    const { page, prompts, context } = await openPageAt(`?path=team&vault=${guideVault}`, { port: GUIDE_PORT });
+    await page.click("#connect");
+    await page.locator("#v2").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("#v2-agent-list .connect-agent").waitFor({ timeout: 30000 });
+    assert.equal(await page.locator("#guide").isVisible(), false, "the team path keeps the existing screens");
+    const options = await page.locator("#v2-agent-list select option").allTextContents();
+    assert.equal(options.length, 2);
+    assert.match(options[0], /^Owner /);
+    assert.match(options[1], /^Approver 0x00000000000000000000000000000000000000d1/i);
+    await waitFor(async () => /Alerts: linked/.test(await page.locator("#v2-approver-list").textContent()) && /Alerts: not linked. Tell them to open https:\/\/styxco.xyz\/\?link/.test(await page.locator("#v2-approver-list").textContent()), "link states", 300);
+    // Register the agent with the approver chosen, not the owner.
+    await page.selectOption("#v2-agent-list select", { index: 1 });
+    const before = sends(prompts);
+    await page.click("#v2-agent-list .connect-agent");
+    const text = await confirmYes(page);
+    assert.ok(text.toLowerCase().includes(guideVault.toLowerCase()) && text.toLowerCase().includes(agent.toLowerCase()), "names the vault and the agent");
+    assert.match(text, /0x00000000000000000000000000000000000000d1/i);
+    await page.locator("#token-panel").waitFor({ state: "visible" });
+    assert.equal(sends(prompts), before);
+    const registered = relayState.registrations.at(-1);
+    assert.equal(registered.approver.toLowerCase(), "0x00000000000000000000000000000000000000d1");
+    assert.match(await page.inputValue("#token-config"), /tok-\d+-secret/);
+    await shot(page, "team-agents");
+    await page.click("#token-done");
+    // Every existing warning is still there on the team path.
+    assert.match(await page.locator("#v2-agents").textContent(), /does not cancel approvals that are waiting for other agents/);
+    assert.match(await page.locator("#v2-approvers").textContent(), /with no budget of their own/);
+    assert.match(await page.locator("#v2-cap-section").textContent(), /starts at 0, and while it is 0 no agent can pay anything/);
+    await context.close();
   });
 
   await scenario("a non-owner can read the vault but every change is disabled", async () => {

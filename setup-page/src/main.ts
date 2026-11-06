@@ -19,6 +19,8 @@ import { ARC_TESTNET_ID, ARC_USDC, arcTestnet, chainFor, explorerTx, KNOWN_CODE_
 import { findFirstBlockWithCode, MAX_LOG_RANGE, pageLogs, retryRpc, verifyCreationBlock } from "./logs";
 import { assessProtection, isProtected } from "./protection";
 import { initV2 } from "./v2ui";
+import { initGuide } from "./guideui";
+import { fetchLinked, pathFromSearch } from "./guide";
 import { vaultV2Abi } from "./v2";
 
 interface Eip1193 {
@@ -285,6 +287,7 @@ async function connect(): Promise<void> {
     linkedVault = undefined;
     await openVault(address, true);
   }
+  guide.onConnected();
 }
 
 async function switchToArc(): Promise<void> {
@@ -365,6 +368,46 @@ async function deploy(): Promise<void> {
     setText("deploy-note", `Deploy transaction ${hash}, block ${receipt.blockNumber}. Keep these for your records.`);
   }, false);
   if (ok && deployedAt) await openVault(deployedAt);
+}
+
+/** The guided path's deploy: always the vault this repository builds, never the older one. */
+async function deployGuided(): Promise<void> {
+  const token = tokenAddress();
+  if (!token || !wallet || !pub || !account) return status("Connect your wallet first.", true);
+  const problem = await checkToken(token);
+  if (problem) return status(problem, true);
+  const built = await loadArtifactV2().catch((e) => void status(errorText(e), true));
+  if (!built) return;
+  const owner = account;
+  v2.ask(
+    [
+      "Create a new vault.",
+      `It will be owned by ${owner}, with the token ${token}. A new vault has a new address and starts empty: its daily cap is 0, so no agent can pay until you set limits in the next steps.`,
+    ],
+    async () => {
+      let deployedAt: Address | undefined;
+      const ok = await run("Create vault", async () => {
+        const hash = await wallet!.deployContract({ abi: built.abi, bytecode: built.bytecode, args: [owner, token], account: owner, chain: wallet!.chain });
+        const receipt = await pub!.waitForTransactionReceipt({ hash, timeout: 90_000 });
+        deployedAt = receipt.contractAddress ?? undefined;
+        if (deployedAt) remember(`vault-setup:created:${chainId}:${deployedAt.toLowerCase()}`, receipt.blockNumber.toString());
+        setText("deploy-note", `Deploy transaction ${hash}, block ${receipt.blockNumber}. Keep these for your records.`);
+      }, false);
+      if (ok && deployedAt) {
+        remember(guideVaultKey(), deployedAt);
+        await openVault(deployedAt);
+      }
+    },
+    `No vault yet. Your wallet ${owner} will own the new one.`,
+  );
+}
+
+const guideVaultKey = () => `guide-vault:${chainId}:${(account ?? "").toLowerCase()}`;
+/** Opens the vault this wallet made before, if the chain still says it is theirs. Storage is only a pointer. */
+async function resumeGuide(): Promise<void> {
+  if (vault) return;
+  const hint = remembered(guideVaultKey());
+  if (hint && isAddress(hint, { strict: false })) await openVault(getAddress(hint));
 }
 
 // ---- Approving from alerts, with no config file ----
@@ -618,10 +661,10 @@ function setControls(isOwner = ownerFlag): void {
   ownerFlag = isOwner;
   const off = busy || !isOwner;
   const fundBlocked = codeMatches === false && !fundingUnlocked;
-  for (const id of ["save-policy", "add-vendor", "toggle-pause", "withdraw", "withdraw-confirm", "v2-cap-save", "v2-agent-save", "v2-agent-off", "v2-agent-clear", "v2-approver-add", "v2-confirm-yes", "v2-confirm-no"]) $<HTMLButtonElement>(id).disabled = off;
+  for (const id of ["save-policy", "add-vendor", "toggle-pause", "withdraw", "withdraw-confirm", "v2-cap-save", "v2-agent-save", "v2-agent-off", "v2-agent-clear", "v2-approver-add"]) $<HTMLButtonElement>(id).disabled = off;
   for (const button of document.querySelectorAll<HTMLButtonElement>("#v2-agent-list button, #v2-approver-list button")) button.disabled = off;
   for (const id of ["fund", "fund-confirm", "fund-max"]) $<HTMLButtonElement>(id).disabled = off || fundBlocked;
-  for (const id of ["deploy", "deploy-yes", "load-vault"]) $<HTMLButtonElement>(id).disabled = busy || !account;
+  for (const id of ["deploy", "deploy-yes", "load-vault", "v2-confirm-yes", "v2-confirm-no"]) $<HTMLButtonElement>(id).disabled = busy || !account;
   for (const button of document.querySelectorAll<HTMLButtonElement>("#vendors button, #recent button")) button.disabled = button.closest("#recent") ? busy : off;
 }
 
@@ -960,5 +1003,30 @@ const v2 = initV2({
     setControls(vaultOwner === account);
   },
   setControls: () => setControls(),
+  linkedOf: BUILT_IN_RELAY ? (address) => fetchLinked(BUILT_IN_RELAY, address) : undefined,
+  connectAgent: (agent, approver) => guide.connectAgent(agent, approver),
+  onRefreshed: (snapshot) => guide.onRefreshed(snapshot),
+});
+
+// The two ways in: ?path=me (guided, one person) or ?path=team (every screen). With neither, and no vault named, ask.
+const path = pathFromSearch(window.location.search);
+document.body.dataset.path = path ?? "";
+$("choose").hidden = path !== undefined || new URLSearchParams(window.location.search).has("vault");
+
+const guide = initGuide({
+  path,
+  relay: BUILT_IN_RELAY,
+  pub: () => pub,
+  wallet: () => wallet,
+  account: () => account,
+  vault: () => vault,
+  chainId: () => chainId,
+  walletReady: () => account !== undefined && (chainId === ARC_TESTNET_ID || chainId === 31337),
+  vaultIsMine: () => vault !== undefined && vaultVersion === 2 && vaultOwner !== undefined && vaultOwner === account && codeMatches === true,
+  status,
+  run: (label, action) => run(label, action),
+  ask: (lines, action, header) => v2.ask(lines, action, header),
+  deployNew: deployGuided,
+  resume: resumeGuide,
 });
 
