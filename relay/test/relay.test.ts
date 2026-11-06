@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -268,5 +268,45 @@ describe("restarts", () => {
     expect(restarted.signature(requestId).status).toBe("signed");
     const again = await restarted.submit(json);
     expect(again.requestId).toBe(requestId);
+  });
+});
+
+describe("hardening", () => {
+  it("refuses a request that stays open too long", async () => {
+    const r = await setup();
+    const pending = pendingJson();
+    pending.authorization.authorizationExpiry = String(Math.floor(Date.now() / 1000) + 86_401);
+    expect((await r.post("/requests", { pending })).status).toBe(400);
+    expect(r.sent.length).toBe(0);
+  });
+
+  it("keeps separate budgets for approvals and watcher notices", async () => {
+    const r = await setup({ config: { maxAlertsPerHour: 1 } });
+    expect(await (await r.post("/alerts", { kind: "revert", text: "x" }, WATCHER_TOKEN)).json()).toEqual({ alerted: true });
+    expect(await (await r.post("/alerts", { kind: "revert", text: "y" }, WATCHER_TOKEN)).json()).toEqual({ alerted: false });
+    const request = (await (await r.post("/requests", { pending: pendingJson() })).json()) as { alerted: boolean };
+    expect(request.alerted).toBe(true);
+  });
+
+  it("does not charge a failed send against the budget", async () => {
+    let fail = true;
+    const r = await setup({
+      config: { maxAlertsPerHour: 1 },
+      telegram: () => (fail ? { status: 500, json: { ok: false } } : { status: 200, json: { ok: true } }),
+    });
+    await r.post("/requests", { pending: pendingJson("6000000", "a") });
+    await r.post("/requests", { pending: pendingJson("6000000", "b") });
+    fail = false;
+    const third = (await (await r.post("/requests", { pending: pendingJson("6000000", "c") })).json()) as { alerted: boolean };
+    expect(third.alerted).toBe(true);
+  });
+
+  it("drops damaged entries in the state file instead of crashing", async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "relay-state-"));
+    writeFileSync(join(stateDir, "requests.json"), JSON.stringify([{ id: 1 }, null, "x"]));
+    const r = await setup({ config: { stateDir } });
+    expect(() => new Relay(r.config, async () => true)).not.toThrow();
+    writeFileSync(join(stateDir, "requests.json"), "{not json");
+    expect(() => new Relay(r.config, async () => true)).not.toThrow();
   });
 });

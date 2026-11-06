@@ -40,6 +40,10 @@ export interface Alert {
 }
 
 export type Notify = (alert: Alert) => Promise<boolean>;
+type AlertKind = "approval" | "notice";
+
+/** A request cannot stay open longer than this, so an agent token cannot fill the store for good. */
+export const MAX_REQUEST_LIFETIME_SECONDS = 86_400;
 
 interface Stored {
   id: string;
@@ -69,7 +73,8 @@ export function tokenMatches(presented: string | undefined, expected: string | u
 export class Relay {
   private readonly requests = new Map<string, Stored>();
   private readonly byDigest = new Map<string, string>();
-  private alertTimes: number[] = [];
+  // Separate budgets, so a burst of watcher notices cannot use up the owner's approval alerts.
+  private readonly alertTimes: Record<AlertKind, number[]> = { approval: [], notice: [] };
 
   constructor(
     private readonly config: RelayConfig,
@@ -91,13 +96,18 @@ export class Relay {
   private load(): void {
     const path = this.statePath();
     if (!path) return;
-    let stored: Stored[];
+    let stored: unknown;
     try {
-      stored = JSON.parse(readFileSync(path, "utf8")) as Stored[];
+      stored = JSON.parse(readFileSync(path, "utf8"));
     } catch {
       return;
     }
-    for (const request of stored) {
+    if (!Array.isArray(stored)) return;
+    for (const entry of stored as Partial<Stored>[]) {
+      // A damaged entry is dropped, not trusted: the agent can ask again, and the vault still decides.
+      const valid = typeof entry?.id === "string" && typeof entry.digest === "string" && typeof entry.expiresAt === "number" && entry.pending !== undefined;
+      if (!valid) continue;
+      const request = entry as Stored;
       this.requests.set(request.id, request);
       this.byDigest.set(request.digest, request.id);
     }
@@ -126,18 +136,26 @@ export class Relay {
       throw new RelayError(400, "the authorization does not match the payment");
     }
     if (pending.authorization.authorizationExpiry <= BigInt(this.now())) throw new RelayError(400, "this request has expired");
+    if (pending.authorization.authorizationExpiry > BigInt(this.now() + MAX_REQUEST_LIFETIME_SECONDS)) {
+      throw new RelayError(400, "this request stays open too long");
+    }
     if (pending.exceededRule !== "perPaymentLimit" || pending.payment.amount <= pending.perPaymentLimit) {
       throw new RelayError(400, "this amount does not exceed the stated limit");
     }
     return pending;
   }
 
-  private takeAlertSlot(): boolean {
+  private hasAlertSlot(kind: AlertKind): boolean {
     const cutoff = this.now() - 3600;
-    this.alertTimes = this.alertTimes.filter((at) => at > cutoff);
-    if (this.alertTimes.length >= this.config.maxAlertsPerHour) return false;
-    this.alertTimes.push(this.now());
-    return true;
+    this.alertTimes[kind] = this.alertTimes[kind].filter((at) => at > cutoff);
+    return this.alertTimes[kind].length < this.config.maxAlertsPerHour;
+  }
+
+  /** Only a delivered alert counts against the budget, so an outage cannot use it up. */
+  private async send(kind: AlertKind, alert: Alert): Promise<boolean> {
+    const delivered = await this.notify(alert).catch(() => false);
+    if (delivered) this.alertTimes[kind].push(this.now());
+    return delivered;
   }
 
   private link(id: string): string {
@@ -177,7 +195,7 @@ export class Relay {
       this.byDigest.set(digest, request.id);
     }
     if (request.alerted) return { requestId: request.id, alerted: true };
-    if (!this.takeAlertSlot()) {
+    if (!this.hasAlertSlot("approval")) {
       this.save();
       return { requestId: request.id, alerted: false, rateLimited: true };
     }
@@ -192,7 +210,7 @@ export class Relay {
       "This message proves nothing. Check the details on the approval page before signing.",
       url,
     ].join("\n");
-    request.alerted = await this.notify({ text, url }).catch(() => false);
+    request.alerted = await this.send("approval", { text, url });
     this.save();
     return { requestId: request.id, alerted: request.alerted };
   }
@@ -238,9 +256,9 @@ export class Relay {
     if (typeof value.kind !== "string" || typeof value.text !== "string" || !value.kind || !value.text) {
       throw new RelayError(400, "invalid alert");
     }
-    if (!this.takeAlertSlot()) return { alerted: false };
+    if (!this.hasAlertSlot("notice")) return { alerted: false };
     const clean = (s: string, max: number) => s.replace(/[^\x20-\x7e\n]/g, "").slice(0, max);
-    const alerted = await this.notify({ text: `Vault notice (${clean(value.kind, 40)})\n${clean(value.text, 500)}` }).catch(() => false);
+    const alerted = await this.send("notice", { text: `Vault notice (${clean(value.kind, 40)})\n${clean(value.text, 500)}` });
     return { alerted };
   }
 }

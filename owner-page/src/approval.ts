@@ -45,6 +45,8 @@ export interface OwnerConfig {
   owner: Address;
   token: Address;
   vendors: Map<Address, string>;
+  /** The only relay this owner sends signatures to. An alert's link cannot change it. */
+  relay?: string;
 }
 
 export interface Payment {
@@ -114,6 +116,17 @@ function text(value: unknown, label: string): string {
   return value;
 }
 
+function relayOrigin(value: unknown): string {
+  let url: URL;
+  try {
+    url = new URL(text(value, "relay"));
+  } catch {
+    fail("relay must be a URL");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") fail("relay must be an http or https URL");
+  return url.origin;
+}
+
 export function parseOwnerConfig(input: unknown): OwnerConfig {
   const value = record(input, "owner config");
   const vendors = new Map<Address, string>();
@@ -126,6 +139,7 @@ export function parseOwnerConfig(input: unknown): OwnerConfig {
     owner: address(value.owner, "owner"),
     token: address(value.token, "token"),
     vendors,
+    ...(value.relay === undefined ? {} : { relay: relayOrigin(value.relay) }),
   };
 }
 
@@ -331,4 +345,12 @@ export function reviewAgainstChain(pending: Pending, policy: OnChainPolicy): str
   return pending.payment.amount > policy.perPaymentLimit
     ? `Exceeds the vault's limit of ${formatUsdc(policy.perPaymentLimit)}, read from the chain`
     : `Within the vault's limit of ${formatUsdc(policy.perPaymentLimit)}, read from the chain. This payment does not need an exception`;
+}
+
+/**
+ * Whether a signature may go to the relay in a link. The link is untrusted, so only the owner's own
+ * config can say which relay receives a signature. Without a match, the owner gets the file instead.
+ */
+export function mayPostSignature(link: RelayLink, config: OwnerConfig): boolean {
+  return config.relay === link.relay;
 }

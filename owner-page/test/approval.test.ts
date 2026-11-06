@@ -10,6 +10,7 @@ import {
   approvalDigest,
   buildSignatureFile,
   formatUsdc,
+  mayPostSignature,
   parseOwnerConfig,
   parsePending,
   parseRelayLink,
@@ -253,5 +254,23 @@ describe("alert links", () => {
     expect(() => parseRelayLink(`?relay=${encodeURIComponent("javascript:alert(1)")}&request=${id}`)).toThrow(ApprovalError);
     expect(() => parseRelayLink(`?relay=not-a-url&request=${id}`)).toThrow(ApprovalError);
     expect(() => parseRelayLink(`?relay=https://relay.example&request=${encodeURIComponent("../../alerts")}`)).toThrow(ApprovalError);
+  });
+});
+
+describe("where a signature may go", () => {
+  const withRelay = (relay?: string) => parseOwnerConfig({
+    chainId: vector.domain.chainId, vault: vector.domain.verifyingContract, owner: "0x0000000000000000000000000000000000000abc",
+    token: vector.payment.token, vendors: {}, ...(relay ? { relay } : {}),
+  });
+  const link = { relay: "https://relay.example", request: "abcdefghijklmnopqrstuv" };
+
+  it("is only the relay in the owner's config", () => {
+    expect(mayPostSignature(link, withRelay("https://relay.example/ignored"))).toBe(true);
+    expect(mayPostSignature(link, withRelay("https://attacker.example"))).toBe(false);
+    expect(mayPostSignature(link, withRelay())).toBe(false);
+  });
+
+  it("refuses a config with another scheme", () => {
+    expect(() => withRelay("javascript:alert(1)")).toThrow(ApprovalError);
   });
 });

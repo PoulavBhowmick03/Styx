@@ -30,7 +30,7 @@ Optional: `RELAY_PORT`, `RELAY_HOST`, `RELAY_MAX_ALERTS_PER_HOUR` (10), `RELAY_M
 
 Give the agent's MCP server the relay with `EREBUS_VAULT_RELAY_URL` and `EREBUS_VAULT_RELAY_TOKEN`, the latter set to `RELAY_AGENT_TOKEN`. `erebus_request_owner_approval` then alerts the owner and reports `owner_alerted`. Asking again retries a failed alert. `erebus_check_owner_approval` reports `pending`, `expired` or `signed`, and when signed it returns the `signature_name` to pass to `erebus_submit_payment`.
 
-The link opens the owner page with the request loaded. The first time in a browser, choose your owner config; the page remembers it in that browser. After signing, the page sends the signature back, and still shows the file in case the relay is down.
+The link opens the owner page with the request loaded. The first time in a browser, choose your owner config; the page remembers it in that browser. Set `relay` in that config to this relay's URL: the page only sends signatures to the relay named there, so a crafted link cannot redirect one. After signing, the page sends the signature back, and still shows the file in case the relay is down.
 
 To open the link on your phone, the page and relay must be reachable from it, so set both URLs to HTTPS addresses you host or tunnel. A non-HTTPS page still works, but the alert has a text link and no button.
 
@@ -53,6 +53,7 @@ Errors are `{"error": "..."}`: 400 invalid, 401 unauthorized, 403 wrong signer, 
 ## Limits
 
 - An agent that skips the tools sends no alert. The vault still refuses the payment, and catching those attempts is the watcher's job.
-- Alerts are limited per hour, so an agent cannot flood the owner, but a flood can use up the allowance and delay a real request.
+- Approval alerts and watcher notices have separate hourly budgets, and only delivered alerts count. An agent that floods approval requests can still use up the approval budget and delay a real one.
+- Requests can stay open for at most 24 hours.
 - Anyone holding a request's ID can read its pending file. The ID is random, and travels only in the alert and to the agent.
 - Telegram sees what the alert says: the amount and recipient, both of which become public on the chain if the payment settles, plus the fact that a request exists before it does.

@@ -3,6 +3,7 @@ import { getAddress, type Hex } from "viem";
 import {
   ApprovalError,
   buildSignatureFile,
+  mayPostSignature,
   parseOwnerConfig,
   parsePending,
   parseRelayLink,
@@ -256,10 +257,13 @@ async function sign(): Promise<void> {
     output.hidden = false;
     signButton.hidden = true;
     worldButton.hidden = true;
-    if (relayLink && (await sendToRelay(relayLink, file))) {
-      showStatus("Signed and sent to your agent. You can close this page.");
+    if (relayLink && !mayPostSignature(relayLink, config)) {
+      showStatus("Signed, but not sent: this link's relay is not the one in your owner config. Give the agent this file instead.", true);
     } else if (relayLink) {
-      showStatus("Signed, but the relay could not be reached. Give the agent this file instead.", true);
+      const sent = await sendToRelay(relayLink, file);
+      if (sent === "accepted") showStatus("Signed, and the relay accepted it. The agent still has to collect and submit it.");
+      else if (sent === "refused") showStatus("Signed, but the relay refused the signature. Check the request and your owner config.", true);
+      else showStatus("Signed, but the relay could not be reached. Give the agent this file instead.", true);
     } else {
       showStatus("Signed. Give this file to the agent's erebus_submit_payment tool.");
     }
@@ -290,16 +294,16 @@ function restoreConfig(): void {
     config = undefined;
   }
 }
-async function sendToRelay(link: RelayLink, file: string): Promise<boolean> {
+async function sendToRelay(link: RelayLink, file: string): Promise<"accepted" | "refused" | "unreachable"> {
   try {
     const response = await fetch(`${link.relay}/requests/${encodeURIComponent(link.request)}/signature`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: file,
     });
-    return response.ok;
+    return response.ok ? "accepted" : "refused";
   } catch {
-    return false;
+    return "unreachable";
   }
 }
 async function openFromLink(link: RelayLink): Promise<void> {
