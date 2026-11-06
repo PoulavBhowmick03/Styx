@@ -139,7 +139,7 @@
         <input id="vendor-label" maxlength="60" />
         <label for="relay-url">Relay address, only if you run the alert relay (optional)</label>
         <input id="relay-url" class="mono" placeholder="https://relay.example" autocomplete="off" spellcheck="false" />
-        <p class="note">The approval page sends your signature only to the relay named in your config, so a crafted link cannot redirect it. Leave this empty to carry signature files by hand.</p>
+        <p class="note">Only needed for the config file, which is the way to approve on a copy of the approval page that is not connected to a relay. On the hosted pages, section 7 sets approvals up without a file. The approval page sends your signature only to the relay named in your config, so a crafted link cannot redirect it. Leave this empty to carry signature files by hand.</p>
         <button id="add-vendor">Allow vendor</button>
         <button id="check-vendor" class="secondary">Check address</button>
         <button id="export-config" class="secondary">Download approval-page config</button>
@@ -173,6 +173,20 @@
         <button id="withdraw-all" class="secondary">Fill: everything</button>
         <p id="withdraw-review" class="callout" hidden></p>
         <button id="withdraw-confirm" hidden>Confirm withdrawal</button>
+      </section>
+
+      <section id="s-approvals">
+        <h2>7. Approve exceptions from alerts</h2>
+        <p id="approvals-state"></p>
+        <ol id="approvals-steps" hidden>
+          <li>Your agent asks for an exception, and you get an alert with a link.</li>
+          <li>Open the link where your wallet is. In this browser it goes straight to review. On a phone the approval page asks you to connect your wallet first, and checks that it is the owner's.</li>
+          <li>Check the recipient and the amount, then sign with the owner's wallet. No file is needed.</li>
+        </ol>
+        <p class="note" id="approvals-note" hidden>Only this vault's owner wallet can sign. Changing limits or vendors cancels approvals that are waiting, so the agent has to ask again.</p>
+        <p class="note" id="approvals-trusted"></p>
+        <button id="approvals-use" class="secondary" hidden>Use this vault for approvals in this browser</button>
+        <button id="approvals-forget" class="secondary" hidden>Stop using this vault for approvals in this browser</button>
       </section>
     </div>
     <script type="module" src="/src/main.ts"></script>
