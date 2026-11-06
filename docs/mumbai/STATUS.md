@@ -91,7 +91,7 @@ Everything below is merged to `main` except where it says otherwise. Nothing was
 - **Amounts:** text to bigints, never floats. More than 6 decimals is refused, not rounded. Tokens that are not 6-decimal are refused.
 - **Tests:** 17 unit tests and 7 headless-Chrome scenarios on Anvil pass against Arc Studio's contract.
 - **Code check, fixed after the contract changed:** the page flags a vault whose code differs from its build. The deployed Arc vault was built with the optimizer on (200 runs, Cancun), and the repo's default build has it off, so the page would have called the real vault "different" and told the owner not to fund it. It also did not ignore the compiler's metadata trailer. Both are fixed: the page now builds the vault with the deployed settings, and the check ignores the owner and token slots and the trailer. Checked read-only against `0xb3bc2a82…3fb1` on Arc: it matches, and a one-byte change in the code does not. This is a convenience check, not a proof. The contract still needs a human review, and I did not review it.
-- **Not verified:** any real wallet (MetaMask or other), and anything that sends a transaction on Arc. The page has not been used on Arc yet.
+- **Not verified:** any real wallet (MetaMask or other), and anything that sends a transaction on Arc. An owner used an earlier version with MetaMask on Arc, and round 2 below covers what that found.
 
 ### Task 3: a real model as the agent (`mcp-server/examples/`)
 
@@ -125,19 +125,77 @@ Read from the code, not reproduced. Re-checked against `main` at `c0da548`.
 
 Not checked: the new `1e8156c` contract against `SECURITY_REVIEW.md`, and the watcher. I did not compare Codex's review with mine.
 
-### Next steps
+The next steps for this round are at the end of the round 2 report below.
 
-**Ishita**
-1. **Get a human review of the Arc Studio contract (`1e8156c`) before funding the vault with anything that matters.** The deployed vault `0xb3bc2a82…3fb1` is unconfigured and empty. This is Poulav's review, as the project rules say.
-2. Run `AGENT_INSTALL.md` Part 3 on Arc testnet with a real wallet: connect to that vault (the owner is `0xC0296012…50e0`, so the wallet must be that account), set limits, allow vendors, fund, leave the agent gas only, then a first refused and first approved payment. This is G1 and G2. Test USDC is from `https://faucet.circle.com`. Add the relay address on the vendors section if the relay is running.
-3. Try the Cursor, Claude Desktop and Codex configs in the real apps.
-4. Resolve G0 as described above.
+## Claude 2 report, round 2 (Ishita), 6 November 2026
+
+The seven tasks from `REMAINING_WORK.md`, "Claude 2: next tasks". All are merged to `main`. I sent no transaction to Arc, used no one's keys, and did not touch `ErebusPolicyVault.sol`. All tests ran on Anvil. I made read-only calls to Arc's public RPC (block number, code, logs) to check the page's code against the live vault. Nothing here says anything about the entry type or the prize picks.
+
+### 1. The connected vault is unmistakable (`setup-page/`)
+
+- A banner at the top always shows the full vault address, its owner, and "You are the owner" or "You are NOT the owner".
+- Every action's status names the vault (`Save limits on vault 0xb3bc...3fb1: ...`).
+- Deploying needs a second click. If a vault is already connected or remembered, it says "You already have a vault... this creates a SECOND, separate vault". Cancelling sends nothing.
+- `?vault=0x...` opens a specific vault, but only after the wallet connects, and says it came from the link. The address bar updates when you switch.
+- Vaults switch without a reload. Switching clears the agent address, vendor fields, amounts and every pending review, so nothing typed for one vault can be saved on another. The page also ignores a stale answer from the vault you just left.
+- Funding is now review-then-confirm and names the full vault address. It always uses the vault's own token, not an editable field.
+- **A new risk from `?vault=`:** a link can name any contract. So funding is switched off for a vault whose code differs from the build, until the owner clicks an unlock that lasts only until they switch vaults.
+- **Tests:** 5 new browser scenarios. **Not verified:** none of this has been tried with a real wallet.
+
+### 2. Plain sends to the vault revert
+
+The warning sits next to the vault address and in the funding section. It says a wallet's Send button may be exactly that kind of transfer on Arc, since USDC is also the native coin. The test checks the claim on Anvil: a native send to the vault fails and changes nothing, and the token `transfer` the page uses works. **Not verified:** what MetaMask's Send does on Arc. That comes from the owner's report.
+
+### 3. Vendors on Arc
+
+- **Arc's documented limit:** `eth_getLogs` is capped at 10,000 blocks per call (`-32012`), so the page reads in chunks of at most 9,999 blocks, newest first.
+- **A limit I found by testing the live endpoint, not in its docs:** it rate-limits (HTTP 429, `-32005`). 27 quick calls succeeded and then it refused, and the budget had not refilled four seconds later. That would have broken more than the vendor list.
+- **So:** every read now waits and retries (and says so on screen) on `-32005` and the documented `-32014`. Writes are never retried, because a retried send could pay twice.
+- **Finding the start:** the page remembers a vault's creation block. Otherwise it checks a hint on-chain with two lookups (`?created=<block>`, or the known live vault), and otherwise searches old state outward from the newest block.
+- **Later refreshes** read only new blocks.
+- **If an RPC cannot answer old state,** the page reads the most recent ~120,000 blocks and says "Partial list... a vendor allowed earlier may be missing. Use Check address".
+- **A bug this found:** viem caches the block number for a few seconds, which hid a vendor allowed a moment earlier. Fixed.
+- **Live, read-only:** against the real vault, the known hint verified in 3 requests, one scan found its 4 `RecipientSet` events, and the search with no hint found block 71050472 in 16 requests (6.3 s) with no rate-limit waits.
+- **Tests:** 20 unit tests for the paging, retry and search logic, and browser scenarios covering the 10,000-block limit, `-32014`, rate limits, hints, incremental reads, and the no-history fallback.
+- **Not verified:** other RPC providers (Blockdaemon, dRPC, QuickNode), or whether they keep old state.
+
+### 4. What the daily limit means
+
+The setup page says the daily limit is the most the agent can pay in a day without a signature, and that the per-payment limit does not stop splitting. Wording only. The test proves it on the contract: six 1 USDC payments settled with no signature, one 6 USDC payment was refused, and the daily limit stopped the 11th.
+
+### 5. `vault_agent.py` restarts
+
+The review's finding was real. Rerunning the script after `unknown` minted a second payment ID. I wrote 7 tests against the real `Agent` class first, and all failed. Now each ID is written to a private state file before its first submit. A rerun looks up each kept ID on the chain, retries an unsettled one under the same ID, and proposes nothing while the chain cannot be read. An unreadable state file stops the run. On a real local vault the second run made 0 proposals and nothing was paid twice.
+
+- **Not verified:** the case where an `unknown` payment lands later, on a real chain. The tests fake that.
+- **CI gap:** the tests live in `mcp-server/examples/` because I may not edit `mcp-server/tests/`. CI's test paths do not collect them yet. Run `uv run pytest mcp-server/examples`.
+- Also fixed: `local_vault.py` did not stop on Ctrl-C when started from a background shell.
+
+### 6. `docs/mumbai/ARCHITECTURE.md`
+
+Two Mermaid diagrams (the parts, and an ordinary payment against an exception), a table of what each part holds and is trusted for, and what is on-chain, off-chain, public and encrypted. Each part says what has actually been run. Both diagrams rendered in Chrome with Mermaid 11.4.1. I did not check GitHub's own renderer.
+
+### 7. `docs/mumbai/DEMO_SCRIPT.md`
+
+A 3 minute 45 second shot list around `scripts/run_gates.sh` that shows Arc Studio. Each shot says what has run on Arc and what has not. The local rehearsal of the script took 6.4 seconds on Anvil; Arc timing is not measured. The closing line is left open, because the entry type is not decided.
+
+### What needs a human
+
+1. **A real-wallet retry of the setup page on Arc.** Everything in tasks 1 to 4 is tested on a local chain only. Connect to `0xb3bc...3fb1`. Do not deploy.
+2. **A human review of the Arc Studio contract (`1e8156c`).** I did not review it.
+3. **G3 on a second machine,** and the reviewer shot in the demo.
+4. **Check the Studio URL opens for a logged-out viewer.** I could not.
+5. **The Arc booth question** (do pages outside Studio meet "connect them to a web or mobile app without leaving Studio"?) and the World question (does OIDC step-up count as Agent Pass?).
+6. **Try the Cursor, Claude Desktop and Codex configs** in the real apps. Only Claude Code's was run.
+7. **G0.**
+
+### Next steps by owner of the work
 
 **Poulav and Claude 1**
-1. Decide about splitting. Options: lower the daily limit, add a rule in the contract, or tell owners plainly that the daily limit is the real cap. The contract is frozen, so I changed nothing.
-2. Tell the owner in the setup and approval pages that the daily limit is the most the agent can pay without a signature.
-3. Consider a cap on the relay's total open requests per hour, since the 24-hour cap still allows 200 slots to be held for a day.
+1. Decide about splitting. The setup page now says the daily limit is the real cap. The approval page does not say it yet.
+2. Optional: cap the relay's open requests per hour. The 24-hour cap still lets 200 be held for a day.
 
-**Reviews still owed**
-- Codex reviews Claude 2's work (`setup-page/`, `mcp-server/examples/`, `AGENT_INSTALL.md`), as `REMAINING_WORK.md` assigns. Include the new code check in `setup-page/src/build.ts`.
-- Poulav reviews all contract and signing code. The setup page deploys the contract and does not sign.
+**Codex**
+1. Add `mcp-server/examples` to the pytest test paths and CI.
+2. Review Claude 2's work, including `setup-page/src/logs.ts`, `setup-page/src/build.ts` and `mcp-server/examples/vault_agent.py`.
+3. Check the watcher against Arc's public rate limit. I saw 429s after about 27 quick requests, and the watcher reads historical state. I did not test the watcher.
