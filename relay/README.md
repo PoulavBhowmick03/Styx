@@ -30,9 +30,25 @@ Optional: `RELAY_PORT`, `RELAY_HOST`, `RELAY_MAX_ALERTS_PER_HOUR` (10), `RELAY_M
 
 Give the agent's MCP server the relay with `EREBUS_VAULT_RELAY_URL` and `EREBUS_VAULT_RELAY_TOKEN`, the latter set to `RELAY_AGENT_TOKEN`. `erebus_request_owner_approval` then alerts the owner and reports `owner_alerted`. Asking again retries a failed alert. `erebus_check_owner_approval` reports `pending`, `expired` or `signed`, and when signed it returns the `signature_name` to pass to `erebus_submit_payment`.
 
-The link opens the owner page with the request loaded. The first time in a browser, choose your owner config; the page remembers it in that browser. Set `relay` in that config to this relay's URL: the page only sends signatures to the relay named there, so a crafted link cannot redirect one. After signing, the page sends the signature back, and still shows the file in case the relay is down.
+The link opens the owner page with the request loaded. No file is needed. The first time in a browser, the owner confirms the vault once, and the wallet must be the vault's owner. The page reads the owner, token, limits and allowlist from the vault through the wallet, and if it cannot read them the sign button stays hidden. Connecting as the owner on the hosted setup page counts as that confirmation in the same browser.
+
+The page only sends signatures to the relay saved for that vault, so a crafted link cannot redirect one. A build with `VITE_RELAY_URL` always uses that relay. Without it, the first link's relay is shown for the owner to confirm, and a link naming a hostile relay could be confirmed by mistake. That relay could then read the signature and withhold it. It could not use it, because only the agent can submit. An owner config file naming a relay still works, under "Use an owner config file". After signing, the page sends the signature back, and still shows the file in case the relay is down.
+
+A browser with no wallet, like most phones, gets an "Open in MetaMask" link, using MetaMask's `https://link.metamask.io/dapp/` deep link.
 
 To open the link on your phone, the page and relay must be reachable from it, so set both URLs to HTTPS addresses you host or tunnel. A non-HTTPS page still works, but the alert has a text link and no button.
+
+## Hosted
+
+The relay runs on Fly at `https://styx-vault-relay.fly.dev`, and the pages on Vercel at `https://styx-approve.vercel.app`, with setup at `/setup/`. One relay serves one vault and one owner, set in `fly.toml`.
+
+```bash
+fly secrets import --app styx-vault-relay   # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, RELAY_AGENT_TOKEN, RELAY_WATCHER_TOKEN, one per line
+fly deploy . --config relay/fly.toml --dockerfile relay/Dockerfile --app styx-vault-relay --ha=false
+VITE_RELAY_URL=https://styx-vault-relay.fly.dev scripts/build_site.sh && (cd dist/styx-approve && vercel deploy --prod --yes)
+```
+
+The root `.dockerignore` is an allowlist, so `.env` and keys cannot enter the image. Fly's Mumbai region no longer takes new resources, so this runs in Singapore.
 
 A real Telegram bot has been used on Arc testnet. The automated tests use a fake Telegram server that follows the Bot API docs.
 

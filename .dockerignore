@@ -1,0 +1,8 @@
+# An allowlist, so .env, keys and everything else stay out of the image.
+*
+!relay/package.json
+!relay/package-lock.json
+!relay/tsconfig.json
+!relay/src
+!owner-page/src/approval.ts
+!owner-page/package.json

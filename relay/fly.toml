@@ -1,0 +1,31 @@
+# Secrets are set with `fly secrets`, never here. See relay/README.md.
+app = "styx-vault-relay"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  RELAY_HOST = "0.0.0.0"
+  RELAY_PORT = "8080"
+  RELAY_STATE_DIR = "/data/state"
+  RELAY_CHAIN_ID = "5042002"
+  RELAY_VAULT = "0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1"
+  RELAY_OWNER = "0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0"
+  RELAY_TOKEN = "0x3600000000000000000000000000000000000000"
+  RELAY_PUBLIC_URL = "https://styx-vault-relay.fly.dev"
+  RELAY_PAGE_URL = "https://styx-approve.vercel.app/"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+[[mounts]]
+  source = "relay_state"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
