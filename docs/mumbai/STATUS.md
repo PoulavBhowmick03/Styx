@@ -2,18 +2,31 @@
 
 Updated 6 November 2026.
 
+## Deployment
+
+| | |
+| --- | --- |
+| **Vault** | `0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1` on Arc testnet, chain ID 5042002 |
+| **Transaction** | `0x2ee6f85d0dc2b48b9aead4d2da04a3179fb9df2ac5afded5c8a09705727252c7`, block 71050472 |
+| **Owner** | `0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0` |
+| **Token** | `0x3600000000000000000000000000000000000000` (USDC) |
+| **Arc Studio** | https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16 |
+| **Build** | solc 0.8.24, optimizer on with 200 runs, EVM target cancun |
+
+Read back from Arc: the transaction succeeded, the owner and token are correct, and the vault is unconfigured and empty. The deployed bytecode matches this repo's source under those build settings, apart from the owner, token and metadata hash. The repo's `foundry.toml` builds with the optimizer off, so its local bytecode differs. Tests of that exact build: our 44 vault tests, 7 end-to-end tests on Anvil, and 10 simulated scenarios against real USDC on Arc. Nothing has been paid on Arc yet.
+
 ## Gates
 
 | Gate | Status | Notes |
 | --- | --- | --- |
 | G0 | **Team says: fresh project, not Continuity. Conflict open, see below** | Arc Studio project: not confirmed |
-| G1 | Not reported | The team left this blank. Needs the vault address, deploy transaction, the 0.25 USDC payment, A1 and A2 |
+| G1 | Deployed, not funded or configured | Still needs funding, the 0.25 USDC payment, A1 and A2 |
 | G2 | Not run | Needs the 6 USDC exception with a real wallet, A3 and A4 |
 | G3 | Not run | Needs the reviewer on a second machine |
 | G4 | Not run | Needs tGLM and an Arkiv access key |
 | G5 | Not run | Needs a World client |
 
-**Review:** the team reports the contract and signing code as reviewed. The review scope and date are not recorded here. Any contract that comes from Studio needs its own review.
+**Review:** the team reported reviewing an earlier local version of the contract and signing code. The deployed contract comes from Arc Studio (`1e8156c`) and still needs its own human review. Review it before funding the vault with anything that matters.
 
 ## Open conflict on G0
 
