@@ -7,6 +7,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::arc_vault::record::VaultPaymentRecord;
+use crate::arc_vault::rpc::VaultRpc;
+use crate::arc_vault::verify::{verify_record, Check, ReviewerPins};
 use crate::chain::{EvmChain, ObservationJournal, ObservationLimits, MAX_CONCURRENT_LOG_QUERIES};
 use crate::deployment::{parse_lowercase_address, EvmDeployment};
 use crate::disclosure::{
@@ -68,6 +71,31 @@ enum Request {
         #[serde(default)]
         confirm_new_cache: bool,
     },
+    ExportVaultPayment {
+        record_file: PathBuf,
+        issuer_key_file: PathBuf,
+        recipient_public_key: String,
+        grant_file: PathBuf,
+        expires_at: u64,
+    },
+    VerifyVaultPayment {
+        grant_file: PathBuf,
+        key_file: PathBuf,
+        expected_issuer: String,
+        deployment: VaultPins,
+        #[serde(default)]
+        opened_file: Option<PathBuf>,
+    },
+}
+
+/// What the reviewer trusts, obtained independently of any record.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VaultPins {
+    chain_id: u64,
+    rpc_urls: Vec<String>,
+    vault: String,
+    vault_code_hash: String,
 }
 
 #[derive(Deserialize)]
@@ -240,6 +268,8 @@ where
                 "export",
                 "verify_agreement",
                 "verify_payment",
+                "export_vault_payment",
+                "verify_vault_payment",
             ];
             if checkpoint.is_some() {
                 methods.push("checkpoint");
@@ -358,6 +388,93 @@ where
                 "grant_saved": true,
                 "deal_id": hex::encode(agreement.deal_id),
                 "issuer": format!("0x{}", hex::encode(&grant.issuer)),
+            }))
+        }
+        Request::ExportVaultPayment {
+            record_file,
+            issuer_key_file,
+            recipient_public_key,
+            grant_file,
+            expires_at,
+        } => {
+            let bytes = read_private_file(&record_file, MAX_DISCLOSURE_BYTES)?;
+            let record: VaultPaymentRecord =
+                serde_json::from_slice(&bytes).map_err(|_| "invalid vault payment record")?;
+            let key = read_private_file(&issuer_key_file, 32)?;
+            let issuer =
+                AuthorizationIdentity::from_bytes(&key).map_err(|_| "invalid issuer key")?;
+            let grant = DisclosureGrant::seal_record(
+                &bytes,
+                record_id(&record.payment.payment_id),
+                &issuer,
+                public_key(&recipient_public_key)?,
+                expires_at,
+                now,
+            )
+            .map_err(|_| "cannot create vault payment grant")?;
+            grant
+                .write_backup(&grant_file)
+                .map_err(|_| "cannot save disclosure grant")?;
+            Ok(json!({
+                "status": "ok",
+                "grant_saved": true,
+                "payment_id": format!("0x{}", hex::encode(record.payment.payment_id)),
+                "issuer": format!("0x{}", hex::encode(&grant.issuer)),
+            }))
+        }
+        Request::VerifyVaultPayment {
+            grant_file,
+            key_file,
+            expected_issuer,
+            deployment,
+            opened_file,
+        } => {
+            let (grant, recipient, issuer) = load_grant(&grant_file, &key_file, &expected_issuer)?;
+            let bytes = grant
+                .open_record(&recipient, &issuer, now)
+                .map_err(|_| "cannot open vault payment grant")?;
+            let record: VaultPaymentRecord =
+                serde_json::from_slice(&bytes).map_err(|_| "invalid vault payment record")?;
+            if record_id(&record.payment.payment_id) != grant.deal_id {
+                return Err("the grant names a different payment");
+            }
+            let vault =
+                parse_lowercase_address(&deployment.vault).ok_or("invalid pinned vault address")?;
+            if record.vault != vault || record.chain_id != deployment.chain_id {
+                return Err("the record is for a different vault or chain");
+            }
+            let pins = ReviewerPins {
+                vault_code_hash: lowercase_hash(
+                    &deployment.vault_code_hash,
+                    "invalid pinned vault code hash",
+                )?,
+            };
+            let rpc = VaultRpc::new(
+                &deployment.rpc_urls,
+                Duration::from_secs(15),
+                deployment.chain_id,
+            )
+            .map_err(|_| "invalid reviewer RPC configuration")?;
+            let report = verify_record(&record, &rpc, &pins).await;
+            if let Some(path) = opened_file {
+                write_owner_only_new(&path, &bytes)?;
+            }
+            let label = |check: Check| match check {
+                Check::Verified => "verified",
+                Check::Failed => "failed",
+                Check::Unavailable => "unavailable",
+                Check::NotApplicable => "not_applicable",
+            };
+            Ok(json!({
+                "status": "ok",
+                "payment_id": format!("0x{}", hex::encode(record.payment.payment_id)),
+                "tx_hash": format!("0x{}", hex::encode(record.settlement.tx_hash)),
+                "record_integrity": label(report.record_integrity),
+                "authorization": label(report.authorization),
+                "settlement": label(report.settlement),
+                "policy_at_execution": label(report.policy_at_execution),
+                "reasons": report.reasons.join("; "),
+                "delivery_verified": false,
             }))
         }
         Request::VerifyAgreement {
@@ -739,6 +856,13 @@ fn verification_response(
         "deal_commitment": agreement.commitment.to_hex(),
         "deal_nullifier": agreement.nullifier.to_hex(),
     })
+}
+
+/// A record grant's header holds the first 16 bytes of the payment ID.
+fn record_id(payment_id: &[u8; 32]) -> [u8; 16] {
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&payment_id[..16]);
+    id
 }
 
 fn load_grant(

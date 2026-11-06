@@ -685,3 +685,105 @@ fn missing_grant_and_missing_participant_transcript_fail_without_creating_a_repl
         "missing evidence must not create a replacement grant"
     );
 }
+
+fn record_grant(recipient: &DisclosureIdentity) -> DisclosureGrant {
+    DisclosureGrant::seal_record(
+        b"one payment record",
+        [7; 16],
+        &AuthorizationIdentity::from_bytes(&[1; 32]).unwrap(),
+        recipient.public_key(),
+        1000,
+        100,
+    )
+    .unwrap()
+}
+
+#[test]
+fn record_grants_round_trip_only_for_the_named_recipient_and_issuer() {
+    let recipient = DisclosureIdentity::generate().unwrap();
+    let grant = record_grant(&recipient);
+    let decoded = DisclosureGrant::decode(&grant.encode().unwrap()).unwrap();
+    assert_eq!(decoded.deal_id, [7; 16]);
+    assert_eq!(
+        decoded
+            .open_record(&recipient, &decoded.issuer.clone(), 100)
+            .unwrap()
+            .as_slice(),
+        b"one payment record"
+    );
+    let stranger = DisclosureIdentity::generate().unwrap();
+    assert!(matches!(
+        decoded.open_record(&stranger, &decoded.issuer.clone(), 100),
+        Err(GrantError::WrongRecipient)
+    ));
+    assert!(matches!(
+        decoded.open_record(&recipient, [9u8; 20], 100),
+        Err(GrantError::Invalid)
+    ));
+    assert!(matches!(
+        decoded.open_record(&recipient, &decoded.issuer.clone(), 1000),
+        Err(GrantError::Expired)
+    ));
+}
+
+#[test]
+fn every_altered_record_grant_byte_fails_to_open() {
+    let recipient = DisclosureIdentity::generate().unwrap();
+    let grant = record_grant(&recipient);
+    let issuer = grant.issuer.clone();
+    let encoded = grant.encode().unwrap();
+    for offset in 0..encoded.len() {
+        let mut altered = encoded.clone();
+        altered[offset] ^= 1;
+        if let Ok(altered) = DisclosureGrant::decode(&altered) {
+            assert!(
+                altered.open_record(&recipient, &issuer, 100).is_err(),
+                "byte {offset}"
+            );
+        }
+    }
+}
+
+#[test]
+fn record_and_agreement_grants_cannot_stand_in_for_each_other() {
+    let recipient = DisclosureIdentity::generate().unwrap();
+    let grant = record_grant(&recipient);
+    let issuer = grant.issuer.clone();
+    // The record path of `open` refuses version 3 outright.
+    assert!(grant.open(&recipient, &issuer, 100).is_err());
+    // Relabelling either version changes the signing domain, so the signature no longer verifies.
+    let mut as_agreement = grant.encode().unwrap();
+    as_agreement[..2].copy_from_slice(&1u16.to_be_bytes());
+    let as_agreement = DisclosureGrant::decode(&as_agreement).unwrap();
+    assert!(as_agreement.open(&recipient, &issuer, 100).is_err());
+
+    let evidence = fixture();
+    let agreement_issuer = AuthorizationIdentity::from_bytes(&[1; 32]).unwrap();
+    let real = DisclosureGrant::seal(
+        &evidence,
+        &agreement_issuer,
+        recipient.public_key(),
+        1000,
+        100,
+    )
+    .unwrap();
+    assert!(real
+        .open_record(&recipient, &real.issuer.clone(), 100)
+        .is_err());
+    let mut as_record = real.encode().unwrap();
+    as_record[..2].copy_from_slice(&3u16.to_be_bytes());
+    let as_record = DisclosureGrant::decode(&as_record).unwrap();
+    assert!(as_record
+        .open_record(&recipient, &as_record.issuer.clone(), 100)
+        .is_err());
+}
+
+#[test]
+fn record_grants_refuse_empty_expired_or_ownerless_input() {
+    let recipient = DisclosureIdentity::generate().unwrap();
+    let issuer = AuthorizationIdentity::from_bytes(&[1; 32]).unwrap();
+    let key = recipient.public_key();
+    assert!(DisclosureGrant::seal_record(b"", [7; 16], &issuer, key, 1000, 100).is_err());
+    assert!(DisclosureGrant::seal_record(b"x", [7; 16], &issuer, key, 100, 100).is_err());
+    assert!(DisclosureGrant::seal_record(b"x", [7; 16], &issuer, [0; 32], 1000, 100).is_err());
+}

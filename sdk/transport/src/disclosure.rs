@@ -249,6 +249,8 @@ pub enum GrantError {
 
 const GRANT_DOMAIN: &[u8] = b"EREBUS_DEAL_DISCLOSURE_V1";
 const SHIELDED_GRANT_DOMAIN: &[u8] = b"EREBUS_DEAL_DISCLOSURE_V2_SUITE2";
+const RECORD_GRANT_DOMAIN: &[u8] = b"EREBUS_RECORD_DISCLOSURE_V3";
+const RECORD_GRANT_VERSION: u16 = 3;
 const NOISE_N: &str = "Noise_N_25519_ChaChaPoly_BLAKE2s";
 const CHUNK_BYTES: usize = 60_000;
 const MAX_FRAME_BYTES: usize = 65_535;
@@ -260,7 +262,7 @@ impl DisclosureGrant {
     pub fn encode(&self) -> Result<Vec<u8>, GrantError> {
         if !matches!(
             (self.version, self.issuer.len(), self.signature.len()),
-            (1, 20, 65) | (2, 64, 96)
+            (1 | RECORD_GRANT_VERSION, 20, 65) | (2, 64, 96)
         ) {
             return Err(GrantError::Invalid);
         }
@@ -291,7 +293,7 @@ impl DisclosureGrant {
         let mut reader = Reader::new(bytes);
         let version = reader.u16("grant_version")?;
         let issuer = match version {
-            1 => reader.fixed::<20>("issuer")?.to_vec(),
+            1 | RECORD_GRANT_VERSION => reader.fixed::<20>("issuer")?.to_vec(),
             2 => reader.fixed::<64>("issuer")?.to_vec(),
             _ => return Err(GrantError::Invalid),
         };
@@ -308,7 +310,7 @@ impl DisclosureGrant {
             frames.push(reader.bytes("frame", 16, MAX_FRAME_BYTES)?.to_vec());
         }
         let signature = match version {
-            1 => reader.fixed::<65>("signature")?.to_vec(),
+            1 | RECORD_GRANT_VERSION => reader.fixed::<65>("signature")?.to_vec(),
             2 => reader.fixed::<96>("signature")?.to_vec(),
             _ => return Err(GrantError::Invalid),
         };
@@ -442,10 +444,59 @@ impl DisclosureGrant {
         }
         verify_selected_agreement(evidence)?;
         let plaintext = Zeroizing::new(evidence.encode()?);
+        Self::encrypt_bytes(
+            &plaintext,
+            issuer,
+            version,
+            recipient,
+            evidence.terms.deal_id,
+            expires_at,
+        )
+    }
+
+    /// Encrypts one record for a recipient and signs it as a version 3 grant.
+    ///
+    /// Versions 1 and 2 carry a [`SelectedAgreement`] and are unchanged. A record grant has its
+    /// own version and signing domain, so neither kind can be presented as the other.
+    /// `record_id` is bound into the signed header; the opener must compare it to the record.
+    pub fn seal_record(
+        record: &[u8],
+        record_id: [u8; 16],
+        issuer: &AuthorizationIdentity,
+        recipient: [u8; 32],
+        expires_at: u64,
+        now: u64,
+    ) -> Result<Self, GrantError> {
+        if now >= expires_at || recipient == [0; 32] {
+            return Err(GrantError::Invalid);
+        }
+        if record.is_empty() || record.len() > MAX_DISCLOSURE_BYTES {
+            return Err(GrantError::Invalid);
+        }
+        let mut grant = Self::encrypt_bytes(
+            record,
+            issuer.address().to_vec(),
+            RECORD_GRANT_VERSION,
+            recipient,
+            record_id,
+            expires_at,
+        )?;
+        grant.signature = issuer.sign_digest(&grant.signature_digest()).to_vec();
+        Ok(grant)
+    }
+
+    fn encrypt_bytes(
+        plaintext: &[u8],
+        issuer: Vec<u8>,
+        version: u16,
+        recipient: [u8; 32],
+        deal_id: [u8; 16],
+        expires_at: u64,
+    ) -> Result<Self, GrantError> {
         let mut grant = Self {
             issuer,
             recipient,
-            deal_id: evidence.terms.deal_id,
+            deal_id,
             expires_at,
             handshake: Vec::new(),
             frames: Vec::new(),
@@ -484,24 +535,7 @@ impl DisclosureGrant {
         expected_issuer: impl AsRef<[u8]>,
         now: u64,
     ) -> Result<(SelectedAgreement, VerifiedAgreement), GrantError> {
-        if recipient.public_key() != self.recipient {
-            return Err(GrantError::WrongRecipient);
-        }
-        if now >= self.expires_at {
-            return Err(GrantError::Expired);
-        }
-        if expected_issuer.as_ref() != self.issuer
-            || self.handshake.is_empty()
-            || self.handshake.len() > MAX_FRAME_BYTES
-            || self.frames.is_empty()
-            || self.frames.len() > MAX_DISCLOSURE_BYTES / CHUNK_BYTES + 1
-            || self
-                .frames
-                .iter()
-                .any(|frame| frame.len() < 16 || frame.len() > MAX_FRAME_BYTES)
-        {
-            return Err(GrantError::Invalid);
-        }
+        self.check_envelope(recipient, expected_issuer.as_ref(), now)?;
         match self.version {
             1 => suite::suite(1)
                 .map_err(|_| GrantError::Invalid)?
@@ -515,6 +549,72 @@ impl DisclosureGrant {
             }
             _ => return Err(GrantError::Invalid),
         }
+        let plaintext = self.decrypt(recipient)?;
+        let evidence = SelectedAgreement::decode(&plaintext)?;
+        if evidence.terms.deal_id != self.deal_id {
+            return Err(GrantError::Invalid);
+        }
+        let verified = verify_selected_agreement(&evidence)?;
+        if (self.version == 1 && evidence.terms.suite_id != 1)
+            || (self.version == 2
+                && (evidence.terms.suite_id != 2
+                    || evidence.terms.settlement_mode
+                        != erebus_core::terms::SettlementMode::Shielded
+                    || (evidence.terms.buyer_authorization_key.as_bytes() != self.issuer
+                        && evidence.terms.seller_authorization_key.as_bytes() != self.issuer)))
+        {
+            return Err(GrantError::Invalid);
+        }
+        Ok((evidence, verified))
+    }
+
+    /// Opens a version 3 record grant. This authenticates and decrypts only: the caller compares
+    /// `deal_id` to the record's own ID and verifies the record's contents.
+    pub fn open_record(
+        &self,
+        recipient: &DisclosureIdentity,
+        expected_issuer: impl AsRef<[u8]>,
+        now: u64,
+    ) -> Result<Zeroizing<Vec<u8>>, GrantError> {
+        self.check_envelope(recipient, expected_issuer.as_ref(), now)?;
+        if self.version != RECORD_GRANT_VERSION {
+            return Err(GrantError::Invalid);
+        }
+        suite::suite(1)
+            .map_err(|_| GrantError::Invalid)?
+            .verify_authorization(&self.issuer, &self.signature_digest(), &self.signature)
+            .map_err(|_| GrantError::Invalid)?;
+        self.decrypt(recipient)
+    }
+
+    fn check_envelope(
+        &self,
+        recipient: &DisclosureIdentity,
+        expected_issuer: &[u8],
+        now: u64,
+    ) -> Result<(), GrantError> {
+        if recipient.public_key() != self.recipient {
+            return Err(GrantError::WrongRecipient);
+        }
+        if now >= self.expires_at {
+            return Err(GrantError::Expired);
+        }
+        if expected_issuer != self.issuer
+            || self.handshake.is_empty()
+            || self.handshake.len() > MAX_FRAME_BYTES
+            || self.frames.is_empty()
+            || self.frames.len() > MAX_DISCLOSURE_BYTES / CHUNK_BYTES + 1
+            || self
+                .frames
+                .iter()
+                .any(|frame| frame.len() < 16 || frame.len() > MAX_FRAME_BYTES)
+        {
+            return Err(GrantError::Invalid);
+        }
+        Ok(())
+    }
+
+    fn decrypt(&self, recipient: &DisclosureIdentity) -> Result<Zeroizing<Vec<u8>>, GrantError> {
         let prologue = self.header_digest();
         let params = NOISE_N.parse().map_err(|_| GrantError::Cryptography)?;
         let mut handshake = snow::Builder::new(params)
@@ -543,22 +643,7 @@ impl DisclosureGrant {
             }
             plaintext.extend_from_slice(&buffer[..read]);
         }
-        let evidence = SelectedAgreement::decode(&plaintext)?;
-        if evidence.terms.deal_id != self.deal_id {
-            return Err(GrantError::Invalid);
-        }
-        let verified = verify_selected_agreement(&evidence)?;
-        if (self.version == 1 && evidence.terms.suite_id != 1)
-            || (self.version == 2
-                && (evidence.terms.suite_id != 2
-                    || evidence.terms.settlement_mode
-                        != erebus_core::terms::SettlementMode::Shielded
-                    || (evidence.terms.buyer_authorization_key.as_bytes() != self.issuer
-                        && evidence.terms.seller_authorization_key.as_bytes() != self.issuer)))
-        {
-            return Err(GrantError::Invalid);
-        }
-        Ok((evidence, verified))
+        Ok(plaintext)
     }
 
     fn header_digest(&self) -> [u8; 32] {
@@ -583,10 +668,10 @@ impl DisclosureGrant {
     }
 
     fn domain(&self) -> &'static [u8] {
-        if self.version == 2 {
-            SHIELDED_GRANT_DOMAIN
-        } else {
-            GRANT_DOMAIN
+        match self.version {
+            2 => SHIELDED_GRANT_DOMAIN,
+            RECORD_GRANT_VERSION => RECORD_GRANT_DOMAIN,
+            _ => GRANT_DOMAIN,
         }
     }
 }
