@@ -15,12 +15,14 @@ Updated 6 November 2026.
 
 Read back from Arc: the transaction succeeded, the owner and token are correct, and the vault is unconfigured and empty. The deployed bytecode matches this repo's source under those build settings, apart from the owner, token and metadata hash. The repo's `foundry.toml` builds with the optimizer off, so its local bytecode differs. Tests of that exact build: our 44 vault tests, 7 end-to-end tests on Anvil, and 10 simulated scenarios against real USDC on Arc. Nothing has been paid on Arc yet.
 
+A second vault, `0x392B9B12054C0E4E900752d63a77e1591aBBe234`, was deployed by mistake through the setup page and holds 50 USDC. The owner can withdraw it. It is not the demo vault, and it is not a Studio deployment.
+
 ## Gates
 
 | Gate | Status | Notes |
 | --- | --- | --- |
 | G0 | **Team says: fresh project, not Continuity. Conflict open, see below** | Arc Studio project: not confirmed |
-| G1 | Deployed, not funded or configured | Still needs funding, the 0.25 USDC payment, A1 and A2 |
+| G1 | Deployed and funded with 60 USDC, not configured | Needs the policy, vendors and agent gas, then the 0.25 USDC payment, A1 and A2 |
 | G2 | Not run | Needs the 6 USDC exception with a real wallet, A3 and A4 |
 | G3 | Not run | Needs the reviewer on a second machine |
 | G4 | Not run | Needs tGLM and an Arkiv access key |

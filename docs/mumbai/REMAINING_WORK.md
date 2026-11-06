@@ -78,6 +78,24 @@ Next, once a human provides a bot token: send one real alert and open its link o
 3. **A real model as the agent:** add MCP configs in `mcp-server/examples/` for common agents, starting with Claude Code. On a local chain, record what a model actually does when refused and when given hostile invoice text. Report honestly. Do not claim prompt-injection prevention.
 4. `docs/mumbai/AGENT_INSTALL.md`: from a clean machine to a first refused and first approved payment. Test it by following it.
 
+### Claude 2: next tasks (6 November, after the first real-wallet run)
+
+Tasks 1 to 4 above are done. See the report in `STATUS.md`. The vault is deployed at `0xb3bc2a8216b9065bf9013e22a6a17068cd6b3fb1`. Do not send transactions to it and do not use anyone's keys. Test on Anvil.
+
+The first real MetaMask run found these, in priority order:
+
+1. **Owners end up on the wrong vault.** With the page's real vault available, an owner clicked deploy and configured a second vault, `0x392b...e234`, by mistake. They then believed the real one was set up. Make the connected vault unmistakable at the top of the page and in every action's confirmation. Support `?vault=0x...` to open a specific vault, and warn before deploying a second one. Add a way to switch vaults that does not need a reload.
+2. **Plain sends to the vault revert.** An owner lost gas sending 70 USDC directly from MetaMask, because the vault has no receive function. Say this plainly next to the vault address and in section 5.
+3. **"Could not list vendors" on Arc.** `setup-page/src/main.ts:340` queries logs in a range the public RPC refuses. Page through from the vault's deploy block in small ranges, with a clear partial-result message, so owners can see the vendors they allowed. Check the RPC's limit in Arc's docs and do not guess it.
+4. **Say what the daily limit means.** On the setup page, state that it is the most the agent can pay without a signature, because splitting into small payments is allowed. Do the page wording only. Do not change the contract.
+5. **Fix `vault_agent.py` restarts** (`SECURITY_REVIEW.md`, "restart after unknown"). Rerunning it must reconcile retained payment IDs before it proposes anything new, because the project rule is to never mint a new ID to retry. Add a failing test first.
+6. `docs/mumbai/ARCHITECTURE.md`: the architecture diagram Arc's prizes require, as a Mermaid diagram plus a short explanation of owner, agent, reviewer, vault, relay and pages. Show what is on-chain and what is off-chain, and what each part is trusted for. Describe only what exists.
+7. `docs/mumbai/DEMO_SCRIPT.md`: a 2 to 4 minute shot list for the real demo, using `scripts/run_gates.sh`, that shows Arc Studio. Label anything not yet run on Arc as not yet run. Arc's prizes require showing Studio and a shareable Studio URL.
+
+Report what you find. Poulav decides the entry type (G0) and the prize picks, so don't write those as settled. `README_DRAFT.md` is local to Poulav's machine, so don't look for it.
+
+**Ishita, as a human:** try the Cursor, Claude Desktop and Codex configs in the real apps. Ask the Arc booth whether pages outside Studio meet "connect them to a web or mobile app without leaving Studio" and, on the World side, whether OIDC step-up counts as Agent Pass.
+
 ### Codex: packaging, CI, watcher, security
 
 1. **Security review first.** Adversarially review `ErebusPolicyVault.sol`, `sdk/evm/src/arc_vault/` and `owner-page/src/approval.ts`, and write findings with file and line in `docs/mumbai/SECURITY_REVIEW.md`. Add failing tests where you can. Report contract issues; do not patch the contract. This is not an audit and must not be described as one.
