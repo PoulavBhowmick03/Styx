@@ -701,4 +701,145 @@ contract StyxVaultTest is TestBase {
         assertTrue(vault.spentByAgentDay(agent, day) <= 10_000_000);
         assertTrue(vault.spentByAgentDay(second, day) <= 10_000_000);
     }
+
+    struct BudgetModel {
+        uint256 spentA;
+        uint256 spentB;
+        uint256 total;
+        uint256 limitA;
+        uint256 limitB;
+        uint256 cap;
+        uint256 allPaid;
+        bool enabledA;
+        bool enabledB;
+        bool paused;
+        bool recipientAllowed;
+    }
+
+    function testFuzz_policySequencePreservesAccounting(bytes32 seed) public {
+        expiry = uint64(block.timestamp + 365 days);
+        config(agent, 1_000_000, 10_000_000, true);
+        config(second, 1_000_000, 10_000_000, true);
+        BudgetModel memory m = BudgetModel(0, 0, 0, 10_000_000, 10_000_000, 15_000_000, 0, true, true, false, true);
+        for (uint256 i; i < 32; ++i) {
+            uint256 entropy = uint256(keccak256(abi.encode(seed, i)));
+            uint256 action = entropy % 9;
+            uint256 amount = entropy / 9 % 3_000_000 + 1;
+            if (action < 2) {
+                modelPayment(m, action == 0, amount, i);
+            } else if (action == 2) {
+                m.limitA = amount;
+                m.enabledA = entropy & 1 == 1;
+                config(agent, 1_000_000, m.limitA, m.enabledA);
+            } else if (action == 3) {
+                m.limitB = amount;
+                m.enabledB = entropy & 1 == 1;
+                config(second, 1_000_000, m.limitB, m.enabledB);
+            } else if (action == 4) {
+                m.cap = amount;
+                vm.prank(owner);
+                vault.setVaultDailyLimit(m.cap);
+            } else if (action == 5) {
+                m.paused = true;
+                vm.prank(owner);
+                vault.pause();
+            } else if (action == 6) {
+                m.paused = false;
+                vm.prank(owner);
+                vault.unpause();
+            } else if (action == 7) {
+                m.recipientAllowed = entropy & 1 == 1;
+                vm.prank(owner);
+                vault.setRecipient(vendor, m.recipientAllowed);
+            } else {
+                vm.warp((block.timestamp / 1 days + 1) * 1 days);
+                m.spentA = 0;
+                m.spentB = 0;
+                m.total = 0;
+            }
+            uint256 day = block.timestamp / 1 days;
+            assertEq(vault.spentByAgentDay(agent, day), m.spentA);
+            assertEq(vault.spentByAgentDay(second, day), m.spentB);
+            assertEq(vault.spentByDay(day), m.total);
+            assertEq(token.balanceOf(vendor), m.allPaid);
+            assertEq(token.balanceOf(address(vault)) + m.allPaid, 100_000_000);
+        }
+    }
+
+    function modelPayment(BudgetModel memory m, bool first, uint256 amount, uint256 i) internal {
+        Vault.Payment memory p = payment(first ? agent : second, amount);
+        Vault.ExceptionAuthorization memory a = auth(p, owner, i);
+        bytes memory sig = sign(ownerKey, a);
+        uint256 spent = first ? m.spentA : m.spentB;
+        uint256 limit = first ? m.limitA : m.limitB;
+        bool expected = (first ? m.enabledA : m.enabledB) && !m.paused && m.recipientAllowed && spent + amount <= limit
+            && m.total + amount <= m.cap;
+        vm.prank(p.agent);
+        (bool ok,) = address(vault).call(abi.encodeCall(vault.payWithException, (p, a, sig)));
+        assertTrue(ok == expected);
+        assertTrue(vault.consumedPayment(p.paymentId) == expected);
+        assertTrue(vault.consumedApprovalNonce(owner, i) == expected);
+        if (ok) {
+            if (first) m.spentA += amount;
+            else m.spentB += amount;
+            m.total += amount;
+            m.allPaid += amount;
+        }
+    }
+
+    function test_failedTransferRetryKeepsExactPaymentAndNonce() public {
+        MockFailingERC20 bad = new MockFailingERC20();
+        vault = new Vault(owner, address(bad));
+        bad.mint(address(vault), 10_000_000);
+        config(agent, 1, 10_000_000, true);
+        vm.prank(owner);
+        vault.setRecipient(vendor, true);
+        vm.prank(owner);
+        vault.setVaultDailyLimit(10_000_000);
+        Vault.Payment memory p = payment(agent, 2_000_000);
+        p.token = address(bad);
+        Vault.ExceptionAuthorization memory a = auth(p, owner, 1);
+        bytes memory sig = sign(ownerKey, a);
+        bad.setMode(MockFailingERC20.Mode.ReturnFalse);
+        refuse(p, a, sig, Vault.TransferFailed.selector);
+        bad.setMode(MockFailingERC20.Mode.Revert);
+        refuse(p, a, sig, Vault.TransferFailed.selector);
+        bad.setMode(MockFailingERC20.Mode.Normal);
+        exception(p, a, sig);
+        assertEq(bad.balanceOf(vendor), 2_000_000);
+        assertEq(vault.spentByDay(block.timestamp / 1 days), 2_000_000);
+        assertTrue(vault.consumedApprovalNonce(owner, 1));
+        refuse(p, a, sig, Vault.PaymentAlreadyUsed.selector);
+    }
+
+    function test_everyPaymentFieldChangesItsHash() public {
+        Vault.Payment memory p = payment(agent, 2_000_000);
+        Vault.ExceptionAuthorization memory a = auth(p, approver, 7);
+        bytes memory sig = sign(approverKey, a);
+        p.paymentId = keccak256("another-id");
+        refuse(p, a, sig, Vault.PaymentHashMismatch.selector);
+        p = payment(agent, 2_000_000);
+        a = auth(p, approver, 7);
+        sig = sign(approverKey, a);
+        p.validUntil++;
+        refuse(p, a, sig, Vault.PaymentHashMismatch.selector);
+        a = auth(p, approver, 7);
+        sig = sign(approverKey, a);
+        a.signerVersion++;
+        refuse(p, a, sig, Vault.SignerVersionMismatch.selector);
+    }
+
+    function test_policyAndAuthorizationExactExpiryAreInclusive() public {
+        expiry = uint64(block.timestamp);
+        config(agent, 1, 10_000_000, true);
+        Vault.Payment memory p = payment(agent, 2_000_000);
+        p.validUntil = expiry;
+        Vault.ExceptionAuthorization memory a = auth(p, owner, 1);
+        a.authorizationExpiry = expiry;
+        exception(p, a, sign(ownerKey, a));
+        vm.warp(uint256(expiry) + 1);
+        p = payment(agent, 1);
+        vm.expectRevert(Vault.PolicyExpired.selector);
+        pay(p);
+    }
 }
