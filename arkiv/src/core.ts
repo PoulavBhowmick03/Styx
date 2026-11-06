@@ -19,6 +19,31 @@ export const VaultGrants = defineSchema("vault.payment-grant", {
 });
 
 export class ArkivAdapterError extends Error {}
+export class NothingFoundError extends ArkivAdapterError {}
+export class MalformedGrantError extends ArkivAdapterError {}
+
+export const EXIT_USAGE = 1;
+export const EXIT_NOTHING_FOUND = 3;
+export const EXIT_UNAVAILABLE = 4;
+export const EXIT_MALFORMED = 5;
+
+/** Anything not recognised is treated as the network: it says nothing about Arkiv's contents. */
+export function exitCodeFor(error: unknown): number {
+  if (error instanceof NothingFoundError) return EXIT_NOTHING_FOUND;
+  if (error instanceof MalformedGrantError) return EXIT_MALFORMED;
+  if (error instanceof ArkivAdapterError) return EXIT_USAGE;
+  return EXIT_UNAVAILABLE;
+}
+
+/** RPC errors quote the URL, and the access key is part of the URL. */
+export function redacted(error: unknown, secret = process.env.ARKIV_ACCESS_KEY): string {
+  const text = String(error);
+  return secret ? text.split(secret).join("***") : text;
+}
+
+export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, index) => byte === b[index]);
+}
 
 export function assertPublishable(grant: Uint8Array): void {
   if (grant.length === 0) throw new ArkivAdapterError("the grant is empty");
@@ -57,10 +82,10 @@ export const lookupFilter = (lookupTag: string) => eq("lookupTag", lookupTag);
  */
 export function selectGrant(rows: readonly { ciphertext: { value: Hex } }[]): Uint8Array {
   if (rows.length === 0) {
-    throw new ArkivAdapterError("no grant found for this tag and writer; this says nothing about the payment");
+    throw new NothingFoundError("no grant found for this tag and writer; this says nothing about the payment");
   }
-  if (rows.length > 1) throw new ArkivAdapterError("more than one grant has this tag and writer");
+  if (rows.length > 1) throw new MalformedGrantError("more than one grant has this tag and writer");
   const value = rows[0]!.ciphertext.value;
-  if (!isHex(value)) throw new ArkivAdapterError("Arkiv returned malformed ciphertext");
+  if (!isHex(value)) throw new MalformedGrantError("Arkiv returned malformed ciphertext");
   return hexToBytes(value);
 }

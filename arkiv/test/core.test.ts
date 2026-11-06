@@ -7,6 +7,12 @@ import {
   APP,
   ArkivAdapterError,
   assertLookupTag,
+  exitCodeFor,
+  redacted,
+  EXIT_MALFORMED,
+  EXIT_NOTHING_FOUND,
+  EXIT_UNAVAILABLE,
+  sameBytes,
   assertWriter,
   grantValues,
   lookupFilter,
@@ -84,5 +90,52 @@ describe("selecting a grant", () => {
 
   it("refuses to choose between several results", () => {
     expect(() => selectGrant([row(new Uint8Array([1])), row(new Uint8Array([2]))])).toThrow(/more than one/);
+  });
+});
+
+describe("telling failures apart", () => {
+  it("gives nothing found, malformed data and network failure different exit codes", () => {
+    const found = (() => {
+      try {
+        selectGrant([]);
+      } catch (error) {
+        return error;
+      }
+    })();
+    const malformed = (() => {
+      try {
+        selectGrant([{ ciphertext: { value: "not hex" as `0x${string}` } }]);
+      } catch (error) {
+        return error;
+      }
+    })();
+    const several = (() => {
+      try {
+        selectGrant([{ ciphertext: { value: "0x01" } }, { ciphertext: { value: "0x02" } }]);
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(exitCodeFor(found)).toBe(EXIT_NOTHING_FOUND);
+    expect(exitCodeFor(malformed)).toBe(EXIT_MALFORMED);
+    expect(exitCodeFor(several)).toBe(EXIT_MALFORMED);
+    expect(exitCodeFor(new TypeError("fetch failed"))).toBe(EXIT_UNAVAILABLE);
+    expect(new Set([EXIT_NOTHING_FOUND, EXIT_MALFORMED, EXIT_UNAVAILABLE]).size).toBe(3);
+  });
+
+  it("never describes an empty result as unpaid", () => {
+    expect(() => selectGrant([])).toThrow(/says nothing about the payment/);
+  });
+
+  it("compares a read-back byte for byte", () => {
+    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 2]))).toBe(true);
+    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 3]))).toBe(false);
+    expect(sameBytes(new Uint8Array([1]), new Uint8Array([1, 0]))).toBe(false);
+  });
+});
+
+describe("error text", () => {
+  it("never carries the access key", () => {
+    expect(redacted(new Error("POST https://host/rpc/abc123 failed"), "abc123")).not.toContain("abc123");
   });
 });
