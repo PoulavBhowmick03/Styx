@@ -1,7 +1,7 @@
 """Subprocess binding tests.
 
 These tests do not assert computed values. Such an assertion would mean that Python has
-become another protocol implementation (``erebus/__init__.py``, CLAUDE.md).
+become another protocol implementation (``styx/__init__.py``, CLAUDE.md).
 
 The tests cover transport, response shape, and structured errors. Rust tests check computed
 values against Cairo reference vectors.
@@ -19,16 +19,16 @@ from pathlib import Path
 
 import pytest
 
-from erebus import Network
-from erebus._seam import ErebusError, Seam, SeamConfig, SeamUnavailable
+from styx import Network
+from styx._seam import StyxError, Seam, SeamConfig, SeamUnavailable
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CLI = REPO_ROOT / "sdk" / "rs" / "target" / "debug" / "erebus-cli"
+CLI = REPO_ROOT / "sdk" / "rs" / "target" / "debug" / "styx-cli"
 OPERATION_ID = "op_" + "ab" * 32
 
 pytestmark = pytest.mark.skipif(
     not CLI.exists(),
-    reason="erebus-cli not built; run `cargo build --bin erebus-cli` in sdk/rs",
+    reason="styx-cli not built; run `cargo build --bin styx-cli` in sdk/rs",
 )
 
 
@@ -122,7 +122,7 @@ def test_config_repr_omits_credential_bearing_urls(config: SeamConfig) -> None:
 def test_version_round_trips(seam: Seam) -> None:
     result = seam.version()
 
-    assert result["name"] == "erebus-sdk"
+    assert result["name"] == "styx-sdk"
     assert result["protocol"] == 5
     assert result["default_wire_version"] == "v3"
 
@@ -288,7 +288,7 @@ def test_deal_grant_carries_full_width_id_and_explicit_expiry(
 def test_a_missing_key_file_raises_a_structured_error(config: SeamConfig) -> None:
     broken = dataclasses.replace(config, pool_key_file="/definitely/not/here")
 
-    with pytest.raises(ErebusError) as caught:
+    with pytest.raises(StyxError) as caught:
         Seam(config=broken, binary=CLI).open_channel(OPERATION_ID, "0xb0b")
 
     assert caught.value.code == "IDENTITY_UNAVAILABLE"
@@ -296,7 +296,7 @@ def test_a_missing_key_file_raises_a_structured_error(config: SeamConfig) -> Non
 
 
 def test_a_malformed_argument_raises_rather_than_returning_garbage(seam: Seam) -> None:
-    with pytest.raises(ErebusError) as caught:
+    with pytest.raises(StyxError) as caught:
         seam.open_channel(OPERATION_ID, "not-a-felt")
 
     assert caught.value.code == "INVALID_REQUEST"
@@ -304,7 +304,7 @@ def test_a_malformed_argument_raises_rather_than_returning_garbage(seam: Seam) -
 
 def test_the_retryable_flag_survives_the_seam(seam: Seam) -> None:
     """Checks that transport preserves the retry decision."""
-    with pytest.raises(ErebusError) as caught:
+    with pytest.raises(StyxError) as caught:
         seam.call("no_such_method")
 
     assert isinstance(caught.value.retryable, bool)
@@ -312,7 +312,7 @@ def test_the_retryable_flag_survives_the_seam(seam: Seam) -> None:
 
 
 def test_an_unknown_method_does_not_hang_or_crash(seam: Seam) -> None:
-    with pytest.raises(ErebusError):
+    with pytest.raises(StyxError):
         seam.call("definitely_not_a_method", {"anything": 1})
 
 
@@ -330,12 +330,12 @@ def test_a_config_free_seam_refuses_calls_that_need_one() -> None:
 
 def test_a_missing_binary_is_distinguishable_from_a_protocol_error() -> None:
     with pytest.raises(SeamUnavailable):
-        Seam(binary="/definitely/not/erebus-cli").version()
+        Seam(binary="/definitely/not/styx-cli").version()
 
 
 def test_non_json_output_is_reported_as_a_broken_install(tmp_path: Path) -> None:
     """Non-JSON output indicates a broken installation, not a protocol error."""
-    fake = tmp_path / "erebus-cli"
+    fake = tmp_path / "styx-cli"
     fake.write_text("#!/bin/sh\necho 'this is not json'\n")
     fake.chmod(0o755)
 
@@ -358,7 +358,7 @@ def test_neither_key_is_passed_through_python(seam: Seam, key_files: tuple[Path,
 
     subprocess.run = capture  # type: ignore[assignment]
     try:
-        with pytest.raises(ErebusError):
+        with pytest.raises(StyxError):
             seam.open_channel(OPERATION_ID, "not-a-felt")
     finally:
         subprocess.run = original  # type: ignore[assignment]

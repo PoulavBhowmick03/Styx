@@ -1,7 +1,7 @@
 //! x402 `exact` Permit2 bytes pinned to the reference x402 SDK (`fixtures/x402-permit2-vectors.json`).
 
-use erebus_core::commitment::DealNullifier;
-use erebus_evm::x402::{domain_separator, DealPermit, EXACT_PERMIT2_PROXY};
+use styx_core::commitment::DealNullifier;
+use styx_evm::x402::{domain_separator, DealPermit, EXACT_PERMIT2_PROXY};
 use serde_json::Value;
 
 fn bytes<const N: usize>(value: &Value) -> [u8; N] {

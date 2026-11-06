@@ -1,0 +1,226 @@
+"""Styx MCP server.
+
+Owned by Ishita. The production backend reaches the protocol-5 Rust client through the
+Python binding. The mock backend supports deterministic tests.
+
+Run the installed entry point:
+
+    styx-mcp-server
+
+or, from a checkout, either of:
+
+    uv run mcp dev mcp-server/src/server.py
+    uv run python -m styx_mcp.server
+
+Construction lives in `build_server()` rather than at import time so that importing this
+module never requires environment configuration; only running it does. The `server.py`
+shim beside the package builds at import for `mcp dev`, which inspects a file for a
+module-level server object.
+
+The official `mcp` Python SDK removed `FastMCP` in 2.0. Use
+`mcp.server.MCPServer`. Documents written before 2026-07-29 can still refer to FastMCP,
+which exists only on `mcp<2`. This workspace uses 2.0.0.
+
+This server holds no key material. It takes a prover URL and an identity from config and
+fails at startup when either is absent. The proving call sends the plaintext pool private
+key, so the key owner must control the prover.
+"""
+
+import argparse
+import os
+import logging
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+
+from mcp.server import MCPServer
+
+from styx_mcp.config import ConfigError, ServerConfig
+from styx_mcp.intent import IntentStore
+from styx_mcp.onboarding import (
+    OnboardingError,
+    default_config_path,
+    environment_is_configured,
+    init_main,
+    load_config_file,
+    resolve_config_path,
+    schema_main,
+)
+from styx_mcp.mock_client import MockStyxClient
+from styx_mcp.seam_client import SeamStyxClient
+from styx_mcp.spending import SpendGuard
+from styx_mcp.tools import register_tools
+
+logger = logging.getLogger("styx_mcp")
+
+
+def build_server() -> MCPServer:
+    """Read configuration from the environment and assemble the server."""
+    if os.environ.get("STYX_BACKEND", "").strip().lower() == "metropolis":
+        from styx_mcp.metropolis import build_metropolis_server
+
+        return build_metropolis_server()
+    if os.environ.get("STYX_BACKEND", "").strip().lower() == "access":
+        from styx_mcp.access import build_access_server
+
+        return build_access_server()
+    if os.environ.get("STYX_BACKEND", "").strip().lower() == "disclosure":
+        from styx_mcp.disclosure import build_disclosure_server
+
+        return build_disclosure_server()
+    if os.environ.get("STYX_BACKEND", "").strip().lower() == "vault":
+        from styx_mcp.vault import build_vault_server
+
+        return build_vault_server()
+    if os.environ.get("STYX_BACKEND", "").strip().lower() == "local-prover":
+        from styx_mcp.proving import build_proving_server
+
+        return build_proving_server()
+    config = ServerConfig.from_env()
+
+    server = MCPServer(
+        name="styx",
+        instructions=(
+            "Structured negotiation and settlement between two agents on Starknet. "
+            "Negotiation terms and settlement amounts are confidential against a chain "
+            "reader; they are not confidential against the prover or write RPC, which see "
+            "the pool key (docs/privacy-model.md). Opening a channel is never confidential: "
+            "it writes the counterparty's address to public calldata (F38). "
+            "Open a channel with a counterparty, exchange structured offers, and settle "
+            "atomically. accept_and_settle always spends this identity's private notes: "
+            "only the payer calls it; a payee leaves its final offer for the payer. "
+            f"This server is configured as {config.settlement_role.value}. "
+            "Every write costs a proof, so negotiate in as few rounds as the policy allows."
+        ),
+    )
+
+    # STYX_BACKEND selects the client. `mock` needs no chain, keys, or gas. `seam` calls
+    # the Rust client through the subprocess binding. This layer contains no hashing, salt
+    # encoding, or felt arithmetic. See styx_mcp/{mock_client,seam_client,interface}.py.
+    client: MockStyxClient | SeamStyxClient
+    if config.backend == "seam":
+        from styx import PROTOCOL, Seam, SeamConfig
+
+        assert config.seam is not None  # from_env guarantees this for the seam backend
+        settings = config.seam
+        seam = Seam(
+            config=SeamConfig(
+                rpc_url=settings.rpc_url,
+                prover_url=config.prover_url,
+                pool_address=settings.pool_address,
+                chain_id=settings.chain_id,
+                account_address=config.address,
+                pool_key_file=settings.pool_key_file,
+                account_key_file=settings.account_key_file,
+                state_dir=settings.state_dir,
+                token=settings.token,
+                wire_version=settings.wire_version,
+            ),
+            binary=settings.binary,
+        )
+
+        # Startup handshake: one cheap `version` call proves the binary runs and speaks
+        # this binding's contract, before any tool call depends on it. A long-running
+        # server outliving a binary upgrade is the case this exists for (2026-08-19).
+        reported = seam.version()
+        spoken = reported.get("protocol")
+        if spoken != PROTOCOL:
+            raise ConfigError(
+                f"{settings.binary} speaks seam protocol {spoken}, this server expects "
+                f"{PROTOCOL}. Install styx-cli and styx-mcp-server from the same "
+                "release."
+            )
+
+        # Pre-flight inspection, read-only, logged rather than fatal: an operator may
+        # start the server first and repair second, and `doctor` names each repair.
+        if config.startup_doctor:
+            report = seam.doctor()
+            if report.get("ready"):
+                logger.info("doctor: ready, all checks passed")
+            else:
+                for check in report.get("checks", []):
+                    if check.get("status") != "pass":
+                        logger.warning(
+                            "doctor: %s %s — %s (repair: %s)",
+                            check.get("name"),
+                            check.get("status"),
+                            check.get("detail"),
+                            check.get("repair") or "none given",
+                        )
+                logger.warning(
+                    "doctor: not ready — writes will fail until the checks above pass"
+                )
+
+        client = SeamStyxClient(seam)
+    else:
+        client = MockStyxClient(
+            identity=config.address,
+            store_path=config.mock_store_path,
+            latency_seconds=config.mock_latency_seconds,
+            spendable_notes=list(config.mock_spendable_notes),
+            pending_notes=list(config.mock_pending_notes),
+        )
+
+    spend_guard = SpendGuard(config.spending_limits, config.spending_state_path)
+    # Persists an operation id and its canonical parameters before a write reaches the
+    # seam, so a crashed process leaves a record instead of silence.
+    # Rust owns its separate journal; see styx_mcp/intent.py for the scope boundary.
+    intent_store = IntentStore(config.intent_state_dir)
+    # Stamped onto every tool result so a transcript alone tells a model
+    # whether it is talking to a real chain, and which one. "mock" has no chain to report;
+    # canonical seam configurations use a friendly name, and unknown deployments say custom.
+    network = config.seam.network if config.seam is not None else "mock"
+    register_tools(
+        server, client, config.settlement_role, spend_guard, intent_store, config.backend, network
+    )
+    return server
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Load protected configuration, run first-use setup, or start MCP over stdio."""
+
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "init":
+        raise SystemExit(init_main(arguments[1:]))
+    if arguments and arguments[0] == "config-schema":
+        if len(arguments) != 1:
+            raise SystemExit("usage: styx-mcp-server config-schema")
+        raise SystemExit(schema_main())
+
+    parser = argparse.ArgumentParser(prog="styx-mcp-server")
+    parser.add_argument("--config", type=Path)
+    options = parser.parse_args(arguments)
+    try:
+        config_path = resolve_config_path(options.config)
+        if config_path is not None:
+            if options.config is not None:
+                # An explicitly selected identity must not inherit another wallet's
+                # address or chain from the launcher's environment.
+                selected: dict[str, str] = {}
+                load_config_file(config_path, selected)
+                if selected.get("STYX_NETWORK"):
+                    for name in ("STARKNET_CHAIN_ID", "POOL_ADDRESS"):
+                        if name not in selected:
+                            os.environ.pop(name, None)
+                os.environ.update(selected)
+            else:
+                load_config_file(config_path)
+        elif os.environ.get("STYX_BACKEND", "").strip().lower() not in {"disclosure", "local-prover", "access", "metropolis", "vault"} and not environment_is_configured():
+            if sys.stdin.isatty():
+                created = default_config_path()
+                print(
+                    "Styx is not configured. Starting one-time setup.", file=sys.stderr
+                )
+                raise SystemExit(init_main(["--config", str(created)]))
+            raise OnboardingError(
+                "Styx is not configured. A marketplace must inject the fields from "
+                "`styx-mcp-server config-schema`; locally run `styx-init` first."
+            )
+        build_server().run()
+    except (ConfigError, OnboardingError) as exc:
+        print(f"styx-mcp-server: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+
+
+if __name__ == "__main__":
+    main()

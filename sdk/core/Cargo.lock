@@ -377,24 +377,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "erebus-core"
-version = "0.1.0"
-dependencies = [
- "affinidi-zkp-crypto",
- "ark-bn254",
- "ark-ff",
- "hex",
- "k256",
- "light-poseidon 0.4.0",
- "serde",
- "serde_json",
- "sha2",
- "sha3",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -759,6 +741,24 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "styx-core"
+version = "0.1.0"
+dependencies = [
+ "affinidi-zkp-crypto",
+ "ark-bn254",
+ "ark-ff",
+ "hex",
+ "k256",
+ "light-poseidon 0.4.0",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sha3",
+ "thiserror 2.0.20",
+ "zeroize",
 ]
 
 [[package]]

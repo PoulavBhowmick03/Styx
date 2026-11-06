@@ -1,8 +1,8 @@
-//! Public-bound EVM settlement adapter for Erebus (Metropolis M3).
+//! Public-bound EVM settlement adapter for Styx (Metropolis M3).
 //!
 //! This crate turns one authorized canonical agreement into one on-chain payment, exactly once,
 //! on an EVM chain. It is the EVM half of the settlement backend contract declared in
-//! `erebus_core::settlement`:
+//! `styx_core::settlement`:
 //!
 //! - [`backend::EvmSettlementBackend::prepare`] validates the terms and both role
 //!   authorizations locally and produces backend evidence.
@@ -15,31 +15,31 @@
 //! removed. Preparation and estimates do not provide a submission shortcut.
 //!
 //! ```compile_fail
-//! use erebus_evm::backend::EvmSettlementBackend;
-//! use erebus_core::settlement::PreparedSettlement;
+//! use styx_evm::backend::EvmSettlementBackend;
+//! use styx_core::settlement::PreparedSettlement;
 //! async fn unjournaled(backend: &EvmSettlementBackend, prepared: &PreparedSettlement) {
 //!     backend.submit(prepared).await;
 //! }
 //! ```
 //!
 //! ```compile_fail
-//! use erebus_evm::backend::EvmSettlementBackend;
-//! use erebus_core::settlement::PreparedSettlement;
+//! use styx_evm::backend::EvmSettlementBackend;
+//! use styx_core::settlement::PreparedSettlement;
 //! async fn unjournaled(backend: &EvmSettlementBackend, prepared: &PreparedSettlement) {
 //!     backend.settle(prepared).await;
 //! }
 //! ```
 //!
 //! ```compile_fail
-//! use erebus_evm::backend::EvmSettlementBackend;
-//! use erebus_core::settlement::PreparedSettlement;
+//! use styx_evm::backend::EvmSettlementBackend;
+//! use styx_core::settlement::PreparedSettlement;
 //! async fn legacy_finality(backend: &EvmSettlementBackend, prepared: &PreparedSettlement) {
 //!     backend.verify(prepared, &[0; 32]).await;
 //! }
 //! ```
 //!
 //! ```compile_fail
-//! use erebus_evm::backend::EvmSettlementBackend;
+//! use styx_evm::backend::EvmSettlementBackend;
 //! fn confirmation_finality(backend: EvmSettlementBackend) {
 //!     backend.with_confirmations(0);
 //! }

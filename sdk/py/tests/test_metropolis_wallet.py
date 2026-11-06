@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from erebus import MetropolisError, MetropolisWallet, WalletPolicy
+from styx import MetropolisError, MetropolisWallet, WalletPolicy
 
 REF = "ab" * 32
 RECIPIENT = "0x" + "12" * 20

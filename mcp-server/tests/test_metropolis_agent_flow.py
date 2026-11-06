@@ -16,8 +16,8 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from erebus_mcp.metropolis_errors import SEAM_MESSAGES, known_messages
-from erebus_mcp.operation_refs import OperationRefs
+from styx_mcp.metropolis_errors import SEAM_MESSAGES, known_messages
+from styx_mcp.operation_refs import OperationRefs
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKES = Path(__file__).with_name("metropolis_fakes.py")
@@ -40,16 +40,16 @@ def environment(tmp_path: Path, role: str = "buyer", methods=("approve", "wrap",
                 maximum: str = "1000", **extra: str) -> dict:
     state = tmp_path / "state"
     negotiation = operator_file(tmp_path / "negotiation.json", {"role": role, "state_root": str(state)})
-    env = {"EREBUS_BACKEND": "metropolis", "EREBUS_NEGOTIATION_CONFIG": str(negotiation),
-           "EREBUS_NEGOTIATION_CLI": str(fake(tmp_path, "negotiate")), "FAKE_STATE": str(tmp_path / "fake.json"),
+    env = {"STYX_BACKEND": "metropolis", "STYX_NEGOTIATION_CONFIG": str(negotiation),
+           "STYX_NEGOTIATION_CLI": str(fake(tmp_path, "negotiate")), "FAKE_STATE": str(tmp_path / "fake.json"),
            "FAKE_STATE_ROOT": str(state), "PATH": os.environ["PATH"], **extra}
     if role == "buyer":
-        env |= {"EREBUS_PAYMENT_CONFIG": str(operator_file(tmp_path / "payment.json", {"mode": "shielded", "state_root": str(state)})),
-                "EREBUS_PAYMENT_CLI": str(fake(tmp_path, "payment")),
-                "EREBUS_WALLET_CONFIG": str(operator_file(tmp_path / "wallet.json", {"state_root": str(state)})),
-                "EREBUS_WALLET_POLICY": str(operator_file(tmp_path / "wallet-policy.json", {"version": 1,
+        env |= {"STYX_PAYMENT_CONFIG": str(operator_file(tmp_path / "payment.json", {"mode": "shielded", "state_root": str(state)})),
+                "STYX_PAYMENT_CLI": str(fake(tmp_path, "payment")),
+                "STYX_WALLET_CONFIG": str(operator_file(tmp_path / "wallet.json", {"state_root": str(state)})),
+                "STYX_WALLET_POLICY": str(operator_file(tmp_path / "wallet-policy.json", {"version": 1,
                     "maximum_amount": maximum, "allowed_methods": list(methods), "withdrawal_recipients": []})),
-                "EREBUS_WALLET_CLI": str(fake(tmp_path, "wallet"))}
+                "STYX_WALLET_CLI": str(fake(tmp_path, "wallet"))}
     return env
 
 
@@ -59,7 +59,7 @@ def fake_state(tmp_path: Path) -> dict:
 
 
 def session(env: dict, script):
-    params = StdioServerParameters(command=sys.executable, args=["-m", "erebus_mcp.server"], cwd=str(ROOT), env=env)
+    params = StdioServerParameters(command=sys.executable, args=["-m", "styx_mcp.server"], cwd=str(ROOT), env=env)
 
     async def run():
         async with stdio_client(params) as (read, write):
@@ -401,7 +401,7 @@ def test_an_unfunded_buyer_gets_funding_required_with_a_next_action_and_nothing_
 
 def test_every_mapped_message_exists_where_it_is_produced():
     rust = "".join(path.read_text() for path in (ROOT / "sdk/shielded/src").rglob("*.rs"))
-    seam = "".join(path.read_text() for path in (ROOT / "sdk/py/src/erebus").glob("*.py"))
+    seam = "".join(path.read_text() for path in (ROOT / "sdk/py/src/styx").glob("*.py"))
     for message in known_messages():
         source = seam if message in SEAM_MESSAGES else rust
         assert f'"{message}"' in source, message
@@ -419,7 +419,7 @@ def test_created_references_resume_or_conflict_and_survive_a_restart(tmp_path):
 
 
 def test_the_seam_keeps_only_short_public_native_errors(tmp_path):
-    from erebus._metropolis import _native_error
+    from styx._metropolis import _native_error
     assert _native_error('{"status":"error","error":"negotiation endpoint unavailable"}') == "negotiation endpoint unavailable"
     assert _native_error("not json", '{"error":"paired wallet recovery failed"}') == "paired wallet recovery failed"
     assert _native_error('{"error":"see https://rpc.example/key"}') is None
@@ -438,8 +438,8 @@ def test_waits_are_bounded(tmp_path, value):
 
 
 def test_unrecognized_native_text_never_reaches_the_agent():
-    from erebus import MetropolisError
-    from erebus_mcp.metropolis_errors import failure
+    from styx import MetropolisError
+    from styx_mcp.metropolis_errors import failure
     reply = failure(MetropolisError("native operation failed", native_error="private note opening 1234"), "WALLET_UNAVAILABLE")
     assert reply["error"]["code"] == "WALLET_UNAVAILABLE" and "native_error" not in reply["error"]
     assert "private" not in json.dumps(reply)
@@ -448,7 +448,7 @@ def test_unrecognized_native_text_never_reaches_the_agent():
 
 
 def test_server_refusals_say_whether_the_same_reference_may_be_retried():
-    from erebus_mcp.metropolis_errors import refused
+    from styx_mcp.metropolis_errors import refused
     assert refused("WALLET_OPERATION_PENDING", "WALLET_UNAVAILABLE", "sync")["error"]["retry_same_operation_ref"] is True
     assert refused("OPERATION_IN_PROGRESS", "WALLET_UNAVAILABLE", "finish")["error"]["retry_same_operation_ref"] is True
     assert refused("INVALID_REQUEST", "WALLET_UNAVAILABLE", "fix it")["error"]["retry_same_operation_ref"] is False

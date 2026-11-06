@@ -6,7 +6,7 @@ directory, deploys a test token (set to 6 decimals like Arc's USDC) and the vaul
 funds the vault with 8 USDC. The owner's key lives only inside the local Anvil process, which also signs
 approvals for rehearsal. The agent gets a key file and nothing else.
 
-Needs anvil, forge and cast, and a built erebus-vault. Runs until Ctrl-C, then deletes everything.
+Needs anvil, forge and cast, and a built styx-vault. Runs until Ctrl-C, then deletes everything.
 Usage: local_vault.py [--port N]
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "sdk/evm/target/debug/erebus-vault"
+CLI = ROOT / "sdk/evm/target/debug/styx-vault"
 VENDOR_A = "0x00000000000000000000000000000000000000a1"
 VENDOR_B = "0x00000000000000000000000000000000000000b2"
 LIMITS = {"per_payment": "1000000", "daily": "10000000", "funded": "8000000"}  # 1, 10 and 8 USDC
@@ -65,7 +65,7 @@ def build(work: Path, port: int) -> tuple[subprocess.Popen, dict[str, str]]:
     token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
     # The mock has 18 decimals and Arc's USDC has 6: set the decimals slot so the rehearsal matches.
     sh("cast", "rpc", "anvil_setStorageAt", token, "0x2", "0x" + "6".rjust(64, "0"), "--rpc-url", rpc)
-    vault = create("src/ErebusPolicyVault.sol:ErebusPolicyVault", owner, token)
+    vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", owner, token)
     until = str(int(time.time()) + 86400)
     send(vault, "configurePolicy(address,uint256,uint256,uint64)", agent, LIMITS["per_payment"], LIMITS["daily"], until)
     send(vault, "setRecipient(address,bool)", VENDOR_A, "true")
@@ -81,9 +81,9 @@ def build(work: Path, port: int) -> tuple[subprocess.Popen, dict[str, str]]:
         "chainId": "31337", "vault": vault, "owner": owner, "token": token,
         "vendors": {VENDOR_A: "Vendor A", VENDOR_B: "Vendor B"}}))
     env = {
-        "EREBUS_VAULT_DIR": str(vault_dir), "EREBUS_VAULT_CLI": str(CLI), "EREBUS_VAULT_CHAIN_ID": "31337",
-        "EREBUS_VAULT_RPC_URLS": rpc, "EREBUS_VAULT_ADDRESS": vault, "EREBUS_VAULT_TOKEN": token,
-        "EREBUS_VAULT_STATE_ROOT": str(work / "journal"), "EREBUS_VAULT_AGENT_KEY_FILE": str(key_file),
+        "STYX_VAULT_DIR": str(vault_dir), "STYX_VAULT_CLI": str(CLI), "STYX_VAULT_CHAIN_ID": "31337",
+        "STYX_VAULT_RPC_URLS": rpc, "STYX_VAULT_ADDRESS": vault, "STYX_VAULT_TOKEN": token,
+        "STYX_VAULT_STATE_ROOT": str(work / "journal"), "STYX_VAULT_AGENT_KEY_FILE": str(key_file),
     }
     return anvil, env
 
@@ -104,7 +104,7 @@ def main() -> int:
     print(f"  vendors: {VENDOR_A} (A), {VENDOR_B} (B)")
     print("  limits: 1 USDC per payment, 10 USDC per day. The vault holds 8 USDC.")
     print("  to sign an approval as the owner (rehearsal only), from owner-page:")
-    print(f"    npx tsx test/sign_with_rpc.mts {work}/owner.json <pending-file> {env['EREBUS_VAULT_RPC_URLS']} <signature-file>")
+    print(f"    npx tsx test/sign_with_rpc.mts {work}/owner.json <pending-file> {env['STYX_VAULT_RPC_URLS']} <signature-file>")
     print("\nCtrl-C to stop and delete everything.", flush=True)
     # A shell starts background jobs with SIGINT ignored, so Ctrl-C and `kill -INT` need an explicit handler.
     for stop in (signal.SIGINT, signal.SIGTERM):

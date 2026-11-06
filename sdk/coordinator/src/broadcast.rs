@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use crate::{record, Coordinator, Error};
-use erebus_core::settlement::PreparedSettlement;
+use styx_core::settlement::PreparedSettlement;
 
 /// A local network response, never independently verified settlement evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

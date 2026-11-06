@@ -4,7 +4,7 @@
 //! vectors in `tests/fixtures/agreement-v1-vectors.json` are the reference bytes. This is
 //! what keeps two encoders from silently agreeing on a malformed message.
 
-use erebus_core::terms::AgreementTerms;
+use styx_core::terms::AgreementTerms;
 
 const FIXTURE: &str = include_str!("fixtures/agreement-v1-vectors.json");
 

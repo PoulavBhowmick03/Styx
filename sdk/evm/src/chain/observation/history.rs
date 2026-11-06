@@ -2,7 +2,7 @@
 //! Checkpoints are trusted local cache state, not independently verifiable chain proofs.
 
 use super::*;
-use erebus_journal::{FaultHook, JournalRecord, NoFaults, RecordId, Store};
+use styx_journal::{FaultHook, JournalRecord, NoFaults, RecordId, Store};
 use std::{path::Path, sync::Arc};
 
 /// A bounded observation is either incomplete or fully verified. Pending is not evidence.
@@ -150,7 +150,7 @@ impl ObservationJournal {
 
 impl EvmChain {
     fn history_id(&self, nullifier: &DealNullifier) -> CursorId {
-        let mut identity = b"EREBUS_OBSERVATION_CHECKPOINT_V1".to_vec();
+        let mut identity = b"STYX_OBSERVATION_CHECKPOINT_V1".to_vec();
         identity.extend(self.deployment.chain_id.to_be_bytes());
         identity.extend(self.deployment.settlement_contract);
         identity.extend(self.deployment.verifier_version.to_be_bytes());
@@ -618,7 +618,7 @@ impl EvmChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use erebus_journal::Boundary;
+    use styx_journal::Boundary;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn cursor() -> Cursor {

@@ -7,19 +7,19 @@
 # `approve` would let the agent call all four tools, including the one that submits payments, with no person
 # asked. The vault still enforces every limit, but choose it deliberately. With `approve` set, a trial session
 # did not finish and the cause was not found, so this config has not been shown to complete a payment in Codex.
-[mcp_servers.erebus-vault]
-command = "erebus-mcp-server"
+[mcp_servers.styx-vault]
+command = "styx-mcp-server"
 args = []
 env_vars = [
-  "EREBUS_VAULT_DIR",
-  "EREBUS_VAULT_CLI",
-  "EREBUS_VAULT_CHAIN_ID",
-  "EREBUS_VAULT_RPC_URLS",
-  "EREBUS_VAULT_ADDRESS",
-  "EREBUS_VAULT_TOKEN",
-  "EREBUS_VAULT_STATE_ROOT",
-  "EREBUS_VAULT_AGENT_KEY_FILE",
+  "STYX_VAULT_DIR",
+  "STYX_VAULT_CLI",
+  "STYX_VAULT_CHAIN_ID",
+  "STYX_VAULT_RPC_URLS",
+  "STYX_VAULT_ADDRESS",
+  "STYX_VAULT_TOKEN",
+  "STYX_VAULT_STATE_ROOT",
+  "STYX_VAULT_AGENT_KEY_FILE",
 ]
 
-[mcp_servers.erebus-vault.env]
-EREBUS_BACKEND = "vault"
+[mcp_servers.styx-vault.env]
+STYX_BACKEND = "vault"

@@ -3,14 +3,14 @@
 //! This verifies the agreement only. A payment claim also needs independent backend
 //! observation; a caller-supplied settlement receipt is not chain evidence.
 
-use erebus_core::auth::{verify_authorization_signature, AuthError, Authorization, Role};
-use erebus_core::commitment::{
+use styx_core::auth::{verify_authorization_signature, AuthError, Authorization, Role};
+use styx_core::commitment::{
     commit_agreement, deal_nullifier, CommitmentBlinding, CommitmentError, DealCommitment,
     DealNullifier,
 };
-use erebus_core::encoding::{EncodingError, Reader, Writer};
-use erebus_core::suite;
-use erebus_core::terms::AgreementTerms;
+use styx_core::encoding::{EncodingError, Reader, Writer};
+use styx_core::suite;
+use styx_core::terms::AgreementTerms;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 #[cfg(unix)]
@@ -86,7 +86,7 @@ pub enum DisclosureError {
     Encoding(#[from] EncodingError),
     /// A canonical agreement could not be decoded.
     #[error(transparent)]
-    Terms(#[from] erebus_core::terms::TermsError),
+    Terms(#[from] styx_core::terms::TermsError),
     /// An individual transcript message could not be decoded.
     #[error(transparent)]
     Message(#[from] MessageError),
@@ -247,9 +247,9 @@ pub enum GrantError {
     Backup,
 }
 
-const GRANT_DOMAIN: &[u8] = b"EREBUS_DEAL_DISCLOSURE_V1";
-const SHIELDED_GRANT_DOMAIN: &[u8] = b"EREBUS_DEAL_DISCLOSURE_V2_SUITE2";
-const RECORD_GRANT_DOMAIN: &[u8] = b"EREBUS_RECORD_DISCLOSURE_V3";
+const GRANT_DOMAIN: &[u8] = b"STYX_DEAL_DISCLOSURE_V1";
+const SHIELDED_GRANT_DOMAIN: &[u8] = b"STYX_DEAL_DISCLOSURE_V2_SUITE2";
+const RECORD_GRANT_DOMAIN: &[u8] = b"STYX_RECORD_DISCLOSURE_V3";
 const RECORD_GRANT_VERSION: u16 = 3;
 const NOISE_N: &str = "Noise_N_25519_ChaChaPoly_BLAKE2s";
 const CHUNK_BYTES: usize = 60_000;
@@ -404,12 +404,12 @@ impl DisclosureGrant {
         expires_at: u64,
         now: u64,
     ) -> Result<Self, GrantError> {
-        use erebus_core::{
+        use styx_core::{
             shielded::disclosure_message,
             shielded_auth::{derive_key, sign_message},
         };
         if evidence.terms.suite_id != 2
-            || evidence.terms.settlement_mode != erebus_core::terms::SettlementMode::Shielded
+            || evidence.terms.settlement_mode != styx_core::terms::SettlementMode::Shielded
         {
             return Err(GrantError::Invalid);
         }
@@ -542,9 +542,9 @@ impl DisclosureGrant {
                 .verify_authorization(&self.issuer, &self.signature_digest(), &self.signature)
                 .map_err(|_| GrantError::Invalid)?,
             2 => {
-                let message = erebus_core::shielded::disclosure_message(&self.signature_digest())
+                let message = styx_core::shielded::disclosure_message(&self.signature_digest())
                     .map_err(|_| GrantError::Invalid)?;
-                erebus_core::shielded_auth::verify_message(&self.issuer, &message, &self.signature)
+                styx_core::shielded_auth::verify_message(&self.issuer, &message, &self.signature)
                     .map_err(|_| GrantError::Invalid)?;
             }
             _ => return Err(GrantError::Invalid),
@@ -559,7 +559,7 @@ impl DisclosureGrant {
             || (self.version == 2
                 && (evidence.terms.suite_id != 2
                     || evidence.terms.settlement_mode
-                        != erebus_core::terms::SettlementMode::Shielded
+                        != styx_core::terms::SettlementMode::Shielded
                     || (evidence.terms.buyer_authorization_key.as_bytes() != self.issuer
                         && evidence.terms.seller_authorization_key.as_bytes() != self.issuer)))
         {

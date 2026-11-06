@@ -15,20 +15,20 @@ async def run():
     expected = sys.argv[7] if len(sys.argv) > 7 else "retrieved"
     evidence = Path(evidence)
     environment = {
-        "EREBUS_BACKEND": "access", "EREBUS_ACCESS_EVIDENCE_DIR": str(evidence.parent),
-        "EREBUS_ACCESS_BUYER_KEY_FILE": key, "EREBUS_ACCESS_SERVICE_URL": url,
-        "EREBUS_ACCESS_SERVICE_ID": service_id, "EREBUS_ACCESS_CACHE": cache,
-        "EREBUS_ACCESS_CLI": binary, "EREBUS_ALLOW_LOOPBACK_ACCESS_HTTP": "1",
+        "STYX_BACKEND": "access", "STYX_ACCESS_EVIDENCE_DIR": str(evidence.parent),
+        "STYX_ACCESS_BUYER_KEY_FILE": key, "STYX_ACCESS_SERVICE_URL": url,
+        "STYX_ACCESS_SERVICE_ID": service_id, "STYX_ACCESS_CACHE": cache,
+        "STYX_ACCESS_CLI": binary, "STYX_ALLOW_LOOPBACK_ACCESS_HTTP": "1",
     }
     if expected == "x402_cached":
-        environment["EREBUS_ACCESS_PAYMENT_RAIL"] = "x402-exact"
+        environment["STYX_ACCESS_PAYMENT_RAIL"] = "x402-exact"
     if binary == "installed":
-        import erebus, erebus_mcp
+        import styx, styx_mcp
         prefix = Path(sys.prefix).resolve()
-        assert all(Path(module.__file__).resolve().is_relative_to(prefix) for module in (erebus, erebus_mcp))
-        del environment["EREBUS_ACCESS_CLI"]
+        assert all(Path(module.__file__).resolve().is_relative_to(prefix) for module in (styx, styx_mcp))
+        del environment["STYX_ACCESS_CLI"]
         environment["PATH"] = str(prefix / "bin") + os.pathsep + "/usr/bin:/bin"
-    params = StdioServerParameters(command=sys.executable, args=["-I", "-m", "erebus_mcp.server"], cwd=str(evidence.parent), env=environment)
+    params = StdioServerParameters(command=sys.executable, args=["-I", "-m", "styx_mcp.server"], cwd=str(evidence.parent), env=environment)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()

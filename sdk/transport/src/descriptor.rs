@@ -13,10 +13,10 @@
 //! expiry, then filters by chain, asset, mode, and required guarantees. No chain transaction is
 //! involved (architecture section 2).
 
-use erebus_core::encoding::{EncodingError, Reader, Writer};
-use erebus_core::ids::{AssetId, ChainNamespace, IdError};
-use erebus_core::suite::{self, SuiteError};
-use erebus_core::terms::{Guarantee, GuaranteeSet, SettlementMode};
+use styx_core::encoding::{EncodingError, Reader, Writer};
+use styx_core::ids::{AssetId, ChainNamespace, IdError};
+use styx_core::suite::{self, SuiteError};
+use styx_core::terms::{Guarantee, GuaranteeSet, SettlementMode};
 use serde::{Deserialize, Serialize};
 
 use crate::identity::{
@@ -26,7 +26,7 @@ use crate::identity::{
 use crate::limits::{MAX_DESCRIPTOR_ASSETS, MAX_DESCRIPTOR_ENDPOINTS, MAX_DESCRIPTOR_SUITES};
 
 /// Domain separation for a service descriptor digest.
-pub const DESCRIPTOR_DOMAIN: &[u8] = b"EREBUS_SERVICE_DESCRIPTOR_V1";
+pub const DESCRIPTOR_DOMAIN: &[u8] = b"STYX_SERVICE_DESCRIPTOR_V1";
 /// Descriptor protocol version.
 pub const DESCRIPTOR_PROTOCOL_VERSION: u16 = 1;
 /// The suite that signs descriptors at M2.
@@ -80,7 +80,7 @@ pub enum DescriptorError {
     UnsupportedSuite(u16),
     /// A guarantee set named no known guarantee.
     #[error(transparent)]
-    Terms(#[from] erebus_core::terms::TermsError),
+    Terms(#[from] styx_core::terms::TermsError),
     /// Mode bits named no known settlement mode.
     #[error("descriptor advertises unknown settlement-mode bits 0x{0:02x}")]
     UnknownModeBits(u8),
@@ -630,7 +630,7 @@ impl Directory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use erebus_core::terms::Guarantee;
+    use styx_core::terms::Guarantee;
 
     fn identity() -> AuthorizationIdentity {
         AuthorizationIdentity::from_bytes(&[0x33; 32]).expect("valid key")

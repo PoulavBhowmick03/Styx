@@ -6,10 +6,10 @@
 //! order:
 //!
 //! ```text
-//! message_digest_i = Keccak256("EREBUS_MESSAGE_V1" || encode(body_i))
+//! message_digest_i = Keccak256("STYX_MESSAGE_V1" || encode(body_i))
 //! link_0           = 0x00..00
-//! link_i           = Keccak256("EREBUS_TRANSCRIPT_LINK_V1" || author_tag || link_{i-1} || message_digest_i)
-//! transcript_root  = Keccak256("EREBUS_TRANSCRIPT_ROOT_V1" || deal_id || head_buyer || head_seller)
+//! link_i           = Keccak256("STYX_TRANSCRIPT_LINK_V1" || author_tag || link_{i-1} || message_digest_i)
+//! transcript_root  = Keccak256("STYX_TRANSCRIPT_ROOT_V1" || deal_id || head_buyer || head_seller)
 //! ```
 //!
 //! The chain shape is what makes the ordering attacks unrepresentable rather than remembered. A
@@ -18,18 +18,18 @@
 //! the root.
 //!
 //! The root is all-zero only when the deal has no messages, which is the legacy and pre-M2 case
-//! (agreement field 6, `erebus_core::terms`).
+//! (agreement field 6, `styx_core::terms`).
 
 use crate::hashing::{self, HashVersionError};
-use erebus_core::auth::Role;
+use styx_core::auth::Role;
 
 use crate::limits::MAX_MESSAGES_PER_DEAL;
 use crate::message::{Message, MessageError};
 
 /// Domain separation for a transcript chain link.
-pub const TRANSCRIPT_LINK_DOMAIN: &[u8] = b"EREBUS_TRANSCRIPT_LINK_V1";
+pub const TRANSCRIPT_LINK_DOMAIN: &[u8] = b"STYX_TRANSCRIPT_LINK_V1";
 /// Domain separation for the transcript root.
-pub const TRANSCRIPT_ROOT_DOMAIN: &[u8] = b"EREBUS_TRANSCRIPT_ROOT_V1";
+pub const TRANSCRIPT_ROOT_DOMAIN: &[u8] = b"STYX_TRANSCRIPT_ROOT_V1";
 
 /// One author's hash chain.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn keccak_root_is_stable_when_the_shielded_agreement_suite_is_enabled() {
-        assert!(erebus_core::suite::is_supported(2));
+        assert!(styx_core::suite::is_supported(2));
         assert!(matches!(
             Transcript::new(DEAL, 2),
             Err(TranscriptError::HashVersion(_))
@@ -284,10 +284,10 @@ mod tests {
             message(Role::Seller, 1, [0; 32], b"counter"),
         ];
         let transcript = Transcript::replay(DEAL, 1, &messages).expect("version-1 transcript");
-        // Independently encoded with ethers Keccak256; preserves the original byte preimages.
+        // Pins the transcript hash, including its domain string.
         assert_eq!(
             hex::encode(transcript.root().unwrap()),
-            "cd876d461564e797f05314ea8c58dc9a1c7ece6357c15b7a9580d6692da617ff"
+            "b4dab8dc95a381c3301bd5bd57e90900a0d3b9b67dd97c0b67eb1c8cd23177d7"
         );
         assert_eq!(transcript.hash_version(), 1);
     }

@@ -345,8 +345,8 @@ fn precompile_vectors() -> Vec<Vector> {
         Vector {
             name: "hash_pinned_call",
             address: 4,
-            input: b"EREBUS".to_vec(),
-            expected: b"EREBUS".to_vec(),
+            input: b"STYX".to_vec(),
+            expected: b"STYX".to_vec(),
         },
         Vector {
             name: "bn254_add_double",

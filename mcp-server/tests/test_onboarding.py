@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from erebus_mcp.onboarding import (
+from styx_mcp.onboarding import (
     OnboardingError,
     collect_interactive_config,
     configuration_schema,
@@ -22,33 +22,33 @@ def test_protected_config_round_trips_and_environment_wins(tmp_path: Path) -> No
     path = write_config_file(
         tmp_path / "mcp.env",
         {
-            "EREBUS_BACKEND": "seam",
-            "EREBUS_NETWORK": "sepolia",
+            "STYX_BACKEND": "seam",
+            "STYX_NETWORK": "sepolia",
             "STARKNET_RPC_URL": "https://rpc.invalid/a path#fragment",
         },
     )
-    environment = {"EREBUS_NETWORK": "mainnet"}
+    environment = {"STYX_NETWORK": "mainnet"}
 
     loaded = load_config_file(path, environment)
 
-    assert set(loaded) == {"EREBUS_BACKEND", "EREBUS_NETWORK", "STARKNET_RPC_URL"}
-    assert environment["EREBUS_BACKEND"] == "seam"
-    assert environment["EREBUS_NETWORK"] == "mainnet"
+    assert set(loaded) == {"STYX_BACKEND", "STYX_NETWORK", "STARKNET_RPC_URL"}
+    assert environment["STYX_BACKEND"] == "seam"
+    assert environment["STYX_NETWORK"] == "mainnet"
     assert environment["STARKNET_RPC_URL"] == "https://rpc.invalid/a path#fragment"
     if stat.S_IMODE(path.stat().st_mode) != 0:
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_config_writer_refuses_to_replace_existing_file(tmp_path: Path) -> None:
-    path = write_config_file(tmp_path / "mcp.env", {"EREBUS_BACKEND": "mock"})
+    path = write_config_file(tmp_path / "mcp.env", {"STYX_BACKEND": "mock"})
 
     with pytest.raises(OnboardingError, match="refusing to overwrite"):
-        write_config_file(path, {"EREBUS_BACKEND": "seam"})
+        write_config_file(path, {"STYX_BACKEND": "seam"})
 
 
 def test_loader_rejects_group_readable_config(tmp_path: Path) -> None:
     path = tmp_path / "mcp.env"
-    path.write_text("EREBUS_BACKEND=mock\n")
+    path.write_text("STYX_BACKEND=mock\n")
     path.chmod(0o640)
 
     with pytest.raises(OnboardingError, match="chmod 600"):
@@ -57,7 +57,7 @@ def test_loader_rejects_group_readable_config(tmp_path: Path) -> None:
 
 def test_loader_rejects_shell_syntax_instead_of_evaluating_it(tmp_path: Path) -> None:
     path = tmp_path / "mcp.env"
-    path.write_text("export EREBUS_BACKEND=mock\n")
+    path.write_text("export STYX_BACKEND=mock\n")
     path.chmod(0o600)
 
     with pytest.raises(OnboardingError, match="expected NAME=value"):
@@ -70,10 +70,10 @@ def test_mock_first_run_needs_only_network_and_role() -> None:
     values = collect_interactive_config(input_fn=lambda _: next(answers))
 
     assert values == {
-        "EREBUS_BACKEND": "mock",
+        "STYX_BACKEND": "mock",
         "AGENT_ADDRESS": "0xmock",
         "PROVING_SERVICE_URL": "http://unused.invalid",
-        "EREBUS_SETTLEMENT_ROLE": "payer",
+        "STYX_SETTLEMENT_ROLE": "payer",
     }
 
 
@@ -94,8 +94,8 @@ def test_sepolia_is_the_first_run_default() -> None:
 
     values = collect_interactive_config(input_fn=lambda _: next(answers))
 
-    assert values["EREBUS_NETWORK"] == "sepolia"
-    assert values["EREBUS_SETTLEMENT_ROLE"] == "both"
+    assert values["STYX_NETWORK"] == "sepolia"
+    assert values["STYX_SETTLEMENT_ROLE"] == "both"
     assert "STARKSCAN_API_KEY" not in values
 
 
@@ -118,7 +118,7 @@ def test_mainnet_starkscan_key_is_collected_without_using_plain_input() -> None:
         input_fn=lambda _: next(answers), secret_fn=lambda _: "protected-api-key"
     )
 
-    assert values["EREBUS_NETWORK"] == "mainnet"
+    assert values["STYX_NETWORK"] == "mainnet"
     assert values["STARKSCAN_API_KEY"] == "protected-api-key"
 
 
@@ -128,7 +128,7 @@ def test_marketplace_schema_is_json_and_marks_secret_inputs() -> None:
     fields = {field["name"]: field for field in schema["fields"]}  # type: ignore[index]
 
     assert json.loads(encoded)["version"] == 1
-    assert fields["EREBUS_NETWORK"]["default"] == "sepolia"
+    assert fields["STYX_NETWORK"]["default"] == "sepolia"
     assert fields["STARKSCAN_API_KEY"]["secret"] is True
     assert fields["POOL_KEY_FILE"]["secret_path"] is True
 
@@ -137,4 +137,4 @@ def test_explicit_config_path_beats_environment(tmp_path: Path) -> None:
     explicit = tmp_path / "explicit.env"
     configured = tmp_path / "configured.env"
 
-    assert resolve_config_path(explicit, {"EREBUS_CONFIG_FILE": str(configured)}) == explicit
+    assert resolve_config_path(explicit, {"STYX_CONFIG_FILE": str(configured)}) == explicit

@@ -8,8 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from erebus_mcp import setup
-from erebus_mcp.onboarding import write_config_file
+from styx_mcp import setup
+from styx_mcp.onboarding import write_config_file
 
 
 @pytest.fixture
@@ -185,16 +185,16 @@ def test_existing_config_is_reused_without_overwriting_keys(fake, tmp_path, caps
     write_config_file(
         config,
         {
-            "EREBUS_BACKEND": "seam",
-            "EREBUS_NETWORK": "sepolia",
+            "STYX_BACKEND": "seam",
+            "STYX_NETWORK": "sepolia",
             "AGENT_ADDRESS": "0x123",
             "ACCOUNT_KEY_FILE": str(key),
             "POOL_KEY_FILE": str(pool),
-            "EREBUS_STATE_DIR": str(tmp_path / "state"),
+            "STYX_STATE_DIR": str(tmp_path / "state"),
             "STARKNET_RPC_URL": "https://rpc.invalid",
             "PROVING_SERVICE_URL": "https://prover.invalid",
             "TOKEN_ADDRESS": setup.STRK,
-            "EREBUS_SETTLEMENT_ROLE": "payee",
+            "STYX_SETTLEMENT_ROLE": "payee",
         },
     )
     before = config.read_bytes()

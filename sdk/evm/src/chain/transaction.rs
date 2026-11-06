@@ -12,7 +12,7 @@ use alloy::primitives::{keccak256, Address, Bytes, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
-use erebus_core::settlement::PreparedSettlement;
+use styx_core::settlement::PreparedSettlement;
 
 use crate::backend::validate_prepared;
 use crate::deployment::{EvmDeployment, ADDRESS_BYTES};

@@ -1,22 +1,22 @@
 //! The independent M4 Circom/JS runner pins these suite-2 agreement hashes.
 
-use erebus_core::auth::{Authorization, Role};
-use erebus_core::commitment::CommitmentBlinding;
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{
+use styx_core::auth::{Authorization, Role};
+use styx_core::commitment::CommitmentBlinding;
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{
     AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes, SignatureBytes,
 };
-use erebus_core::service::ServiceRecord;
-use erebus_core::shielded::ShieldedDeal;
-use erebus_core::shielded_auth::{sign_message, verify_agreement, verify_message};
-use erebus_core::terms::{AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode};
+use styx_core::service::ServiceRecord;
+use styx_core::shielded::ShieldedDeal;
+use styx_core::shielded_auth::{sign_message, verify_agreement, verify_message};
+use styx_core::terms::{AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode};
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("fixtures/agreement-suite2-vector.json");
 
 #[test]
 fn access_signatures_preserve_digest_limbs_and_cannot_authorize_payment_or_disclosure() {
-    use erebus_core::shielded::{access_message, disclosure_message};
+    use styx_core::shielded::{access_message, disclosure_message};
     let mut high = [0; 32];
     high[0] = 1;
     let mut low = [0; 32];
@@ -44,7 +44,7 @@ fn access_signatures_preserve_digest_limbs_and_cannot_authorize_payment_or_discl
 
 #[test]
 fn disclosure_messages_match_circomlib_and_cannot_authorize_payment() {
-    use erebus_core::shielded::disclosure_message;
+    use styx_core::shielded::disclosure_message;
     // circomlibjs 0.1.7: Poseidon([3001, high128(digest), low128(digest)]).
     for (digest, expected) in [
         (
@@ -211,14 +211,14 @@ fn rust_matches_circomlib_commitment_and_messages() {
 
 #[test]
 fn shared_agreement_api_matches_the_shielded_circuit() {
-    use erebus_core::auth::{
+    use styx_core::auth::{
         authorization_digest, verify_authorization, verify_authorization_signature,
     };
-    use erebus_core::commitment::{commit_agreement, deal_nullifier};
+    use styx_core::commitment::{commit_agreement, deal_nullifier};
     let (terms, blinding, vector) = fixture_terms();
     let encoded = terms.encode().expect("suite-2 terms encode");
     assert_eq!(AgreementTerms::decode(&encoded).unwrap(), terms);
-    use erebus_core::settlement::{check_capabilities, BackendCapabilities, SettlementContext};
+    use styx_core::settlement::{check_capabilities, BackendCapabilities, SettlementContext};
     let capabilities = BackendCapabilities {
         suites: [2].into_iter().collect(),
         modes: [SettlementMode::Shielded].into_iter().collect(),
@@ -428,7 +428,7 @@ fn identity_authorization_keys_cannot_authorize_any_agreement() {
             }
         }
         assert!(ShieldedDeal::from_terms(&candidate).is_err());
-        assert!(erebus_core::commitment::commit_agreement(&candidate, &blinding).is_err());
+        assert!(styx_core::commitment::commit_agreement(&candidate, &blinding).is_err());
     }
 }
 
@@ -492,7 +492,7 @@ fn circuit_probe_vectors_show_the_exact_circuit_rust_divergence() {
     assert!(verify_message(&valid_key, &message, &suborder_s).is_err());
 }
 
-/// Rust's exact identity handling: `erebus-core` rejects only the identity authorization key
+/// Rust's exact identity handling: `styx-core` rejects only the identity authorization key
 /// (`A = (0,1)`); the dependency has no R8 identity check, and the circomlib verifier's
 /// `8A.x != 0` likewise rejects only A. Both sides therefore accept an identity R8 signature
 /// that a keyholder can produce, and both reject off-curve points. The circuit probe accepts

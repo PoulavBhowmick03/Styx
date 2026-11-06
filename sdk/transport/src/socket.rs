@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use erebus_core::auth::Role;
+use styx_core::auth::Role;
 
 use crate::{
     descriptor::ServiceDescriptor,

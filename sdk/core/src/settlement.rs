@@ -20,7 +20,7 @@ use crate::terms::{Guarantee, GuaranteeSet, SettlementMode};
 /// What one settlement backend provides.
 ///
 /// A backend reports this honestly, including guarantees it does not have. The existing
-/// STRK20 path's declaration lives in `erebus-sdk` (`sdk/rs/src/capabilities.rs`) and reports
+/// STRK20 path's declaration lives in `styx-sdk` (`sdk/rs/src/capabilities.rs`) and reports
 /// client-enforced agreement checks, not proof-enforced ones.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendCapabilities {

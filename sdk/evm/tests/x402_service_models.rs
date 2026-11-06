@@ -1,7 +1,7 @@
 //! Measured x402 service-model comparison (roadmap M8: per-request vs prepaid vs batched).
 //!
 //! EXPERIMENT, not product. The supported rail is per-request `exact` through
-//! `erebus_evm::x402::DealPermit`. The two alternatives exist only in this file:
+//! `styx_evm::x402::DealPermit`. The two alternatives exist only in this file:
 //! - prepaid allocation: one `exact` payment for N units, then buyer-signed off-chain draws
 //!   against a durable seller ledger;
 //! - batched usage: one canonical x402 `upto` permit for N units, a durable usage ledger, and one
@@ -24,20 +24,20 @@ use alloy::primitives::{Address, Bytes, B256};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
-use erebus_core::commitment::DealNullifier;
-use erebus_evm::abi;
-use erebus_evm::x402::{
+use styx_core::commitment::DealNullifier;
+use styx_evm::abi;
+use styx_evm::x402::{
     domain_separator, transfer_topic, DealPermit, EXACT_PERMIT2_PROXY, PERMIT2,
 };
-use erebus_transport::identity::AuthorizationIdentity;
+use styx_transport::identity::AuthorizationIdentity;
 use serde_json::{json, Value};
 use sha3::{Digest, Keccak256};
 
 const BUYER_KEY: [u8; 32] = [0x15; 32];
 /// Anvil's default dev key for account `index`, read at runtime so no key is stored in this repo.
-/// Set `EREBUS_TEST_ANVIL_KEY_<index>` to the hex key anvil prints at startup.
+/// Set `STYX_TEST_ANVIL_KEY_<index>` to the hex key anvil prints at startup.
 fn anvil_key(index: u8) -> [u8; 32] {
-    let name = format!("EREBUS_TEST_ANVIL_KEY_{index}");
+    let name = format!("STYX_TEST_ANVIL_KEY_{index}");
     let value = std::env::var(&name).unwrap_or_else(|_| panic!("{name} must be set"));
     hex::decode(value.trim_start_matches("0x"))
         .expect("hex key")
@@ -427,7 +427,7 @@ async fn measure_per_request_prepaid_and_batched_x402_models() {
         let started = Instant::now();
         let message = keccak(
             &[
-                &b"EREBUS_EXPERIMENTAL_PREPAID_DRAW"[..],
+                &b"STYX_EXPERIMENTAL_PREPAID_DRAW"[..],
                 prepay.deal.as_bytes(),
                 &index.to_be_bytes(),
             ]

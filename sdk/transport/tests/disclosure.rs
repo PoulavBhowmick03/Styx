@@ -1,32 +1,32 @@
 //! Offline verification of a selected Metropolis agreement.
 
-use erebus_core::auth::{authorization_digest, Authorization, Role};
-use erebus_core::commitment::{commit_agreement, CommitmentBlinding};
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{
+use styx_core::auth::{authorization_digest, Authorization, Role};
+use styx_core::commitment::{commit_agreement, CommitmentBlinding};
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{
     AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes, SignatureBytes,
 };
-use erebus_core::service::ServiceRecord;
-use erebus_core::terms::{
+use styx_core::service::ServiceRecord;
+use styx_core::terms::{
     AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode, CURRENT_PROTOCOL_VERSION,
 };
-use erebus_transport::disclosure::{
+use styx_transport::disclosure::{
     verify_selected_agreement, DisclosureError, DisclosureGrant, GrantError, SelectedAgreement,
 };
-use erebus_transport::hashing::TRANSCRIPT_HASH_VERSION;
-use erebus_transport::identity::TransportIdentity;
-use erebus_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
-use erebus_transport::message::{Message, MessageType};
-use erebus_transport::relay::{FileRelay, MailboxId, Relay};
-use erebus_transport::session::{self, Handshake};
-use erebus_transport::store::{FileTranscriptStore, TranscriptStore};
-use erebus_transport::transcript::Transcript;
+use styx_transport::hashing::TRANSCRIPT_HASH_VERSION;
+use styx_transport::identity::TransportIdentity;
+use styx_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
+use styx_transport::message::{Message, MessageType};
+use styx_transport::relay::{FileRelay, MailboxId, Relay};
+use styx_transport::session::{self, Handshake};
+use styx_transport::store::{FileTranscriptStore, TranscriptStore};
+use styx_transport::transcript::Transcript;
 
 const BACKUP_NAMESPACE: &str = "metropolis.backup";
 const BACKUP_NOW: u64 = 1_700_000_000;
 
 fn shielded_fixture() -> SelectedAgreement {
-    use erebus_core::{
+    use styx_core::{
         shielded::note_spend_tag,
         shielded_auth::{derive_key, sign_message},
     };
@@ -124,7 +124,7 @@ fn shielded_grants_authenticate_either_participant_without_a_secp_identity() {
 
 #[test]
 fn a_validly_signed_and_encrypted_nonparticipant_grant_is_rejected_on_open() {
-    use erebus_core::{
+    use styx_core::{
         encoding::Writer,
         shielded::disclosure_message,
         shielded_auth::{derive_key, sign_message},
@@ -134,7 +134,7 @@ fn a_validly_signed_and_encrypted_nonparticipant_grant_is_rejected_on_open() {
     let recipient = DisclosureIdentity::generate().unwrap();
     let seed = [3; 32];
     let issuer = derive_key(&seed).unwrap();
-    let domain = b"EREBUS_DEAL_DISCLOSURE_V2_SUITE2";
+    let domain = b"STYX_DEAL_DISCLOSURE_V2_SUITE2";
     let expiry = 1000u64;
     let header = keccak256(&[
         domain,
@@ -165,7 +165,7 @@ fn a_validly_signed_and_encrypted_nonparticipant_grant_is_rejected_on_open() {
     signed.bytes_bounded(&frame, 65_535);
     let message = disclosure_message(&keccak256(&[domain, &signed.finish()])).unwrap();
     let (_, signature) = sign_message(&seed, &message).unwrap();
-    erebus_core::shielded_auth::verify_message(&issuer, &message, &signature).unwrap();
+    styx_core::shielded_auth::verify_message(&issuer, &message, &signature).unwrap();
     let mut encoded = Writer::new();
     encoded.u16(2);
     encoded.fixed(&issuer);

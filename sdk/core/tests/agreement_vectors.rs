@@ -12,17 +12,17 @@
 //! `src/suite.rs` (keccak256 published vectors and the EIP-155 signature example), so the
 //! fixture is not the only ground truth.
 
-use erebus_core::auth::{
+use styx_core::auth::{
     authorization_digest, verify_authorization_signature, Authorization, Role,
 };
-use erebus_core::commitment::{commit_agreement, deal_nullifier, CommitmentBlinding};
-use erebus_core::domain::DeploymentDomain;
-use erebus_core::ids::{
+use styx_core::commitment::{commit_agreement, deal_nullifier, CommitmentBlinding};
+use styx_core::domain::DeploymentDomain;
+use styx_core::ids::{
     AddressBytes, AssetId, BaseUnits, ChainNamespace, KeyBytes, SignatureBytes,
 };
-use erebus_core::service::ServiceRecord;
-use erebus_core::suite::EVM_SECP256K1_KECCAK_SUITE_ID;
-use erebus_core::terms::{
+use styx_core::service::ServiceRecord;
+use styx_core::suite::EVM_SECP256K1_KECCAK_SUITE_ID;
+use styx_core::terms::{
     AgreementTerms, FeePolicy, Guarantee, GuaranteeSet, SettlementMode, CURRENT_PROTOCOL_VERSION,
 };
 use k256::ecdsa::SigningKey;
@@ -268,8 +268,8 @@ fn vectors_match_the_pinned_values() {
 
         // Keep the pre-review shielded bytes as a rejection vector, not a supported suite.
         if terms.settlement_mode == SettlementMode::Shielded {
-            let error = erebus_core::terms::TermsError::SuiteMode(
-                erebus_core::suite::SuiteError::UnsupportedMode {
+            let error = styx_core::terms::TermsError::SuiteMode(
+                styx_core::suite::SuiteError::UnsupportedMode {
                     suite_id: 1,
                     mode: SettlementMode::Shielded,
                 },
@@ -385,7 +385,7 @@ fn regenerate_vectors() {
     ];
 
     let fixture = serde_json::json!({
-        "_comment": "Pinned agreement-v1 vectors. Regenerate with `cargo test -p erebus-core --test agreement_vectors -- --ignored --nocapture regenerate`. Changing any value is a protocol change; update docs/metropolis-agreement.md first.",
+        "_comment": "Pinned agreement-v1 vectors. Regenerate with `cargo test -p styx-core --test agreement_vectors -- --ignored --nocapture regenerate`. Changing any value is a protocol change; update docs/metropolis-agreement.md first.",
         "suiteId": EVM_SECP256K1_KECCAK_SUITE_ID,
         "vectors": vectors,
     });

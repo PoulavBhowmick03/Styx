@@ -9,7 +9,7 @@ use crate::{
     evidence::SettlementEvidence,
 };
 use alloy::primitives::keccak256;
-use erebus_core::{
+use styx_core::{
     commitment::{commit_agreement, deal_nullifier, CommitmentBlinding},
     settlement::PreparedSettlement,
     terms::AgreementTerms,
@@ -30,7 +30,7 @@ pub enum DurableRelayError {
     Admission(#[from] RelayError),
     /// Keep reservations and recover the durable record.
     #[error(transparent)]
-    Journal(#[from] erebus_coordinator::Error),
+    Journal(#[from] styx_coordinator::Error),
     /// Stored transaction or configured deployment does not match.
     #[error(transparent)]
     Transaction(#[from] EvmError),
@@ -165,7 +165,7 @@ impl RelayService {
     pub async fn submit_journaled(
         &self,
         client: &str,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
         now: u64,
         timeout: Duration,
@@ -177,7 +177,7 @@ impl RelayService {
         // agreement must not consume the operation's bounded attempt history.
         let stored = coordinator
             .signed_transaction(operation_ref)?
-            .ok_or(erebus_coordinator::Error::Stage)?;
+            .ok_or(styx_coordinator::Error::Stage)?;
         self.admit(client, &stored.prepared().backend_evidence, now)?;
         self.submit_admitted_journaled(coordinator, operation_ref, now, timeout)
             .await
@@ -185,14 +185,14 @@ impl RelayService {
 
     async fn submit_admitted_journaled(
         &self,
-        coordinator: &erebus_coordinator::Coordinator,
+        coordinator: &styx_coordinator::Coordinator,
         operation_ref: [u8; 32],
         now: u64,
         timeout: Duration,
     ) -> Result<Broadcast, DurableRelayError> {
         let stored = coordinator
             .signed_transaction(operation_ref)?
-            .ok_or(erebus_coordinator::Error::Stage)?;
+            .ok_or(styx_coordinator::Error::Stage)?;
         let stored_plan = SigningPlan::decode(stored.plan())?;
         stored_plan.validate(self.policy.deployment(), stored.prepared(), stored.raw())?;
         for backend in &self.backends {
@@ -244,9 +244,9 @@ impl RelayService {
         }
         // A later rejection cannot erase uncertainty from an earlier provider.
         let recorded = if outcome == BroadcastOutcome::Acknowledged {
-            erebus_coordinator::BroadcastOutcome::Submitted
+            styx_coordinator::BroadcastOutcome::Submitted
         } else {
-            erebus_coordinator::BroadcastOutcome::Unknown
+            styx_coordinator::BroadcastOutcome::Unknown
         };
         coordinator.finish_broadcast_attempt(operation_ref, &attempt.token, recorded)?;
         if outcome == BroadcastOutcome::Acknowledged {
@@ -462,7 +462,7 @@ impl RelayPolicy {
             commit_agreement(&terms, &CommitmentBlinding::from_bytes(evidence.blinding))
                 .map_err(|_| RelayError::Agreement)?;
         let nullifier = deal_nullifier(&terms).map_err(|_| RelayError::Agreement)?;
-        let mut identity = b"EREBUS_RELAY_OPERATION_V1".to_vec();
+        let mut identity = b"STYX_RELAY_OPERATION_V1".to_vec();
         identity.extend_from_slice(commitment.as_bytes());
         identity.extend_from_slice(nullifier.as_bytes());
         let prepared = PreparedSettlement {

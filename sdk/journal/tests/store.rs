@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use erebus_journal::{
+use styx_journal::{
     Boundary, Corruption, FaultHook, JournalRecord, PruneDecision, PruneReport, RecordId, Step,
     Store, StoreError,
 };
@@ -97,7 +97,7 @@ impl TempDir {
     fn new(label: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         Self(std::env::temp_dir().join(format!(
-            "erebus-journal-store-{label}-{}-{}",
+            "styx-journal-store-{label}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         )))
@@ -1017,8 +1017,8 @@ fn corruption_reasons_are_fixed_text() {
 fn stores_and_locks_keep_their_auto_traits() {
     fn assert_auto<T: Send + Sync + Unpin + std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
     assert_auto::<Store<Record>>();
-    assert_auto::<erebus_journal::IdentityLock>();
-    assert_auto::<erebus_journal::RecordLock>();
+    assert_auto::<styx_journal::IdentityLock>();
+    assert_auto::<styx_journal::RecordLock>();
 
     // Like the error it maps into, it carries an `io::Error`, so it crosses threads but is not
     // unwind-safe.

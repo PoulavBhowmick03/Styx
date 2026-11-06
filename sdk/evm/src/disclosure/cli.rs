@@ -16,14 +16,14 @@ use crate::disclosure::{
     open_public_bound_disclosure, verify_public_bound_disclosure_resumable, DisclosureObservation,
 };
 use crate::x402::{decode_settle_call, verify_x402_exact, EXACT_PERMIT2_PROXY};
-use erebus_core::ids::ChainNamespace;
-use erebus_core::terms::SettlementMode;
-use erebus_transport::disclosure::{
+use styx_core::ids::ChainNamespace;
+use styx_core::terms::SettlementMode;
+use styx_transport::disclosure::{
     verify_selected_agreement, DisclosureGrant, SelectedAgreement, VerifiedAgreement,
     MAX_DISCLOSURE_BYTES, MAX_GRANT_BYTES,
 };
-use erebus_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
-use erebus_transport::store::FileTranscriptStore;
+use styx_transport::identity::{AuthorizationIdentity, DisclosureIdentity};
+use styx_transport::store::FileTranscriptStore;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use zeroize::Zeroizing;
@@ -141,7 +141,7 @@ fn default_log_concurrency() -> u64 {
     8
 }
 
-const HELP: &str = "erebus-disclosure: one public-bound disclosure request as JSON on stdin.
+const HELP: &str = "styx-disclosure: one public-bound disclosure request as JSON on stdin.
 Methods: version, keygen, key_info, select, export, verify_agreement, verify_payment.
 Private keys and selected evidence are read from owner-only local files.
 select rebuilds canonical SelectedAgreement evidence from a participant's durable coordinator
@@ -153,8 +153,8 @@ Public-bound verification persists public history in deployment.cache_root (defa
 public-cache beside the grant). Pending verification exits 2; repeat the same request to resume.
 Output contains verification status and deal identifiers, not plaintext terms or private keys.
 No method submits transactions or generates proofs. Version-2 grants use direct suite-2 signing.
-Shielded payment verification requires the erebus-shielded-disclosure command.
-checkpoint (erebus-shielded-disclosure only, confirm_new_cache: true) records a paired finalized
+Shielded payment verification requires the styx-shielded-disclosure command.
+checkpoint (styx-shielded-disclosure only, confirm_new_cache: true) records a paired finalized
 pool frontier for a new, empty shielded auditor cache; verify_payment then scans only later blocks.
 A deal settled at or before that block is reported as settled_before_checkpoint (exit 3), never
 as paid or unpaid; verify it with a cache that starts earlier.
@@ -315,7 +315,7 @@ where
         } => {
             let operation_ref = parse_operation_ref(&operation_ref)?;
             let (terms, blinding, buyer, seller) =
-                erebus_coordinator::read_disclosure_opening(&state_root, operation_ref)
+                styx_coordinator::read_disclosure_opening(&state_root, operation_ref)
                     .map_err(|_| "cannot read durable agreement opening")?;
             let store = FileTranscriptStore::open(&store_root)
                 .map_err(|_| "cannot open participant transcript store")?;

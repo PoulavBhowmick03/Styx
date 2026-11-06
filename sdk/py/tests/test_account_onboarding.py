@@ -8,10 +8,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from erebus import ErebusError, Seam
+from styx import StyxError, Seam
 
-CLI = Path(__file__).resolve().parents[3] / "sdk/rs/target/debug/erebus-cli"
-pytestmark = pytest.mark.skipif(not CLI.exists(), reason="build erebus-cli first")
+CLI = Path(__file__).resolve().parents[3] / "sdk/rs/target/debug/styx-cli"
+pytestmark = pytest.mark.skipif(not CLI.exists(), reason="build styx-cli first")
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_deployment_response_loss_replays_saved_request_byte_for_byte(chain, tmp
     args = {"directory": str(tmp_path), "chain_id": state["chain_id"], "rpc_url": url}
     account = seam.call("onboarding", {"action": "create", "args": args})
     for _ in range(2):
-        with pytest.raises(ErebusError, match="submission uncertain"):
+        with pytest.raises(StyxError, match="submission uncertain"):
             seam.call("onboarding", {"action": "deploy", "args": args})
     assert len(state["submissions"]) == 2
     assert state["submissions"][0] == state["submissions"][1]
@@ -104,7 +104,7 @@ def test_wrong_chain_is_rejected_before_deployment(chain, tmp_path):
     seam = Seam(binary=CLI)
     args = {"directory": str(tmp_path), "chain_id": "0x534e5f4d41494e", "rpc_url": url}
     seam.call("onboarding", {"action": "create", "args": args})
-    with pytest.raises(ErebusError, match="chain does not match"):
+    with pytest.raises(StyxError, match="chain does not match"):
         seam.call("onboarding", {"action": "deploy", "args": args})
     assert state["submissions"] == []
     assert not (tmp_path / "deployment.json").exists()
@@ -118,7 +118,7 @@ def test_existing_address_requires_matching_signer(chain, tmp_path):
     args.update(
         address=account["address"], account_key_file=account["account_key_file"]
     )
-    with pytest.raises(ErebusError, match="does not match"):
+    with pytest.raises(StyxError, match="does not match"):
         seam.call("onboarding", {"action": "verify_signer", "args": args})
     state["public_key"] = account["public_key"]
     assert seam.call("onboarding", {"action": "verify_signer", "args": args}) == {

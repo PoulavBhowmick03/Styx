@@ -18,9 +18,9 @@ use crate::suite::{self, SuiteError};
 use crate::terms::{AgreementTerms, TermsError};
 
 /// Domain separation for the agreement commitment.
-pub const COMMITMENT_DOMAIN: &[u8] = b"EREBUS_DEAL_COMMITMENT_V1";
+pub const COMMITMENT_DOMAIN: &[u8] = b"STYX_DEAL_COMMITMENT_V1";
 /// Domain separation for the consumed deal identity.
-pub const DEAL_NULLIFIER_DOMAIN: &[u8] = b"EREBUS_DEAL_NULLIFIER_V1";
+pub const DEAL_NULLIFIER_DOMAIN: &[u8] = b"STYX_DEAL_NULLIFIER_V1";
 /// Length of a commitment blinding value.
 pub const BLINDING_BYTES: usize = 32;
 

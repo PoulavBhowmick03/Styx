@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from erebus import DisclosureError, DisclosureSeam
+from styx import DisclosureError, DisclosureSeam
 
 
 def reply(monkeypatch, payload, *, returncode=0, stderr=""):

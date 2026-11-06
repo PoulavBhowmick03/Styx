@@ -10,7 +10,7 @@
 //! funds, or sign payments. Those remain transport and settlement-coordinator responsibilities.
 
 use core::fmt;
-use erebus_core::{
+use styx_core::{
     auth::{verify_authorization_signature, Authorization, Role},
     commitment::{commit_agreement, CommitmentBlinding, DealCommitment},
     encoding::{Reader, Writer},
@@ -27,7 +27,7 @@ use crate::{
 };
 
 const PROFILE_VERSION: u16 = 1;
-const PROPOSAL_DOMAIN: &[u8] = b"EREBUS_NEGOTIATION_PROPOSAL_V1";
+const PROPOSAL_DOMAIN: &[u8] = b"STYX_NEGOTIATION_PROPOSAL_V1";
 
 /// A negotiation input or durable record failed validation.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -166,8 +166,8 @@ impl Proposal {
     }
 }
 
-impl From<erebus_core::encoding::EncodingError> for NegotiationError {
-    fn from(_: erebus_core::encoding::EncodingError) -> Self {
+impl From<styx_core::encoding::EncodingError> for NegotiationError {
+    fn from(_: styx_core::encoding::EncodingError) -> Self {
         Self::Proposal
     }
 }

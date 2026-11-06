@@ -9,7 +9,7 @@ dependencies = []
 dev = ["pytest>=8.0"]
 
 [tool.uv.workspace]
-members = ["sdk/py", "mcp-server", "packaging/erebus-cli"]
+members = ["sdk/py", "mcp-server", "packaging/styx-cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["sdk/py/tests", "mcp-server/tests"]

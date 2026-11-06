@@ -11,14 +11,14 @@ import hashlib
 import time
 
 import pytest
-from erebus_mcp.interface import (
+from styx_mcp.interface import (
     Consistency,
-    ErebusError,
+    StyxError,
     OfferTerms,
     SettlementErrorCode,
     ViewingKeyGrant,
 )
-from erebus_mcp.mock_client import MockErebusClient
+from styx_mcp.mock_client import MockStyxClient
 
 
 def _terms(amount: int = 100, deadline_delta: int = 3600) -> OfferTerms:
@@ -32,10 +32,10 @@ def store_path(tmp_path):
 
 @pytest.fixture
 def clients(store_path):
-    buyer = MockErebusClient(
+    buyer = MockStyxClient(
         identity="0xbuyer", store_path=store_path, latency_seconds=0, spendable_notes=[100, 150]
     )
-    seller = MockErebusClient(
+    seller = MockStyxClient(
         identity="0xseller", store_path=store_path, latency_seconds=0, spendable_notes=[]
     )
     return buyer, seller
@@ -71,7 +71,7 @@ def test_happy_path_end_to_end(clients, store_path):
         grant = await buyer.grant_viewing_key(
             handle, deal_id, "0xauditor", int(time.time()) + 600
         )
-        auditor = MockErebusClient(identity="0xauditor", store_path=store_path, latency_seconds=0)
+        auditor = MockStyxClient(identity="0xauditor", store_path=store_path, latency_seconds=0)
         record = await auditor.reveal(grant)
         assert {offer.deal_id for offer in record.offers} == {int(deal_id)}
         assert record.settlement is not None
@@ -112,20 +112,20 @@ def test_same_pair_can_complete_two_deals(clients):
         grant = await buyer.grant_viewing_key(
             handle, str(state.offers[0].deal_id), "0xauditor", int(time.time()) + 600
         )
-        auditor = MockErebusClient(
+        auditor = MockStyxClient(
             identity="0xauditor", store_path=buyer._store_path, latency_seconds=0
         )
         disclosed = await auditor.reveal(grant)
         assert {offer.deal_id for offer in disclosed.offers} == {state.offers[0].deal_id}
 
-        wrong = MockErebusClient(
+        wrong = MockStyxClient(
             identity="0xwrong", store_path=buyer._store_path, latency_seconds=0
         )
-        with pytest.raises(ErebusError) as wrong_recipient:
+        with pytest.raises(StyxError) as wrong_recipient:
             await wrong.reveal(grant)
         assert wrong_recipient.value.code == SettlementErrorCode.INVALID_REQUEST
 
-        with pytest.raises(ErebusError) as expired:
+        with pytest.raises(StyxError) as expired:
             await auditor.reveal(dataclasses.replace(grant, expires_at=int(time.time()) - 1))
         assert expired.value.code == SettlementErrorCode.INVALID_REQUEST
 
@@ -139,7 +139,7 @@ def test_accepting_an_expired_offer_is_rejected(clients):
         handle = await buyer.open_channel("0xseller")
         offer_id = await seller.propose_offer(handle, _terms(deadline_delta=-1))
 
-        with pytest.raises(ErebusError) as excinfo:
+        with pytest.raises(StyxError) as excinfo:
             await buyer.accept_and_settle(handle, offer_id)
         assert excinfo.value.code == SettlementErrorCode.OFFER_EXPIRED
 
@@ -154,7 +154,7 @@ def test_already_settled_channel_rejects_a_second_settlement(clients):
         offer_id = await seller.propose_offer(handle, _terms())
         await buyer.accept_and_settle(handle, offer_id)
 
-        with pytest.raises(ErebusError) as excinfo:
+        with pytest.raises(StyxError) as excinfo:
             await buyer.accept_and_settle(handle, offer_id)
         assert excinfo.value.code == SettlementErrorCode.ALREADY_SETTLED
 
@@ -169,7 +169,7 @@ def test_acceptor_is_the_payer_and_exact_notes_are_consumed(clients):
         seller_handle = await seller.open_channel("0xbuyer")
         buyer_offer = await buyer.propose_offer(handle, _terms(amount=100))
 
-        with pytest.raises(ErebusError) as excinfo:
+        with pytest.raises(StyxError) as excinfo:
             await seller.accept_and_settle(seller_handle, buyer_offer)
         assert excinfo.value.code == SettlementErrorCode.INSUFFICIENT_NOTES
 
@@ -205,7 +205,7 @@ def test_accepting_your_own_offer_is_rejected(clients):
         handle = await buyer.open_channel("0xseller")
         offer_id = await buyer.propose_offer(handle, _terms())
 
-        with pytest.raises(ErebusError) as excinfo:
+        with pytest.raises(StyxError) as excinfo:
             await buyer.accept_and_settle(handle, offer_id)
         assert excinfo.value.code == SettlementErrorCode.NOT_YOUR_OFFER
 
@@ -219,7 +219,7 @@ def test_countering_an_unknown_offer_is_rejected(clients):
         await buyer.open_channel("0xseller")
         seller_handle = await seller.open_channel("0xbuyer")
 
-        with pytest.raises(ErebusError) as excinfo:
+        with pytest.raises(StyxError) as excinfo:
             await seller.counter_offer(seller_handle, "0xbuyer:999", _terms())
         assert excinfo.value.code == SettlementErrorCode.OFFER_UNKNOWN
 
@@ -243,7 +243,7 @@ def test_forced_failures_carry_the_code_and_retryable_flag(clients, code):
     buyer.force_error(code)
 
     async def run():
-        with pytest.raises(ErebusError) as excinfo:
+        with pytest.raises(StyxError) as excinfo:
             await buyer.open_channel("0xseller")
         assert excinfo.value.code == code
         assert isinstance(excinfo.value.retryable, bool)

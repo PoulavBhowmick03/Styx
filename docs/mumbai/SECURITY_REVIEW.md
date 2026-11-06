@@ -1,7 +1,7 @@
 # Codex security review and delivery report
 
 6 November 2026. Baseline: `84b3288`. This is a limited adversarial review, not an audit.
-Scope: the frozen `ErebusPolicyVault.sol`, `sdk/evm/src/arc_vault/`, and
+Scope: the frozen `StyxPolicyVault.sol`, `sdk/evm/src/arc_vault/`, and
 `owner-page/src/approval.ts`. No live deployment, wallet extension or Arc transaction tested.
 The contract was not edited. Poulav must review signing-related changes and Studio's replacement.
 

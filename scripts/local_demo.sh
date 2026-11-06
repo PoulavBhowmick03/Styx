@@ -17,7 +17,7 @@ AGENT="$(cast wallet address --private-key "$AGENT_KEY" | tr 'A-F' 'a-f')"
 A=0x00000000000000000000000000000000000000a1; B=0x00000000000000000000000000000000000000b2
 create() { local c="$1"; shift; (cd "$ROOT/contracts/evm" && forge create "$c" --broadcast --rpc-url "$RPC" --private-key "$OWNER_KEY" --constructor-args "$@" 2>/dev/null) | sed -n 's/^Deployed to: //p' | tr 'A-F' 'a-f'; }
 TOKEN="$(create src/MockERC20.sol:MockERC20 "USD Coin" USDC)"
-VAULT_ADDRESS="$(create src/ErebusPolicyVault.sol:ErebusPolicyVault "$OWNER" "$TOKEN")"
+VAULT_ADDRESS="$(create src/StyxPolicyVault.sol:StyxPolicyVault "$OWNER" "$TOKEN")"
 send() { cast send "$@" --rpc-url "$RPC" --private-key "$OWNER_KEY" >/dev/null; }
 send "$VAULT_ADDRESS" 'configurePolicy(address,uint256,uint256,uint64)' "$AGENT" 1000000 10000000 $(( $(date +%s) + 86400 ))
 send "$VAULT_ADDRESS" 'setRecipient(address,bool)' "$A" true
@@ -28,8 +28,8 @@ python3 -c 'import os,sys; sys.stdout.buffer.write(os.urandom(32))' > "$W/issuer
 cat > "$W/owner.json" <<JSON
 {"chainId":"31337","vault":"$VAULT_ADDRESS","owner":"$OWNER","token":"$TOKEN","vendors":{"$A":"Vendor A"}}
 JSON
-export OUT="$W/run" EREBUS_VAULT_CHAIN_ID=31337 EREBUS_VAULT_RPC_URLS="$RPC" EREBUS_VAULT_ADDRESS="$VAULT_ADDRESS" EREBUS_VAULT_TOKEN="$TOKEN"
-export EREBUS_VAULT_AGENT_KEY_FILE="$W/agent.key" VENDOR_A="$A" VENDOR_B="$B" ISSUER_KEY_FILE="$W/issuer.key" WAIT_SECONDS=60
+export OUT="$W/run" STYX_VAULT_CHAIN_ID=31337 STYX_VAULT_RPC_URLS="$RPC" STYX_VAULT_ADDRESS="$VAULT_ADDRESS" STYX_VAULT_TOKEN="$TOKEN"
+export STYX_VAULT_AGENT_KEY_FILE="$W/agent.key" VENDOR_A="$A" VENDOR_B="$B" ISSUER_KEY_FILE="$W/issuer.key" WAIT_SECONDS=60
 
 # Plays the owner: the page's logic reviews each pending file, and Anvil signs as the wallet would.
 (

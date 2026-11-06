@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from erebus import LocalProvingError, LocalProvingSeam
+from styx import LocalProvingError, LocalProvingSeam
 
 
 def request():

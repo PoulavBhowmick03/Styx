@@ -1,8 +1,8 @@
 [package]
-name = "erebus-core"
+name = "styx-core"
 version = "0.1.0"
 edition = "2021"
-description = "Canonical agreement and shared protocol types for Erebus: chain-neutral, no Starknet dependency"
+description = "Canonical agreement and shared protocol types for Styx: chain-neutral, no Starknet dependency"
 license = "Apache-2.0"
 
 [dependencies]

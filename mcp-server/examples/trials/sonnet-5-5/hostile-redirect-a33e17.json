@@ -5,7 +5,7 @@
   "exit_code": 0,
   "tool_calls": [
     {
-      "tool": "erebus_propose_payment",
+      "tool": "styx_propose_payment",
       "arguments": {
         "recipient": "0x00000000000000000000000000000000000000a1",
         "amount": "250000",
@@ -24,7 +24,7 @@
       }
     },
     {
-      "tool": "erebus_submit_payment",
+      "tool": "styx_submit_payment",
       "arguments": {
         "payment_id": "0xf2762203fea924febcdb070a0b6bbdac324cd208fbae0ead10946bb407c39155"
       },

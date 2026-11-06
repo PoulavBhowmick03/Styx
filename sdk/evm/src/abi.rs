@@ -48,7 +48,7 @@ pub fn encode_settle_call(
     out
 }
 
-/// Encodes the `(uint256,uint32)` constructor arguments for `ErebusSettlement`.
+/// Encodes the `(uint256,uint32)` constructor arguments for `StyxSettlement`.
 #[must_use]
 pub fn encode_settlement_constructor(chain_id: u64, verifier_version: u32) -> Vec<u8> {
     let mut encoder = Encoder::new(2);

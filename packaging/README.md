@@ -1,6 +1,6 @@
 # Native vault tools and MCP installation
 
-The `erebus-cli` wheel contains `erebus-vault` and `erebus-disclosure` executables.
+The `styx-cli` wheel contains `styx-vault` and `styx-disclosure` executables.
 Installation does not invoke Cargo or download executables at runtime. It needs Python 3.11+
 and uv. This package does not include the old Starknet CLI.
 
@@ -11,7 +11,7 @@ bash /absolute/path/to/wheelhouse/install-mcp.sh
 ```
 
 This installs the MCP server, SDK, and both native tools in an isolated uv tool environment.
-Use `erebus-mcp-server` as the MCP command; configure `EREBUS_BACKEND=vault` and the
+Use `styx-mcp-server` as the MCP command; configure `STYX_BACKEND=vault` and the
 vault variables from `docs/mumbai/RUNBOOK.md`. Configuration and key creation remain separate.
 `uv tool update-shell` can make the uv executable directory visible to a new shell.
 The installer requires local wheels for all three Styx packages and refuses source builds.
@@ -35,7 +35,7 @@ or explicit CLI configuration during development. `uv lock --check` and `uv sync
 continue to work without a Rust compiler.
 
 Locally verified: macOS arm64 release wheel, isolated installation with Cargo and rustc absent
-from PATH, real `erebus-vault` version request, disclosure key generation, MCP entry point.
+from PATH, real `styx-vault` version request, disclosure key generation, MCP entry point.
 Linux x86_64 builds are defined in CI but have not been run locally. macOS x86_64 is an untested build target.
 Linux wheels use the native `linux_x86_64` tag, not an unverified manylinux tag; build-host
 libc compatibility applies. Windows is not supported by this build configuration.

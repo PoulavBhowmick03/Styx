@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use erebus_core::{
+use styx_core::{
     auth::{verify_authorization_signature, Authorization, Role},
     commitment::{commit_agreement, deal_nullifier, CommitmentBlinding},
     deal_state::SignedRevision,
@@ -8,7 +8,7 @@ use erebus_core::{
     settlement::PreparedSettlement,
     terms::AgreementTerms,
 };
-use erebus_journal::{JournalRecord, RecordId};
+use styx_journal::{JournalRecord, RecordId};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -272,9 +272,9 @@ impl State {
             let (terms, blinding) = intent.opening()?;
             if let Some(delegation) = &intent.delegation {
                 let prepared = intent.prepared.as_ref().ok_or(Error::Storage)?;
-                if terms.settlement_mode != erebus_core::terms::SettlementMode::Shielded
+                if terms.settlement_mode != styx_core::terms::SettlementMode::Shielded
                     || delegation.relay_identity == [0; 32]
-                    || delegation.calldata_keccak256 != erebus_core::suite::keccak256(&[prepared])
+                    || delegation.calldata_keccak256 != styx_core::suite::keccak256(&[prepared])
                     || intent.signed_transaction.is_some()
                     || intent.transaction_plan.is_some()
                     || !intent.broadcast_attempts.is_empty()

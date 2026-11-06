@@ -1,4 +1,4 @@
-//! Offchain Eleusis transport for Erebus.
+//! Offchain Eleusis transport for Styx.
 //!
 //! The negotiation graph for a Metropolis deal moves over an authenticated, encrypted channel
 //! between two participants, with no chain transaction. This crate owns that channel:
@@ -15,12 +15,12 @@
 //! - [`negotiation`]: typed price negotiation and the durable boundary before final signatures.
 //! - [`socket`]: bounded descriptor-authenticated TCP delivery.
 //!
-//! The crate is chain-neutral: it depends on `erebus-core` for canonical encoding. Transcript hash
+//! The crate is chain-neutral: it depends on `styx-core` for canonical encoding. Transcript hash
 //! version 1 uses Keccak independently of the selected settlement agreement suite.
 //!
 //! ```text
 //! Cdeal = suite-specific commitment(terms, blinding)
-//! transcript_root = Keccak256("EREBUS_TRANSCRIPT_ROOT_V1" || deal_id || head_buyer || head_seller)
+//! transcript_root = Keccak256("STYX_TRANSCRIPT_ROOT_V1" || deal_id || head_buyer || head_seller)
 //! ```
 #![forbid(unsafe_code)]
 

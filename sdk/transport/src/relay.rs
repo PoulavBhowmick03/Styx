@@ -6,7 +6,7 @@
 //! which is exactly the exposure decision DM2-9 accepts.
 //!
 //! Two implementations are provided. [`FileRelay`] is the durable, self-hostable one, used by the
-//! `erebus-relay` service. [`MemoryRelay`] is an in-process implementation for tests and local
+//! `styx-relay` service. [`MemoryRelay`] is an in-process implementation for tests and local
 //! runs. Both enforce the same limits and the same idempotent `put`.
 
 use std::collections::BTreeMap;
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 
-use erebus_core::auth::Role;
+use styx_core::auth::Role;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +45,7 @@ impl MailboxId {
     pub fn for_session(session_id: &[u8; 32], sender: Role) -> Self {
         use sha3::Digest;
 
-        const DOMAIN: &[u8] = b"EREBUS_RELAY_MAILBOX_V1";
+        const DOMAIN: &[u8] = b"STYX_RELAY_MAILBOX_V1";
         let mut hasher = sha3::Sha3_256::new();
         hasher.update(DOMAIN);
         hasher.update(session_id);

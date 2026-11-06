@@ -1,6 +1,6 @@
 // Drives the real page in headless Chrome against a local chain. Anvil stands in for the wallet by
 // answering the page's EIP-1193 requests, so this covers the UI, not a real wallet extension.
-// Needs anvil, forge, cast, Chrome, and a built erebus-vault. Run: npm run e2e
+// Needs anvil, forge, cast, Chrome, and a built styx-vault. Run: npm run e2e
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
@@ -14,7 +14,7 @@ import { chromium } from "playwright-core";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
-const CLI = join(ROOT, "sdk/evm/target/debug/erebus-vault");
+const CLI = join(ROOT, "sdk/evm/target/debug/styx-vault");
 const WORK = mkdtempSync(join(tmpdir(), "owner-page-e2e-"));
 chmodSync(WORK, 0o700);
 const SHOTS = process.env.E2E_SCREENSHOTS;
@@ -57,7 +57,7 @@ try {
   const contracts = join(ROOT, "contracts/evm");
   const create = (c, ...a) => /Deployed to: (0x[0-9a-fA-F]{40})/.exec(sh("forge", ["create", c, "--broadcast", "--rpc-url", RPC, "--private-key", ownerKey, "--constructor-args", ...a], contracts))[1].toLowerCase();
   const token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC");
-  const vault = create("src/ErebusPolicyVault.sol:ErebusPolicyVault", owner, token);
+  const vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", owner, token);
   const send = (to, sig, ...a) => sh("cast", ["send", to, sig, ...a, "--rpc-url", RPC, "--private-key", ownerKey]);
   const now = Math.floor(Date.now() / 1000);
   send(vault, "configurePolicy(address,uint256,uint256,uint64)", agent, "1000000", "1000000000", String(now + 86400)); // A high daily limit: this test proposes many payments.
@@ -70,8 +70,8 @@ try {
   const cli = (request) => {
     const r = spawnSync(CLI, [], {
       input: JSON.stringify(request), encoding: "utf8",
-      env: { EREBUS_VAULT_CHAIN_ID: "31337", EREBUS_VAULT_RPC_URLS: RPC, EREBUS_VAULT_ADDRESS: vault, EREBUS_VAULT_TOKEN: token,
-        EREBUS_VAULT_STATE_ROOT: join(WORK, "journal"), EREBUS_VAULT_AGENT_KEY_FILE: agentFile },
+      env: { STYX_VAULT_CHAIN_ID: "31337", STYX_VAULT_RPC_URLS: RPC, STYX_VAULT_ADDRESS: vault, STYX_VAULT_TOKEN: token,
+        STYX_VAULT_STATE_ROOT: join(WORK, "journal"), STYX_VAULT_AGENT_KEY_FILE: agentFile },
     });
     return JSON.parse(r.stdout);
   };

@@ -3,7 +3,7 @@ use crate::{
     disclosure::{verify_selected_agreement, SelectedAgreement},
     identity::AuthorizationIdentity,
 };
-use erebus_core::{
+use styx_core::{
     auth::authorization_digest,
     commitment::deal_nullifier,
     ids::{KeyBytes, SignatureBytes},

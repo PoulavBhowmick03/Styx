@@ -17,8 +17,8 @@
 //! participant performs a fresh handshake, which is what makes nonce reuse impossible: a dead
 //! session's send counter is discarded with the process.
 
-use erebus_core::auth::Role;
-use erebus_core::encoding::Writer;
+use styx_core::auth::Role;
+use styx_core::encoding::Writer;
 use snow::params::NoiseParams;
 use snow::{HandshakeState, TransportState};
 

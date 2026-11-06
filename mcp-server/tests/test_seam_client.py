@@ -3,7 +3,7 @@
 This layer converts field names, error codes, and 128-bit integers. A stub binding drives
 shape and translation tests without chain access.
 
-The stub returns trimmed payloads from live ``erebus-cli`` runs on 2026-07-31.
+The stub returns trimmed payloads from live ``styx-cli`` runs on 2026-07-31.
 """
 
 from __future__ import annotations
@@ -12,17 +12,17 @@ import asyncio
 from typing import Any
 
 import pytest
-from erebus import ErebusError as SeamError
+from styx import StyxError as SeamError
 
-from erebus_mcp.interface import (
+from styx_mcp.interface import (
     Consistency,
-    ErebusError,
+    StyxError,
     OfferStatus,
     OfferTerms,
     SettlementErrorCode,
     ViewingKeyGrant,
 )
-from erebus_mcp.seam_client import SeamErebusClient, _translate, _wire_terms
+from styx_mcp.seam_client import SeamStyxClient, _translate, _wire_terms
 
 CHANNEL = "ch_" + "a8" * 32
 OPERATION_ID = "op_" + "ab" * 32
@@ -81,7 +81,7 @@ def test_protocol_4_error_codes_survive_the_python_adapter(code: str) -> None:
 
 def test_offers_map_onto_the_interface_dataclasses() -> None:
     seam = StubSeam(read_channel_state={"channel_id": CHANNEL, "offers": [OFFER], "settled": False})
-    state = run(SeamErebusClient(seam).read_channel_state(CHANNEL))
+    state = run(SeamStyxClient(seam).read_channel_state(CHANNEL))
 
     assert len(state.offers) == 1
     offer = state.offers[0]
@@ -94,20 +94,20 @@ def test_offers_map_onto_the_interface_dataclasses() -> None:
 def test_string_amount_and_memo_hash_decode_to_ints() -> None:
     offer = dict(OFFER, terms={**OFFER["terms"], "amount": "500000000000000000", "memo_hash": "1234"})
     seam = StubSeam(read_channel_state={"channel_id": CHANNEL, "offers": [offer], "settled": False})
-    state = run(SeamErebusClient(seam).read_channel_state(CHANNEL))
+    state = run(SeamStyxClient(seam).read_channel_state(CHANNEL))
 
     assert state.offers[0].terms.amount == 500000000000000000
     assert state.offers[0].terms.memo_hash == 0x1234
 
 
 def test_a_malformed_numeric_field_from_the_cli_is_a_structured_error() -> None:
-    """Not a bare ValueError: every other seam failure surfaces as ErebusError, this
+    """Not a bare ValueError: every other seam failure surfaces as StyxError, this
     should too rather than crashing the tool call outright."""
     offer = dict(OFFER, terms={**OFFER["terms"], "amount": "not-a-number"})
     seam = StubSeam(read_channel_state={"channel_id": CHANNEL, "offers": [offer], "settled": False})
 
-    with pytest.raises(ErebusError) as caught:
-        run(SeamErebusClient(seam).read_channel_state(CHANNEL))
+    with pytest.raises(StyxError) as caught:
+        run(SeamStyxClient(seam).read_channel_state(CHANNEL))
 
     assert caught.value.code is SettlementErrorCode.PROOF_FAILED
     assert caught.value.retryable is False
@@ -115,7 +115,7 @@ def test_a_malformed_numeric_field_from_the_cli_is_a_structured_error() -> None:
 
 def test_balance_amount_strings_map_to_note_denominations() -> None:
     seam = StubSeam(balance={"notes": ["100", "150"], "total": "250", "pending": ["25"]})
-    balance = run(SeamErebusClient(seam).note_balance())
+    balance = run(SeamStyxClient(seam).note_balance())
 
     assert balance.spendable == [100, 150]
     assert balance.pending == [25]
@@ -136,7 +136,7 @@ def test_read_channel_state_carries_protocol_4_settlement_records() -> None:
             ],
         }
     )
-    state = run(SeamErebusClient(seam).read_channel_state(CHANNEL))
+    state = run(SeamStyxClient(seam).read_channel_state(CHANNEL))
 
     assert len(state.settlements) == 1
     assert state.settlements[0].agreed_amount == 7
@@ -154,7 +154,7 @@ def test_accept_and_settle_parses_selected_input_and_change() -> None:
         }
     )
     receipt = run(
-        SeamErebusClient(seam).accept_and_settle(
+        SeamStyxClient(seam).accept_and_settle(
             OPERATION_ID, CHANNEL, f"{CHANNEL}:them:0"
         )
     )
@@ -173,7 +173,7 @@ def test_accept_and_settle_leaves_missing_change_fields_as_none() -> None:
         }
     )
     receipt = run(
-        SeamErebusClient(seam).accept_and_settle(
+        SeamStyxClient(seam).accept_and_settle(
             OPERATION_ID, CHANNEL, f"{CHANNEL}:them:0"
         )
     )
@@ -194,7 +194,7 @@ def test_deal_grant_arguments_and_capsule_pass_through_unchanged() -> None:
         }
     )
     grant = run(
-        SeamErebusClient(seam).grant_viewing_key(
+        SeamStyxClient(seam).grant_viewing_key(
             CHANNEL, "18446744073709551615", "0xa0d17", 1_800_000_000
         )
     )
@@ -225,7 +225,7 @@ def test_reveal_reconstructs_the_settlement() -> None:
         }
     )
     grant = ViewingKeyGrant(channel_id=CHANNEL, grantee="0xa0d17", viewing_key="vk_opaque")
-    record = run(SeamErebusClient(seam).reveal(grant))
+    record = run(SeamStyxClient(seam).reveal(grant))
 
     assert record.participants == ["0xa11ce", "0xb0b"]
     assert record.settlement is not None
@@ -251,7 +251,7 @@ def test_settlement_amounts_arrive_as_strings_above_the_json_number_range() -> N
         }
     )
     grant = ViewingKeyGrant(channel_id=CHANNEL, grantee="0x0", viewing_key="vk")
-    record = run(SeamErebusClient(seam).reveal(grant))
+    record = run(SeamStyxClient(seam).reveal(grant))
 
     assert record.settlement is not None
     assert record.settlement.agreed_amount == huge
@@ -270,7 +270,7 @@ def test_an_absent_payment_note_is_not_a_zero_payment() -> None:
         }
     )
     grant = ViewingKeyGrant(channel_id=CHANNEL, grantee="0x0", viewing_key="vk")
-    record = run(SeamErebusClient(seam).reveal(grant))
+    record = run(SeamStyxClient(seam).reveal(grant))
 
     assert record.settlement is not None
     assert record.settlement.paid_amount is None
@@ -292,7 +292,7 @@ def test_a_disagreeing_settlement_is_reported_not_hidden() -> None:
         }
     )
     grant = ViewingKeyGrant(channel_id=CHANNEL, grantee="0x0", viewing_key="vk")
-    record = run(SeamErebusClient(seam).reveal(grant))
+    record = run(SeamStyxClient(seam).reveal(grant))
 
     assert record.settlement is not None
     assert record.settlement.consistency() is Consistency.INCONSISTENT
@@ -303,8 +303,8 @@ def test_seam_errors_become_interface_errors() -> None:
         accept_and_settle=SeamError(code="ALREADY_SETTLED", message="terminal", retryable=False)
     )
 
-    with pytest.raises(ErebusError) as caught:
-        run(SeamErebusClient(seam).accept_and_settle(OPERATION_ID, CHANNEL, "x"))
+    with pytest.raises(StyxError) as caught:
+        run(SeamStyxClient(seam).accept_and_settle(OPERATION_ID, CHANNEL, "x"))
 
     assert caught.value.code is SettlementErrorCode.ALREADY_SETTLED
     assert caught.value.retryable is False
@@ -318,8 +318,8 @@ def test_an_unknown_code_degrades_instead_of_crashing() -> None:
         open_channel=SeamError(code="SOMETHING_NEW", message="from a newer cli", retryable=True)
     )
 
-    with pytest.raises(ErebusError) as caught:
-        run(SeamErebusClient(seam).open_channel(OPERATION_ID, "0xb0b"))
+    with pytest.raises(StyxError) as caught:
+        run(SeamStyxClient(seam).open_channel(OPERATION_ID, "0xb0b"))
 
     assert caught.value.code is SettlementErrorCode.PROOF_FAILED
     assert caught.value.retryable is True
@@ -341,7 +341,7 @@ def test_the_grant_is_passed_through_without_reshaping() -> None:
     file a second opinion on it, and a wrong one the day the format changes."""
     seam = StubSeam(reveal={"channel_id": CHANNEL, "participants": [], "offers": []})
     grant = ViewingKeyGrant(channel_id=CHANNEL, grantee="0xa0d17", viewing_key="vk_opaque")
-    run(SeamErebusClient(seam).reveal(grant))
+    run(SeamStyxClient(seam).reveal(grant))
 
     _, args = seam.calls[0]
     assert args[0] == {

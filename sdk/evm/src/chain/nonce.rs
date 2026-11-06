@@ -7,8 +7,8 @@ use super::observation::FinalizedNonce;
 use super::{settlement_calldata, Eip1559Fees, SigningPlan, TransactionParams};
 use crate::{deployment::EvmDeployment, error::EvmError};
 use alloy::primitives::keccak256;
-use erebus_core::settlement::PreparedSettlement;
-use erebus_journal::{FaultHook, JournalRecord, NoFaults, RecordId, Store};
+use styx_core::settlement::PreparedSettlement;
+use styx_journal::{FaultHook, JournalRecord, NoFaults, RecordId, Store};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
 
@@ -155,7 +155,7 @@ impl SignerJournal {
                 claim: None,
             };
             this.store
-                .write_blob_then_record::<erebus_journal::StoreError<AccountId>>(
+                .write_blob_then_record::<styx_journal::StoreError<AccountId>>(
                     &mut state,
                     0,
                     this.id.0.as_bytes(),

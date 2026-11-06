@@ -16,32 +16,32 @@ fn run_with_verification(
     extra: &[(&str, &str)],
     verification: Option<&str>,
 ) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_erebus-tx-relayer"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_styx-tx-relayer"));
     if serve {
         command.arg("--serve");
     }
     command
         .env_clear()
-        .env("EREBUS_RELAYER_NAMESPACE", "eip155:31337")
+        .env("STYX_RELAYER_NAMESPACE", "eip155:31337")
         .env(
-            "EREBUS_RELAYER_SETTLEMENT",
+            "STYX_RELAYER_SETTLEMENT",
             format!("0x{}", "11".repeat(20)),
         )
-        .env("EREBUS_RELAYER_VERIFIER_VERSION", "1")
-        .env("EREBUS_RELAYER_KEY", "01".repeat(32))
+        .env("STYX_RELAYER_VERIFIER_VERSION", "1")
+        .env("STYX_RELAYER_KEY", "01".repeat(32))
         .env(
-            "EREBUS_RELAYER_FEE_RECIPIENT",
+            "STYX_RELAYER_FEE_RECIPIENT",
             format!("0x{}", "22".repeat(20)),
         )
-        .env("EREBUS_RELAYER_FEES", format!("0x{}=1", "33".repeat(20)))
-        .env("EREBUS_RELAYER_RPC_URLS", "http://127.0.0.1:9")
-        .env("EREBUS_RELAYER_MAX_REQUESTS", "1")
-        .env("EREBUS_RELAYER_WINDOW_SECONDS", "3600")
+        .env("STYX_RELAYER_FEES", format!("0x{}=1", "33".repeat(20)))
+        .env("STYX_RELAYER_RPC_URLS", "http://127.0.0.1:9")
+        .env("STYX_RELAYER_MAX_REQUESTS", "1")
+        .env("STYX_RELAYER_WINDOW_SECONDS", "3600")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(url) = verification {
-        command.env("EREBUS_RELAYER_VERIFICATION_RPC_URL", url);
+        command.env("STYX_RELAYER_VERIFICATION_RPC_URL", url);
     }
     for (name, value) in extra {
         command.env(name, value);
@@ -89,7 +89,7 @@ fn relay_refuses_to_send_without_durable_recovery_state() {
 
 #[test]
 fn oversized_frame_is_rejected_before_json_parsing() {
-    let input = vec![b' '; 2 * erebus_evm::relay::MAX_RELAY_EVIDENCE_BYTES + 4097];
+    let input = vec![b' '; 2 * styx_evm::relay::MAX_RELAY_EVIDENCE_BYTES + 4097];
     let output = run(&input, true);
     assert!(!output.status.success());
     let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -104,11 +104,11 @@ fn configured_durable_requests_reject_bad_evidence_before_creating_state() {
         b"{\"method\":\"relay\",\"evidence\":\"00\"}\n{\"method\":\"recover\",\"evidence\":\"00\"}\n",
         true,
         &[
-            ("EREBUS_RELAYER_STATE_ROOT", state.to_str().unwrap()),
-            ("EREBUS_RELAYER_MAX_FEE_PER_GAS", "2000000000"),
-            ("EREBUS_RELAYER_PRIORITY_FEE_PER_GAS", "1000000000"),
-            ("EREBUS_RELAYER_GAS_LIMIT", "1000000"),
-            ("EREBUS_RELAYER_MAX_REQUESTS", "2"),
+            ("STYX_RELAYER_STATE_ROOT", state.to_str().unwrap()),
+            ("STYX_RELAYER_MAX_FEE_PER_GAS", "2000000000"),
+            ("STYX_RELAYER_PRIORITY_FEE_PER_GAS", "1000000000"),
+            ("STYX_RELAYER_GAS_LIMIT", "1000000"),
+            ("STYX_RELAYER_MAX_REQUESTS", "2"),
         ],
     );
     assert!(output.status.success());
@@ -132,13 +132,13 @@ fn persistent_submission_requires_explicit_gas_caps() {
     let output = run_with_config(
         b"{\"method\":\"health\"}",
         false,
-        &[("EREBUS_RELAYER_STATE_ROOT", state.to_str().unwrap())],
+        &[("STYX_RELAYER_STATE_ROOT", state.to_str().unwrap())],
     );
     assert!(!output.status.success());
     let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         response["error"],
-        "EREBUS_RELAYER_MAX_FEE_PER_GAS is not set"
+        "STYX_RELAYER_MAX_FEE_PER_GAS is not set"
     );
     assert!(!state.exists());
 }
@@ -148,10 +148,10 @@ fn durable_relayer_requires_a_distinct_second_rpc_without_creating_state() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("not-created");
     let config = [
-        ("EREBUS_RELAYER_STATE_ROOT", state.to_str().unwrap()),
-        ("EREBUS_RELAYER_MAX_FEE_PER_GAS", "2000000000"),
-        ("EREBUS_RELAYER_PRIORITY_FEE_PER_GAS", "1000000000"),
-        ("EREBUS_RELAYER_GAS_LIMIT", "1000000"),
+        ("STYX_RELAYER_STATE_ROOT", state.to_str().unwrap()),
+        ("STYX_RELAYER_MAX_FEE_PER_GAS", "2000000000"),
+        ("STYX_RELAYER_PRIORITY_FEE_PER_GAS", "1000000000"),
+        ("STYX_RELAYER_GAS_LIMIT", "1000000"),
     ];
     for endpoint in [
         None,
@@ -165,7 +165,7 @@ fn durable_relayer_requires_a_distinct_second_rpc_without_creating_state() {
         assert_eq!(
             response["error"],
             if endpoint.is_none() {
-                "EREBUS_RELAYER_VERIFICATION_RPC_URL is not set"
+                "STYX_RELAYER_VERIFICATION_RPC_URL is not set"
             } else {
                 "invalid durable relayer configuration"
             }

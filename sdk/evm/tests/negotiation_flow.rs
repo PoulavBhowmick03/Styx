@@ -12,8 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use erebus_coordinator::Coordinator;
-use erebus_core::{
+use styx_coordinator::Coordinator;
+use styx_core::{
     auth::{authorization_digest, Authorization, Role},
     commitment::{CommitmentBlinding, DealCommitment},
     ids::{BaseUnits, SignatureBytes},
@@ -21,8 +21,8 @@ use erebus_core::{
     settlement::{BackendCapabilities, SettlementContext},
     terms::AgreementTerms,
 };
-use erebus_journal::{JournalRecord, RecordId, Store};
-use erebus_transport::{
+use styx_journal::{JournalRecord, RecordId, Store};
+use styx_transport::{
     descriptor::{Directory, ServiceDescriptor, MODE_PUBLIC_BOUND},
     disclosure::{verify_selected_agreement, DisclosureGrant, SelectedAgreement},
     hashing::TRANSCRIPT_HASH_VERSION,
@@ -126,10 +126,10 @@ fn worker(root: &Path, role: &str, phase: &str, address: &str) -> Worker {
                 "subprocess_agent_worker",
                 "--nocapture",
             ])
-            .env("EREBUS_M8_NEGOTIATION_ROOT", root)
-            .env("EREBUS_M8_NEGOTIATION_ROLE", role)
-            .env("EREBUS_M8_NEGOTIATION_PHASE", phase)
-            .env("EREBUS_M8_NEGOTIATION_ADDRESS", address)
+            .env("STYX_M8_NEGOTIATION_ROOT", root)
+            .env("STYX_M8_NEGOTIATION_ROLE", role)
+            .env("STYX_M8_NEGOTIATION_PHASE", phase)
+            .env("STYX_M8_NEGOTIATION_ADDRESS", address)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
@@ -305,11 +305,11 @@ fn persist_auth(journal: &Store<AuthRecord>, authorization: &Authorization) -> R
 #[test]
 #[ignore = "invoked by process-level negotiation test"]
 fn subprocess_agent_worker() {
-    let Some(root) = std::env::var_os("EREBUS_M8_NEGOTIATION_ROOT") else {
+    let Some(root) = std::env::var_os("STYX_M8_NEGOTIATION_ROOT") else {
         return;
     };
     let root = PathBuf::from(root);
-    let role_text = std::env::var("EREBUS_M8_NEGOTIATION_ROLE").unwrap();
+    let role_text = std::env::var("STYX_M8_NEGOTIATION_ROLE").unwrap();
     if role_text == "auditor" {
         let identity = DisclosureIdentity::load(root.join("auditor.key")).unwrap();
         let grant = DisclosureGrant::load_backup(root.join("deal.grant")).unwrap();
@@ -326,8 +326,8 @@ fn subprocess_agent_worker() {
         assert_eq!(role_text, "seller");
         Role::Seller
     };
-    let phase = std::env::var("EREBUS_M8_NEGOTIATION_PHASE").unwrap();
-    let address = std::env::var("EREBUS_M8_NEGOTIATION_ADDRESS").unwrap();
+    let phase = std::env::var("STYX_M8_NEGOTIATION_PHASE").unwrap();
+    let address = std::env::var("STYX_M8_NEGOTIATION_ADDRESS").unwrap();
     let local = root.join(role_text);
     let key =
         AuthorizationIdentity::from_bytes(&fs::read(local.join("authorization.key")).unwrap())

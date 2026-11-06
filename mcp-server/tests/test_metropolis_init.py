@@ -2,7 +2,7 @@
 
 import pytest
 
-from erebus_mcp.onboarding import init_main
+from styx_mcp.onboarding import init_main
 
 
 def test_metropolis_help(capsys):
@@ -16,7 +16,7 @@ def test_metropolis_help(capsys):
 
 
 def test_default_init_still_uses_starknet(monkeypatch):
-    from erebus_mcp import setup
+    from styx_mcp import setup
 
     seen = []
     monkeypatch.setattr(setup, "main", lambda argv: seen.append(argv) or 0)
@@ -25,7 +25,7 @@ def test_default_init_still_uses_starknet(monkeypatch):
 
 
 def test_metropolis_arguments_are_forwarded_without_changing_input(monkeypatch):
-    from erebus_mcp.metropolis_setup import operator_init
+    from styx_mcp.metropolis_setup import operator_init
 
     seen = []
     monkeypatch.setattr(operator_init, "main", lambda argv: seen.append(argv) or 0)
@@ -36,7 +36,7 @@ def test_metropolis_arguments_are_forwarded_without_changing_input(monkeypatch):
 
 
 def test_packaged_helpers_load():
-    from erebus_mcp.metropolis_setup import operator_init
+    from styx_mcp.metropolis_setup import operator_init
 
     assert operator_init.load("disclosure_config").PINS
     assert callable(operator_init.load("stage_artifacts").deployment_identity)

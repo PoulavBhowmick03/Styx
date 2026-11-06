@@ -11,13 +11,13 @@ use alloy::primitives::{keccak256, Address, Bytes, B256, U64};
 use alloy::providers::Provider;
 use alloy::rpc::json_rpc::{RpcRecv, RpcSend};
 use alloy::rpc::types::{Log, Transaction};
-use erebus_core::auth::{verify_authorization_signature, Authorization, Role};
-use erebus_core::commitment::{
+use styx_core::auth::{verify_authorization_signature, Authorization, Role};
+use styx_core::commitment::{
     commit_agreement, deal_nullifier, CommitmentBlinding, DealNullifier,
 };
-use erebus_core::deal_state::{DealEvidence, DealReads, WinningSettlement};
-use erebus_core::ids::{BaseUnits, SignatureBytes};
-use erebus_core::terms::AgreementTerms;
+use styx_core::deal_state::{DealEvidence, DealReads, WinningSettlement};
+use styx_core::ids::{BaseUnits, SignatureBytes};
+use styx_core::terms::AgreementTerms;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -1053,7 +1053,7 @@ impl EvmChain {
         tx: &Transaction,
         block: &Block,
         nullifier: &DealNullifier,
-    ) -> Result<(erebus_core::commitment::DealCommitment, u128, u128), EvmError> {
+    ) -> Result<(styx_core::commitment::DealCommitment, u128, u128), EvmError> {
         if tx.to() != Some(Address::from(self.deployment.settlement_contract))
             || !tx.value().is_zero()
         {

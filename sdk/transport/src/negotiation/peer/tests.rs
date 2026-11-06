@@ -5,7 +5,7 @@ use crate::{
     negotiation::tests::{proposal, signed},
     store::FileTranscriptStore,
 };
-use erebus_core::{ids::KeyBytes, terms::Guarantee};
+use styx_core::{ids::KeyBytes, terms::Guarantee};
 use std::{
     net::{TcpListener, TcpStream},
     thread,
@@ -136,7 +136,7 @@ fn synchronization_rejects_unbounded_counts_and_closes_the_connection() {
         .propose(buyer.store.initial.terms().amount, NOW)
         .unwrap();
     seller.receive(NOW).unwrap();
-    let mut writer = erebus_core::encoding::Writer::new();
+    let mut writer = styx_core::encoding::Writer::new();
     writer.u64(MAX_MESSAGES_PER_DEAL as u64 + 1);
     seller.send_control(6, &writer.finish()).unwrap();
     assert!(matches!(buyer.synchronize(NOW), Err(PeerError::Binding)));
@@ -335,7 +335,7 @@ fn a_descriptor_signed_substituted_shielded_key_is_rejected_before_negotiation()
             NOW,
         )
     });
-    let mut body = erebus_core::encoding::Writer::new();
+    let mut body = styx_core::encoding::Writer::new();
     body.u16(1);
     body.u8(4);
     body.bytes(&substituted.encode().unwrap());

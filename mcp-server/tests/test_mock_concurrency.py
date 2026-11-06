@@ -1,10 +1,10 @@
-"""Concurrent writers against `MockErebusClient`'s shared JSON store.
+"""Concurrent writers against `MockStyxClient`'s shared JSON store.
 
 Roadmap §5.3 flags this as unproven: two agents are two separate MCP server subprocesses,
-each with its own `MockErebusClient` instance, both pointed at the same store file. Nothing
+each with its own `MockStyxClient` instance, both pointed at the same store file. Nothing
 before this file exercised two writers overlapping on purpose, so the read-modify-write race
 the mock's own docstring warns about had never actually been reproduced or fixed. It is
-fixed now with a cross-process `flock` (see `MockErebusClient._locked_store`); these tests
+fixed now with a cross-process `flock` (see `MockStyxClient._locked_store`); these tests
 prove the fix rather than just documenting the intent.
 
 **Why real threads, not `asyncio.gather`.** A first version of this file used
@@ -16,7 +16,7 @@ threads (matching the genuine OS processes two agents' servers actually are) can
 worker below gets its own thread and its own event loop via `asyncio.run`, which is what
 turns "the lock exists" into "the lock is load-bearing".
 
-Everything here talks to `MockErebusClient` directly, the same way `test_spending.py` drives
+Everything here talks to `MockStyxClient` directly, the same way `test_spending.py` drives
 `SpendGuard` directly with a `ThreadPoolExecutor`, rather than through a spawned MCP server:
 the race lives in the store file, not in the transport, so a unit-level test reproduces it
 faster and just as truly.
@@ -28,8 +28,8 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from erebus_mcp.interface import OfferTerms
-from erebus_mcp.mock_client import MockErebusClient
+from styx_mcp.interface import OfferTerms
+from styx_mcp.mock_client import MockStyxClient
 
 TERMS = OfferTerms(amount=10, token="0xtoken", deadline=9_999_999_999, memo_hash=0)
 
@@ -38,8 +38,8 @@ TERMS = OfferTerms(amount=10, token="0xtoken", deadline=9_999_999_999, memo_hash
 CONCURRENT_CALLS = 40
 
 
-def _client(store_path: Path, identity: str) -> MockErebusClient:
-    return MockErebusClient(identity=identity, store_path=store_path, latency_seconds=0.0)
+def _client(store_path: Path, identity: str) -> MockStyxClient:
+    return MockStyxClient(identity=identity, store_path=store_path, latency_seconds=0.0)
 
 
 def _run_in_thread(coro_factory):

@@ -2,12 +2,12 @@
 
 pub mod cli;
 
-use erebus_core::deal_state::{DealEvidence, DealReads};
-use erebus_core::terms::SettlementMode;
-use erebus_transport::disclosure::{
+use styx_core::deal_state::{DealEvidence, DealReads};
+use styx_core::terms::SettlementMode;
+use styx_transport::disclosure::{
     DisclosureGrant, GrantError, SelectedAgreement, VerifiedAgreement,
 };
-use erebus_transport::identity::DisclosureIdentity;
+use styx_transport::identity::DisclosureIdentity;
 
 use crate::chain::{EvmChain, HistoricalObservation, ObservationJournal, ObservationLimits};
 use crate::error::EvmError;

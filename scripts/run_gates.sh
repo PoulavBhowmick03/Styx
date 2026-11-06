@@ -2,23 +2,23 @@
 # Runs the demo end to end against a deployed, funded vault: routine payment, attacks, owner exception,
 # replay, then the reviewer. The same script runs locally (scripts/local_demo.sh) and on Arc.
 #
-# Needs EREBUS_VAULT_CHAIN_ID, EREBUS_VAULT_RPC_URLS, EREBUS_VAULT_ADDRESS, EREBUS_VAULT_TOKEN and
-# EREBUS_VAULT_AGENT_KEY_FILE, plus VENDOR_A, VENDOR_B (both allowlisted) and ISSUER_KEY_FILE
+# Needs STYX_VAULT_CHAIN_ID, STYX_VAULT_RPC_URLS, STYX_VAULT_ADDRESS, STYX_VAULT_TOKEN and
+# STYX_VAULT_AGENT_KEY_FILE, plus VENDOR_A, VENDOR_B (both allowlisted) and ISSUER_KEY_FILE
 # (owner-only, 32 raw bytes). Optional: REVIEWER_RPC_URL, OUT (default ./gate-run).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-: "${EREBUS_VAULT_CHAIN_ID:?}" "${EREBUS_VAULT_RPC_URLS:?}" "${EREBUS_VAULT_ADDRESS:?}" "${EREBUS_VAULT_TOKEN:?}"
-: "${EREBUS_VAULT_AGENT_KEY_FILE:?}" "${VENDOR_A:?}" "${VENDOR_B:?}" "${ISSUER_KEY_FILE:?}"
-VAULT_BIN="${VAULT_BIN:-$ROOT/sdk/evm/target/debug/erebus-vault}"
-DISCLOSURE_BIN="${DISCLOSURE_BIN:-$ROOT/sdk/evm/target/debug/erebus-disclosure}"
+: "${STYX_VAULT_CHAIN_ID:?}" "${STYX_VAULT_RPC_URLS:?}" "${STYX_VAULT_ADDRESS:?}" "${STYX_VAULT_TOKEN:?}"
+: "${STYX_VAULT_AGENT_KEY_FILE:?}" "${VENDOR_A:?}" "${VENDOR_B:?}" "${ISSUER_KEY_FILE:?}"
+VAULT_BIN="${VAULT_BIN:-$ROOT/sdk/evm/target/debug/styx-vault}"
+DISCLOSURE_BIN="${DISCLOSURE_BIN:-$ROOT/sdk/evm/target/debug/styx-disclosure}"
 OUT="${OUT:-$PWD/gate-run}"
-FIRST_RPC="${EREBUS_VAULT_RPC_URLS%%,*}"
+FIRST_RPC="${STYX_VAULT_RPC_URLS%%,*}"
 REVIEWER_RPC_URL="${REVIEWER_RPC_URL:-$FIRST_RPC}"
 WAIT_SECONDS="${WAIT_SECONDS:-900}"
 mkdir -p "$OUT"; chmod 700 "$OUT"
 OUT="$(cd "$OUT" && pwd -P)"
-export EREBUS_VAULT_STATE_ROOT="${EREBUS_VAULT_STATE_ROOT:-$OUT/journal}"
+export STYX_VAULT_STATE_ROOT="${STYX_VAULT_STATE_ROOT:-$OUT/journal}"
 LOG="$OUT/results.txt"
 [ -n "${RESUME_EXCEPTION:-}" ] || : > "$LOG"
 
@@ -29,13 +29,13 @@ vault() { "$VAULT_BIN" <<<"$1" || true; }
 disclosure() { env -i "$DISCLOSURE_BIN" <<<"$1" || true; }
 get() { python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get(sys.argv[2],""))' "$1" "$2"; }
 now() { date +%s; }
-usdc() { cast call "$EREBUS_VAULT_TOKEN" 'balanceOf(address)(uint256)' "$1" --rpc-url "$FIRST_RPC" | awk '{print $1}'; }
-balances() { say "balances (base units): vault $(usdc "$EREBUS_VAULT_ADDRESS"), vendor A $(usdc "$VENDOR_A"), vendor B $(usdc "$VENDOR_B")"; }
+usdc() { cast call "$STYX_VAULT_TOKEN" 'balanceOf(address)(uint256)' "$1" --rpc-url "$FIRST_RPC" | awk '{print $1}'; }
+balances() { say "balances (base units): vault $(usdc "$STYX_VAULT_ADDRESS"), vendor A $(usdc "$VENDOR_A"), vendor B $(usdc "$VENDOR_B")"; }
 
 step "Preflight"
-[ "$(cast chain-id --rpc-url "$FIRST_RPC")" = "$EREBUS_VAULT_CHAIN_ID" ] || die "the RPC serves another chain"
-AGENT="$(cast wallet address --private-key "$(tr -d '[:space:]' <"$EREBUS_VAULT_AGENT_KEY_FILE")")"
-say "vault $EREBUS_VAULT_ADDRESS, agent $AGENT, agent gas balance $(cast balance "$AGENT" --rpc-url "$FIRST_RPC") wei"
+[ "$(cast chain-id --rpc-url "$FIRST_RPC")" = "$STYX_VAULT_CHAIN_ID" ] || die "the RPC serves another chain"
+AGENT="$(cast wallet address --private-key "$(tr -d '[:space:]' <"$STYX_VAULT_AGENT_KEY_FILE")")"
+say "vault $STYX_VAULT_ADDRESS, agent $AGENT, agent gas balance $(cast balance "$AGENT" --rpc-url "$FIRST_RPC") wei"
 balances
 
 printf 'routine invoice: 0.25 USDC\n' > "$OUT/routine-invoice.txt"
@@ -75,7 +75,7 @@ for _ in $(seq 1 "$WAIT_SECONDS"); do [ -s "$OWNER_SIGNATURE_FILE" ] && break; s
 say "owner signature received"
 fi
 
-export RPC_URL="$FIRST_RPC" VAULT="$EREBUS_VAULT_ADDRESS" AGENT_KEY_FILE="$EREBUS_VAULT_AGENT_KEY_FILE" VENDOR_B
+export RPC_URL="$FIRST_RPC" VAULT="$STYX_VAULT_ADDRESS" AGENT_KEY_FILE="$STYX_VAULT_AGENT_KEY_FILE" VENDOR_B
 ALREADY="$(get "$(vault "{\"method\":\"status\",\"payment_id\":\"$EXCEPTION\"}")" state)"
 if [ "$ALREADY" = settled ]; then
   say "the exception already settled, so the earlier attacks are not repeated"
@@ -107,9 +107,9 @@ EXPIRES=$(( $(now) + 86400 ))
 ISSUED="$(disclosure "{\"method\":\"export_vault_payment\",\"record_file\":\"$OUT/exception.record\",\"issuer_key_file\":\"$ISSUER_KEY_FILE\",\"recipient_public_key\":\"$PUBLIC\",\"grant_file\":\"$OUT/exception.grant\",\"expires_at\":$EXPIRES}")"
 ISSUER="$(get "$ISSUED" issuer)"; [ -n "$ISSUER" ] || die "export failed: $ISSUED"
 disclosure "{\"method\":\"export_vault_payment\",\"record_file\":\"$OUT/routine.record\",\"issuer_key_file\":\"$ISSUER_KEY_FILE\",\"recipient_public_key\":\"$OTHER\",\"grant_file\":\"$OUT/routine.grant\",\"expires_at\":$EXPIRES}" >/dev/null
-CODE_HASH="$(cast keccak "$(cast code "$EREBUS_VAULT_ADDRESS" --rpc-url "$REVIEWER_RPC_URL")")"
-VAULT_LOWER="$(printf '%s' "$EREBUS_VAULT_ADDRESS" | tr 'A-F' 'a-f')"
-pins() { printf '{"chain_id":%s,"rpc_urls":["%s"],"vault":"%s","vault_code_hash":"%s"}' "$EREBUS_VAULT_CHAIN_ID" "$1" "$VAULT_LOWER" "$CODE_HASH"; }
+CODE_HASH="$(cast keccak "$(cast code "$STYX_VAULT_ADDRESS" --rpc-url "$REVIEWER_RPC_URL")")"
+VAULT_LOWER="$(printf '%s' "$STYX_VAULT_ADDRESS" | tr 'A-F' 'a-f')"
+pins() { printf '{"chain_id":%s,"rpc_urls":["%s"],"vault":"%s","vault_code_hash":"%s"}' "$STYX_VAULT_CHAIN_ID" "$1" "$VAULT_LOWER" "$CODE_HASH"; }
 verify() { disclosure "{\"method\":\"verify_vault_payment\",\"grant_file\":\"$1\",\"key_file\":\"$OUT/reviewer/key\",\"expected_issuer\":\"$ISSUER\",\"deployment\":$(pins "$2"),\"opened_file\":${3:-null}}"; }
 report() { python3 -c '
 import json,sys

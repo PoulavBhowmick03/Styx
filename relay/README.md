@@ -28,7 +28,7 @@ npm start
 
 Optional: `RELAY_PORT`, `RELAY_HOST`, `RELAY_MAX_ALERTS_PER_HOUR` (10), `RELAY_MAX_REQUESTS` (200), `RELAY_WATCHER_TOKEN`.
 
-Give the agent's MCP server the relay with `EREBUS_VAULT_RELAY_URL` and `EREBUS_VAULT_RELAY_TOKEN`, the latter set to `RELAY_AGENT_TOKEN`. `erebus_request_owner_approval` then alerts the owner and reports `owner_alerted`. Asking again retries a failed alert. `erebus_check_owner_approval` reports `pending`, `expired` or `signed`, and when signed it returns the `signature_name` to pass to `erebus_submit_payment`.
+Give the agent's MCP server the relay with `STYX_VAULT_RELAY_URL` and `STYX_VAULT_RELAY_TOKEN`, the latter set to `RELAY_AGENT_TOKEN`. `styx_request_owner_approval` then alerts the owner and reports `owner_alerted`. Asking again retries a failed alert. `styx_check_owner_approval` reports `pending`, `expired` or `signed`, and when signed it returns the `signature_name` to pass to `styx_submit_payment`.
 
 The link opens the owner page with the request loaded. No file is needed. The page reads the owner, token, limits and allowlist from the vault through the wallet, and if it cannot read them the sign button stays hidden. The wallet must be the vault's owner.
 

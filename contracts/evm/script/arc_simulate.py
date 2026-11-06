@@ -86,7 +86,7 @@ def runtime_code(owner: str) -> str:
         # Anvil's first account, read from the node at runtime, signs this local-only deployment.
         sender = json.loads(cast("rpc", "--rpc-url", url, "eth_accounts"))[0]
         out = subprocess.run(
-            ["forge", "create", "src/ErebusPolicyVault.sol:ErebusPolicyVault", "--broadcast", "--rpc-url", url, "--unlocked",
+            ["forge", "create", "src/StyxPolicyVault.sol:StyxPolicyVault", "--broadcast", "--rpc-url", url, "--unlocked",
              "--from", sender, "--constructor-args", owner, USDC],
             cwd=CONTRACTS, capture_output=True, text=True, check=True).stdout
         address = next(line.split()[-1] for line in out.splitlines() if line.startswith("Deployed to:"))
@@ -97,7 +97,7 @@ def runtime_code(owner: str) -> str:
 
 
 def storage_slots() -> dict:
-    out = subprocess.run(["forge", "inspect", "src/ErebusPolicyVault.sol:ErebusPolicyVault", "storageLayout", "--json"],
+    out = subprocess.run(["forge", "inspect", "src/StyxPolicyVault.sol:StyxPolicyVault", "storageLayout", "--json"],
                          cwd=CONTRACTS, capture_output=True, text=True, check=True).stdout
     return {item["label"]: (int(item["slot"]), item["offset"]) for item in json.loads(out)["storage"]}
 
