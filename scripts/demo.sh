@@ -121,7 +121,7 @@ step_attack() {
   stem="${id:2:12}"
   pending="$(ls -t "$STYX_VAULT_DIR"/pending-"$stem"*.json 2>/dev/null | head -1)"
   RPC_URL="$DEMO_RPC" VAULT="$STYX_VAULT_ADDRESS" VENDOR_B="$DEMO_VENDOR_B" AGENT_KEY_FILE="$STYX_VAULT_AGENT_KEY_FILE" \
-    PENDING_FILE="$pending" OWNER_SIGNATURE_FILE="$STYX_VAULT_DIR/signature-$stem.json" ATTACKS="${DEMO_ATTACKS:-A1 A4}" \
+    PENDING_FILE="$pending" OWNER_SIGNATURE_FILE="$STYX_VAULT_DIR/signature-$stem.json" ATTACKS="${DEMO_ATTACKS:-A5 A1 A4}" \
     bash "$ROOT/contracts/evm/script/attacks_v2.sh" | while read -r verdict label; do
       case "$verdict" in
         PASS) good "${label%%:*}"; info "$EXPLORER/tx/${label##*: }" ;;

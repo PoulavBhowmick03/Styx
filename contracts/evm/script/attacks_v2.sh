@@ -4,7 +4,7 @@
 # Needs from the environment, never from this repo:
 #   RPC_URL, VAULT, VENDOR_B (an allowlisted recipient other than the approved one),
 #   AGENT_KEY_FILE, PENDING_FILE and OWNER_SIGNATURE_FILE (the settled exception's files)
-# Optional: ATTACKS, a list such as "A1 A4", to run only those. The default is all four.
+# Optional: ATTACKS, a list such as "A1 A4", to run only those. The default is all six.
 set -euo pipefail
 : "${RPC_URL:?}" "${VAULT:?}" "${VENDOR_B:?}" "${AGENT_KEY_FILE:?}" "${PENDING_FILE:?}" "${OWNER_SIGNATURE_FILE:?}"
 
@@ -44,7 +44,7 @@ vendor_b_version="$(cast call "$VAULT" 'recipientVersion(address)(uint256)' "$VE
 fresh="$(cast keccak "attack-v2-$(date +%s)")"
 agent="$(cast wallet address --private-key "$agent_key")"
 
-want() { [[ " ${ATTACKS:-A1 A2 A3 A4} " == *" $1 "* ]]; }
+want() { [[ " ${ATTACKS:-A1 A2 A3 A4 A5 A6} " == *" $1 "* ]]; }
 
 # A1: the agent pays the exception amount directly, skipping every tool.
 want A1 && expect_revert "A1 over the agent's per-payment limit" "$PAY" "$(payment "$fresh" "$vendor_a" "$amount" "$version")"
@@ -55,4 +55,8 @@ expect_revert "A2 the agent is not an approver" "$PAY_EXCEPTION" "$(payment "$fr
 want A3 && expect_revert "A3 signature does not cover this payment" "$PAY_EXCEPTION" "$(payment "$fresh" "$VENDOR_B" "$amount" "$vendor_b_version")" "$(authorization "$signer")" "$signature"
 # A4: the settled exception again, with the approver's real signature.
 want A4 && expect_revert "A4 payment ID already used" "$PAY_EXCEPTION" "$(payment "$id" "$vendor_a" "$amount" "$version")" "$(authorization "$signer")" "$signature"
+# A5: the agent raises its own limits, the move a blocked agent makes when the cap sits where it can reach.
+want A5 && expect_revert "A5 the agent raising its own limit" 'configureAgent(address,uint256,uint256,uint64,bool)' "$agent" 1000000000000 1000000000000 "$(( $(date +%s) + 86400 ))" true
+# A6: the agent names itself an approver, so it could sign its own exceptions.
+want A6 && expect_revert "A6 the agent making itself an approver" 'setApprover(address,bool)' "$agent" true
 exit 0
