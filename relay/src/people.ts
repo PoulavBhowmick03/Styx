@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { getAddress, isAddress, recoverMessageAddress, type Address, type Hex } from "viem";
 
-import { linkMessage, MESSAGE_LIFETIME_SECONDS, registerMessage } from "../../owner-page/src/messages";
+import { claimMessage, linkMessage, MESSAGE_LIFETIME_SECONDS, registerMessage } from "../../owner-page/src/messages";
 import { RelayError } from "./errors";
 
 export interface ChainReader {
@@ -29,6 +29,8 @@ interface Options {
   chainId: bigint;
   token: Address;
   botUsername: string;
+  /** The approval page, for the bot's connect button. */
+  pageUrl: string;
   stateDir?: string;
   now?: () => number;
   maxAgents?: number;
@@ -50,6 +52,7 @@ function signature(value: unknown): Hex {
 export class People {
   private readonly chats = new Map<Address, string>();
   private readonly codes = new Map<string, { wallet: Address; expiresAt: number }>();
+  private readonly chatCodes = new Map<string, { chatId: string; telegram: string; expiresAt: number }>();
   private readonly agents = new Map<string, RegisteredAgent>();
   private chain: ChainReader;
   private readonly now: () => number;
@@ -126,6 +129,43 @@ export class People {
     return entry.wallet;
   }
 
+  /** The bot's side: someone pressed Start, so this chat gets a one-time connect link. */
+  codeForChat(chatId: string, telegram: string): string {
+    for (const [code, entry] of this.chatCodes) if (entry.expiresAt <= this.now() || entry.chatId === chatId) this.chatCodes.delete(code);
+    if (this.chatCodes.size >= (this.options.maxPendingLinks ?? 1000)) throw new RelayError(429, "too many open links. Try again soon");
+    const code = randomBytes(16).toString("base64url");
+    this.chatCodes.set(code, { chatId, telegram: telegram.slice(0, 64), expiresAt: this.now() + MESSAGE_LIFETIME_SECONDS });
+    return code;
+  }
+
+  connectUrl(code: string): string {
+    const url = new URL(this.options.pageUrl);
+    url.searchParams.set("link", code);
+    return url.toString();
+  }
+
+  /** Lets the page show who is asking, so someone can notice a link that is not theirs. */
+  describeCode(code: string): { telegram: string } | undefined {
+    const entry = this.chatCodes.get(code);
+    return entry && entry.expiresAt > this.now() ? { telegram: entry.telegram } : undefined;
+  }
+
+  /** The wallet signs over the bot's code, which joins that wallet to that chat. */
+  async claim(body: unknown): Promise<{ linked: true; wallet: Address; telegram: string }> {
+    const value = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+    const wallet = address(value.wallet);
+    const issuedAt = this.fresh(value.issuedAt);
+    if (typeof value.code !== "string" || !/^[A-Za-z0-9_-]{16,64}$/.test(value.code)) throw new RelayError(400, "invalid code");
+    const entry = this.chatCodes.get(value.code);
+    if (!entry || entry.expiresAt <= this.now()) throw new RelayError(410, "this link expired or was used. Press Start in the bot again");
+    const recovered = await recoverMessageAddress({ message: claimMessage(wallet, issuedAt, value.code), signature: signature(value.signature) }).catch(() => undefined);
+    if (recovered !== wallet) throw new RelayError(403, "this signature is not from that wallet");
+    this.chatCodes.delete(value.code);
+    this.chats.set(wallet, entry.chatId);
+    this.save();
+    return { linked: true, wallet, telegram: entry.telegram };
+  }
+
   isLinked(wallet: Address): boolean {
     return this.chats.has(wallet);
   }
@@ -182,24 +222,34 @@ export class People {
 
 export interface BotUpdate {
   update_id?: number;
-  message?: { chat?: { id?: number | string }; text?: string };
+  message?: { chat?: { id?: number | string }; from?: { username?: string; first_name?: string }; text?: string };
 }
 
 /** What the bot says to a message. It only ever acts on a one-time code. */
-export function botReply(people: People, update: BotUpdate): { chatId: string; text: string } | undefined {
+export function botReply(people: People, update: BotUpdate): { chatId: string; text: string; url?: string; button?: string } | undefined {
   const chat = update.message?.chat?.id;
   if (chat === undefined) return undefined;
   const chatId = String(chat);
   const match = /^\/start\s+([A-Za-z0-9_-]{16,64})\s*$/.exec(update.message?.text ?? "");
-  if (!match) return { chatId, text: "To get approval alerts here, open https://styxco.xyz/?link and connect your wallet." };
-  const wallet = people.completeLink(match[1]!, chatId);
-  return wallet
-    ? { chatId, text: `Linked. Approval requests for ${wallet} will come to this chat. An alert never moves money: you always review and sign on the page.` }
-    : { chatId, text: "That link expired or was used. Open https://styxco.xyz/?link and connect your wallet again." };
+  if (match) {
+    const wallet = people.completeLink(match[1]!, chatId);
+    return wallet
+      ? { chatId, text: `Linked. Approval requests for ${wallet} will come to this chat. An alert never moves money: you always review and sign on the page.` }
+      : { chatId, text: "That link expired or was used. Send /start to get a new one." };
+  }
+  const from = update.message?.from;
+  const telegram = from?.username ? `@${from.username}` : from?.first_name ?? "this Telegram account";
+  const url = people.connectUrl(people.codeForChat(chatId, telegram));
+  return {
+    chatId,
+    text: "Connect the wallet you approve payments with, and approval requests for it will come to this chat. You sign once to prove the wallet is yours. It costs nothing and moves no money. This works once, for 10 minutes.\n\n" + url,
+    url,
+    button: "Connect my wallet",
+  };
 }
 
 /** Long-polls Telegram. No webhook, so the bot needs no public endpoint of its own. */
-export async function runBot(options: { botToken: string; apiBase?: string; people: People; send: (chatId: string, text: string) => Promise<unknown> }): Promise<never> {
+export async function runBot(options: { botToken: string; apiBase?: string; people: People; send: (chatId: string, reply: { text: string; url?: string; button?: string }) => Promise<unknown> }): Promise<never> {
   const base = options.apiBase ?? "https://api.telegram.org";
   let offset = 0;
   for (;;) {
@@ -209,7 +259,7 @@ export async function runBot(options: { botToken: string; apiBase?: string; peop
       for (const update of body.result ?? []) {
         if (typeof update.update_id === "number") offset = update.update_id + 1;
         const reply = botReply(options.people, update);
-        if (reply) await options.send(reply.chatId, reply.text).catch(() => undefined);
+        if (reply) await options.send(reply.chatId, reply).catch(() => undefined);
       }
     } catch {
       // Errors can contain the URL, which contains the bot token, so nothing is logged.

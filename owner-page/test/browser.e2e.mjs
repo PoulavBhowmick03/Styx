@@ -493,6 +493,22 @@ try {
     assert.equal(errors.length, 0, errors.join());
     await context.close();
   });
+  await scenario("starting from the bot, a person presses Start, opens their button, signs, and never returns to Telegram", async () => {
+    updates.push({ update_id: updates.length + 1, message: { chat: { id: 7777 }, from: { username: "second_person" }, text: "/start" } });
+    await waitFor(async () => alerts.some((a) => String(a.chat_id) === "7777"), "the bot's reply", 200);
+    const sent = alerts.findLast((a) => String(a.chat_id) === "7777");
+    const code = /[?&]link=([A-Za-z0-9_-]+)/.exec(sent.text)[1];
+    const { page, context, errors } = await openPage(HOSTED_PORT, { account: outsider });
+    await allowHosted(page);
+    await page.goto(`http://127.0.0.1:${HOSTED_PORT}/?link=${code}`);
+    await waitFor(async () => /@second_person/.test(await page.locator("#link-telegram").textContent()), "the name");
+    await shot(page, "link-from-bot");
+    await page.click("#link-connect");
+    await page.locator("#link-done").waitFor({ state: "visible", timeout: 15000 });
+    assert.equal((await (await fetch(`${RELAY}/links/${getAddr(outsider)}`)).json()).linked, true);
+    assert.equal(errors.length, 0, errors.join());
+    await context.close();
+  });
   await scenario("a registered agent's alert reaches only its approver's chat, and a wallet not chosen is refused", async () => {
     const reply = await registerAgent(approver);
     assert.equal(reply.status, 200);

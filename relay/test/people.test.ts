@@ -6,7 +6,7 @@ import { getAddress, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 
-import { linkMessage, registerMessage } from "../../owner-page/src/messages";
+import { claimMessage, linkMessage, registerMessage } from "../../owner-page/src/messages";
 import { botReply, People, type ChainReader } from "../src/people";
 
 const VAULT = getAddress("0x2000000000000000000000000000000000000002");
@@ -24,7 +24,7 @@ const chain = (overrides: Partial<ChainReader> = {}): ChainReader => ({
   ...overrides,
 });
 const people = (reader = chain(), stateDir?: string, now = () => NOW) =>
-  new People({ chain: reader, chainId: 5042002n, token: TOKEN, botUsername: "styx_agent_bot", now, ...(stateDir ? { stateDir } : {}) });
+  new People({ chain: reader, chainId: 5042002n, token: TOKEN, botUsername: "styx_agent_bot", pageUrl: "https://styxco.xyz/", now, ...(stateDir ? { stateDir } : {}) });
 
 const linkBody = async (account = approver, issuedAt = NOW, wallet: Address = account.address) => ({
   wallet, issuedAt, signature: await account.signMessage({ message: linkMessage(wallet, issuedAt) }),
@@ -71,6 +71,48 @@ describe("linking Telegram to a wallet", () => {
   });
 });
 
+describe("starting from Telegram", () => {
+  const sign = async (account: typeof approver, code: string, issuedAt = NOW) => ({
+    code, wallet: account.address, issuedAt, signature: await account.signMessage({ message: claimMessage(account.address, issuedAt, code) }),
+  });
+  it("gives each chat its own button, and a signature joins that chat to the wallet, with no return to Telegram", async () => {
+    const p = people();
+    const reply = botReply(p, { message: { chat: { id: 555 }, from: { username: "ishita" }, text: "/start" } });
+    expect(reply?.chatId).toBe("555");
+    expect(reply?.url).toMatch(/^https:\/\/styxco\.xyz\/\?link=[A-Za-z0-9_-]{16,64}$/);
+    const code = new URL(reply!.url!).searchParams.get("link")!;
+    expect(p.describeCode(code)).toEqual({ telegram: "@ishita" });
+    expect(await p.claim(await sign(approver, code))).toEqual({ linked: true, wallet: approver.address, telegram: "@ishita" });
+    expect(p.chatFor(approver.address)).toBe("555");
+  });
+  it("uses a code once, and refuses an expired or unknown one", async () => {
+    let now = NOW;
+    const p = people(chain(), undefined, () => now);
+    const code = new URL(botReply(p, { message: { chat: { id: 1 }, text: "/start" } })!.url!).searchParams.get("link")!;
+    await p.claim(await sign(approver, code));
+    await expect(p.claim(await sign(approver, code))).rejects.toMatchObject({ status: 410 });
+    expect(p.describeCode(code)).toBeUndefined();
+    const late = new URL(botReply(p, { message: { chat: { id: 2 }, text: "/start" } })!.url!).searchParams.get("link")!;
+    now += 601;
+    await expect(p.claim(await sign(approver, late, now))).rejects.toMatchObject({ status: 410 });
+  });
+  it("refuses a signature by anyone but the wallet named, or over another code", async () => {
+    const p = people();
+    const code = new URL(botReply(p, { message: { chat: { id: 1 }, text: "/start" } })!.url!).searchParams.get("link")!;
+    const stranger = privateKeyToAccount(generatePrivateKey());
+    const forged = { code, wallet: approver.address, issuedAt: NOW, signature: await stranger.signMessage({ message: claimMessage(approver.address, NOW, code) }) };
+    await expect(p.claim(forged)).rejects.toMatchObject({ status: 403 });
+    const other = { ...(await sign(approver, "x".repeat(22))), code };
+    await expect(p.claim(other)).rejects.toMatchObject({ status: 403 });
+    expect(p.isLinked(approver.address)).toBe(false);
+  });
+  it("gives a chat with no name a plain description, and never trusts a name as anything more", () => {
+    const p = people();
+    const code = new URL(botReply(p, { message: { chat: { id: 9 }, from: { first_name: "Asha" }, text: "hi" } })!.url!).searchParams.get("link")!;
+    expect(p.describeCode(code)).toEqual({ telegram: "Asha" });
+  });
+});
+
 describe("the bot", () => {
   it("links from /start with a code, and answers everything else with what to do", async () => {
     const p = people();
@@ -78,7 +120,7 @@ describe("the bot", () => {
     expect(botReply(p, { message: { chat: { id: 555 }, text: `/start ${code}` } })).toEqual({ chatId: "555", text: expect.stringContaining(approver.address) });
     expect(p.chatFor(approver.address)).toBe("555");
     expect(botReply(p, { message: { chat: { id: 7 }, text: `/start ${code}` } })?.text).toMatch(/expired or was used/);
-    expect(botReply(p, { message: { chat: { id: 7 }, text: "hello" } })?.text).toMatch(/styxco\.xyz\/\?link/);
+    expect(botReply(p, { message: { chat: { id: 7 }, text: "hello" } })?.url).toMatch(/\?link=/);
     expect(botReply(p, { update_id: 1 })).toBeUndefined();
   });
 });

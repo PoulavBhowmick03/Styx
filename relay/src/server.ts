@@ -61,6 +61,12 @@ export function relayServer(relay: Relay, config: RelayConfig): Server {
       reply(200, await relay.submit(body?.pending, bearer(request)));
     } else if (request.method === "POST" && url.pathname === "/links/start" && config.people) {
       reply(200, await config.people.startLink(await readJson(request)));
+    } else if (request.method === "POST" && url.pathname === "/links/claim" && config.people) {
+      reply(200, await config.people.claim(await readJson(request)));
+    } else if (request.method === "GET" && parts[0] === "links" && parts[1] === "code" && parts.length === 3 && config.people) {
+      const known = config.people.describeCode(parts[2]!);
+      if (!known) throw new RelayError(410, "this link expired or was used. Press Start in the bot again");
+      reply(200, known);
     } else if (request.method === "GET" && parts[0] === "links" && parts.length === 2 && config.people) {
       if (!isAddress(parts[1]!, { strict: false })) throw new RelayError(400, "invalid address");
       reply(200, { linked: config.people.isLinked(getAddress(parts[1]!)) });

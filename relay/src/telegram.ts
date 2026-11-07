@@ -26,7 +26,7 @@ export function telegramNotifier(options: {
       const inWallet = `https://link.metamask.io/dapp/${alert.url.slice("https://".length)}`;
       body.reply_markup = {
         inline_keyboard: [
-          [{ text: "Review and sign in MetaMask", url: inWallet }],
+          [{ text: alert.button ?? "Review and sign in MetaMask", url: inWallet }],
           [{ text: "Open in a browser", url: alert.url }],
         ],
       };

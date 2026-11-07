@@ -468,7 +468,7 @@ describe("per-person alerts", () => {
   }
   async function world(enabled?: (signer: string) => boolean) {
     const sent: { chat?: string; text: string }[] = [];
-    const people = new People({ chain: reader(enabled), chainId: 5042002n, token: getAddress(TOKEN), botUsername: "bot" });
+    const people = new People({ chain: reader(enabled), chainId: 5042002n, token: getAddress(TOKEN), botUsername: "bot", pageUrl: "https://a.example/" });
     const config: RelayConfig = { chainId: 5042002n, vault: getAddress(VAULT), owner: owner.address, token: getAddress(TOKEN), pageUrl: "https://a.example/", relayUrl: "https://b.example", agentToken: AGENT_TOKEN, maxAlertsPerHour: 3, maxRequests: 50, people };
     const relay = new Relay(config, async (alert, chat) => { sent.push({ ...(chat ? { chat } : {}), text: alert.text }); return true; });
     const issuedAt = Math.floor(Date.now() / 1000);
@@ -551,5 +551,18 @@ describe("the alert's buttons", () => {
     const buttons = (r.sent.at(-1)!.reply_markup as { inline_keyboard: { text: string; url: string }[][] }).inline_keyboard.flat();
     expect(buttons[0]!.url).toMatch(/^https:\/\/link\.metamask\.io\/dapp\/approve\.example\/\?relay=.*&request=/);
     expect(buttons[1]!.url).toMatch(/^https:\/\/approve\.example\/\?relay=.*&request=/);
+  });
+});
+
+describe("a notifier's buttons", () => {
+  it("names the connect button, and still opens straight in MetaMask", async () => {
+    const r = await setup();
+    const seen: Record<string, unknown>[] = [];
+    const send = async (_: unknown, init?: RequestInit) => { seen.push(JSON.parse(String(init!.body))); return new Response(JSON.stringify({ ok: true })); };
+    await telegramNotifier({ botToken: "1:x", chatId: "1", fetch: send as typeof fetch })({ text: "t", url: "https://styxco.xyz/?link=abc", button: "Connect my wallet" }, "9");
+    const buttons = (seen[0]!.reply_markup as { inline_keyboard: { text: string; url: string }[][] }).inline_keyboard.flat();
+    expect(seen[0]!.chat_id).toBe("9");
+    expect(buttons[0]).toEqual({ text: "Connect my wallet", url: "https://link.metamask.io/dapp/styxco.xyz/?link=abc" });
+    expect(r.url).toBeTruthy();
   });
 });

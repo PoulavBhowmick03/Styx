@@ -64,7 +64,7 @@ The page and relay support plain-account signers only. The contract accepts ERC-
 
 With `RELAY_BOT_USERNAME` and `RELAY_RPC_URLS` set, any vault can use this relay, and each alert goes to one person.
 
-1. **Link.** Someone opens `https://styxco.xyz/?link`, signs once to prove the wallet is theirs, and presses Start in the bot. The relay keeps only wallet and chat ID. An alert never moves money, so a wrong link can misdirect a notice but cannot approve anything.
+1. **Link.** The operator shares one link with everyone: `https://t.me/styx_agent_bot`. Each person presses Start, and the bot replies with their own one-time button, which opens the page in MetaMask. The page shows which Telegram account this joins, they sign once, and they are done, with no return to Telegram. The relay keeps only wallet and chat ID. An alert never moves money, so a wrong link can misdirect a notice but cannot approve anything. Starting from `https://styxco.xyz/?link` also works.
 2. **Register.** A vault's owner signs to choose an agent's approver. The relay checks the owner, the vault and the approver against the chain, and returns that agent's token once, keeping only its hash. Registering again replaces the token.
 3. **Alert.** The relay refuses a different approver than the one chosen, or one the vault no longer lists, and alerts only that person's chat. If they have not linked, it answers `needsLink` and alerts nobody, and asking again after they link sends it. An unreadable chain does not stop an alert, because the vault still decides. Each chat has its own hourly budget.
 
@@ -72,6 +72,8 @@ The agent's MCP server asks the relay for its chosen approver, so an agent need 
 
 | Call | Auth | Purpose |
 | --- | --- | --- |
+| `POST /links/claim` | Wallet signature over the bot's code | Joins that wallet to that chat |
+| `GET /links/code/<code>` | The code | Returns the Telegram name it belongs to, for the page to show |
 | `POST /links/start` | Wallet signature | Returns a one-time bot link |
 | `GET /links/<wallet>` | None | `{"linked": true\|false}` |
 | `POST /agents/register` | Owner's signature | Returns `{"token", "relay"}` |

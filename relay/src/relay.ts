@@ -53,6 +53,8 @@ export interface Alert {
   text: string;
   /** The approval link, when this alert has one. */
   url?: string;
+  /** The label for its MetaMask button. */
+  button?: string;
 }
 
 /** With no chat named, the alert goes to the relay's own configured chat. */

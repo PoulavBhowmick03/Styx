@@ -73,6 +73,7 @@ if (process.env.RELAY_BOT_USERNAME) {
     chainId: config.chainId,
     token: config.token,
     botUsername: process.env.RELAY_BOT_USERNAME,
+    pageUrl: config.pageUrl,
     ...(config.stateDir ? { stateDir: config.stateDir } : {}),
   });
 }
@@ -86,7 +87,7 @@ if (config.people) {
     botToken: required("TELEGRAM_BOT_TOKEN"),
     ...(process.env.TELEGRAM_API_BASE ? { apiBase: process.env.TELEGRAM_API_BASE } : {}),
     people: config.people,
-    send: (chatId, text) => notify({ text }, chatId),
+    send: (chatId, reply) => notify(reply, chatId),
   });
 }
 relayServer(new Relay(config, notify), config).listen(port, process.env.RELAY_HOST ?? "127.0.0.1", () => {

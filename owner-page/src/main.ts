@@ -23,7 +23,7 @@ import {
   type RelayLink,
   type VaultTrust,
 } from "./approval";
-import { linkMessage } from "./messages";
+import { claimMessage, linkMessage } from "./messages";
 import {
   buildSignatureFileV2,
   callData,
@@ -536,8 +536,29 @@ function askToConfirmVault(link: RelayLink, facts: ChainFacts): void {
 
 // ---- Linking Telegram to a wallet, so alerts reach the right person ----
 
+const linkCode = new URLSearchParams(window.location.search).get("link") || undefined;
+
+/** Arrived from the bot's button: show which Telegram account this joins, so a stranger's link can be noticed. */
+async function describeLink(): Promise<void> {
+  if (!linkCode || !BUILT_IN_RELAY) return;
+  element("link-start-bot").hidden = true;
+  try {
+    const response = await fetch(`${new URL(BUILT_IN_RELAY).origin}/links/code/${encodeURIComponent(linkCode)}`);
+    const body = (await response.json()) as { telegram?: string; error?: string };
+    if (!response.ok || !body.telegram) throw new ApprovalError(body.error ?? "This link could not be read.");
+    const line = element("link-telegram");
+    line.textContent = `This sends approval requests to ${body.telegram} on Telegram. If that is not you, stop here.`;
+    line.hidden = false;
+  } catch (error) {
+    element("link-connect").hidden = true;
+    element("link-start-bot").hidden = false;
+    showStatus(error instanceof ApprovalError ? error.message : "The relay could not be reached.", true);
+  }
+}
+
 function showLinkView(): void {
   element("link-view").hidden = false;
+  void describeLink();
   element("config-details").hidden = true;
   element("pending-label").hidden = true;
   if (!BUILT_IN_RELAY) showStatus("This build has no relay to link with.", true);
@@ -572,6 +593,21 @@ async function linkTelegram(): Promise<void> {
     element("link-wallet").textContent = account;
     element("link-wallet-row").hidden = false;
     const issuedAt = Math.floor(Date.now() / 1000);
+    if (linkCode) {
+      const message = claimMessage(account, issuedAt, linkCode);
+      const signature = (await wallet.request({ method: "personal_sign", params: [toHex(message), account] })) as Hex;
+      const response = await fetch(`${relay}/links/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: linkCode, wallet: account, issuedAt, signature }),
+      });
+      const body = (await response.json()) as { linked?: boolean; error?: string };
+      if (!response.ok || body.linked !== true) throw new ApprovalError(body.error ?? "The relay did not answer. Try again.");
+      button.hidden = true;
+      element("link-done").hidden = false;
+      showStatus("Signed. Your wallet is linked to Telegram. You can close this page.");
+      return;
+    }
     const message = linkMessage(account, issuedAt);
     const signature = (await wallet.request({ method: "personal_sign", params: [toHex(message), account] })) as Hex;
     const response = await fetch(`${relay}/links/start`, {
