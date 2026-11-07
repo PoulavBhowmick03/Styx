@@ -11,31 +11,111 @@
   <body>
     <div class="wrap">
     <header class="top">
-      <span class="brand">Styx</span>
+      <a class="brand" id="top" href="/"><img src="/styx-logo.png" alt="Styx" width="600" height="237"></a>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#rules">Rules</a>
+        <a href="#how">How it works</a>
+        <a href="#roles">Roles</a>
+      </nav>
       <span class="net">Arc testnet. Unaudited.</span>
     </header>
 
     <section id="landing" class="landing" hidden>
-      <h1>A vault that pays an agent's invoices within your rules</h1>
-      <p>Styx holds USDC in a vault on Arc testnet. An AI agent can pay routine invoices up to the limits you set. For anything above a limit, the vault needs a signature from you or from an approver, over the exact payment. A reviewer can check one disclosed record against the chain.</p>
-      <p class="note">Testnet only, and not audited. Approvers sign from a plain wallet; a smart-contract wallet such as a Safe cannot approve through these pages.</p>
-      <p>This page is where you review and sign an exception. You normally arrive here from an alert link that carries the request, so there is nothing to sign yet.</p>
-      <h2>Who is this for?</h2>
-      <div class="paths">
-        <a class="path" id="path-me" href="/setup/?path=me">
-          <strong>Just me</strong>
-          <span>Give your agent a budget, not your wallet. Over budget, your phone buzzes and you approve the exact payment.</span>
-        </a>
-        <a class="path" id="path-team" href="/setup/?path=team">
-          <strong>A team</strong>
-          <span>One vault, many agents with their own limits, and approvers signing from their own wallets.</span>
-        </a>
+      <div class="hero">
+        <h1>Spending limits an agent <em>cannot raise.</em></h1>
+        <p class="lede">The limit and the approval live in the vault contract, not where the agent can reach them. The agent pays within your rules. <strong>Going over a limit needs your signature over that exact payment.</strong></p>
+        <div class="cta">
+          <a class="button" href="#start">Set up a vault</a>
+          <a class="textlink" href="https://github.com/PoulavBhowmick03/Styx">Source code</a>
+        </div>
       </div>
-      <div class="links">
-        <a class="button secondary" id="path-link" href="/?link">Get approval alerts on Telegram</a>
-        <a class="button secondary" href="https://github.com/PoulavBhowmick03/Styx">Source code</a>
-        <a class="button secondary" href="https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8">Demo vault on Arc</a>
+
+      <div class="band" id="rules">
+        <div class="side"><span class="kicker"><b>01</b>The rules</span></div>
+        <div class="main">
+          <h2>The agent can pay. It cannot change the rules.</h2>
+          <p class="sub">Limits, recipients, approvers, pause and withdraw are all owner-only in the contract. The transcript below illustrates the rules; it is not a recording.</p>
+          <div class="term" role="img" aria-label="Illustration: a payment within the limit is paid, a payment over the limit waits for the owner's signature, and the agent trying to raise its own limit is reverted.">
+            <div class="term-bar"><span>vault / agent session</span><span>Illustration</span></div>
+            <div class="lines">
+              <div class="ln"><span class="p">agent</span><span class="cmd">pay 0.40 USDC to allowed vendor</span><span class="res ok">PAID, within limit</span></div>
+              <div class="ln"><span class="p">agent</span><span class="cmd">pay 5.00 USDC to allowed vendor</span><span class="res wait">WAITS for owner's signature</span></div>
+              <div class="ln"><span class="p">agent</span><span class="cmd">raise my own per-payment limit</span><span class="res bad">REVERTED, owner only</span></div>
+              <div class="ln"><span class="p">agent</span><span class="cmd">name myself an approver</span><span class="res bad">REVERTED, owner only</span></div>
+              <div class="ln"><span class="p">owner</span><span class="cmd">signs the exact 5.00 USDC payment</span><span class="res ok">PAID, with the signature</span></div>
+              <div class="ln"><span class="p"></span><span class="cmd">same signature, other recipient</span><span class="res bad">REVERTED</span></div>
+              <span class="caret" aria-hidden="true"></span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <div class="band" id="how">
+        <div class="side"><span class="kicker"><b>02</b>How it works</span></div>
+        <div class="main">
+          <h2>Four steps, each one checkable on the chain.</h2>
+          <ol class="steps4">
+            <li><h3>Fund the vault</h3><p>You put USDC in a vault you own, and set a per-payment limit, a daily limit and the vendors it may pay.</p></li>
+            <li><h3>The agent pays</h3><p>Routine payments within your limits go through on the agent's own request. The agent's key holds gas only.</p></li>
+            <li><h3>You sign exceptions</h3><p>Over a limit, the vault waits. You get an alert, review the recipient and amount here, and sign that exact payment.</p></li>
+            <li><h3>A reviewer checks</h3><p>One disclosed record, checked against the chain with the reviewer's own RPC. No other record is readable.</p></li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="band" id="roles">
+        <div class="side"><span class="kicker"><b>03</b>Who can do what</span></div>
+        <div class="main">
+          <h2>Three keys, three jobs.</h2>
+          <div class="roles">
+            <div class="role"><h3>Owner</h3><p class="what">Sets the rules.</p>
+              <p class="lab can">Can</p><ul><li>Set limits and allow vendors</li><li>Sign exceptions, pause, withdraw</li></ul></div>
+            <div class="role"><h3>Agent</h3><p class="what">Pays within them.</p>
+              <p class="lab can">Can</p><ul><li>Propose and submit allowed payments</li></ul>
+              <p class="lab cannot">Cannot</p><ul><li>Change limits, recipients or approvers</li><li>Pause, sign exceptions or withdraw</li></ul></div>
+            <div class="role"><h3>Reviewer</h3><p class="what">Checks one record.</p>
+              <p class="lab can">Can</p><ul><li>Open one disclosed record</li><li>Verify it against Arc</li></ul>
+              <p class="lab cannot">Cannot</p><ul><li>Read any other record</li></ul></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="band" id="start">
+        <div class="side"><span class="kicker"><b>04</b>Start</span></div>
+        <div class="main">
+          <h2>Who is this for?</h2>
+          <p class="sub">This page is where you review and sign an exception. You normally arrive here from an alert link that carries the request, so there is nothing to sign yet.</p>
+          <div class="paths">
+            <a class="path" id="path-me" href="/setup/?path=me">
+              <strong>Just me</strong>
+              <span class="txt">Give your agent a budget, not your wallet. Over budget, your phone buzzes and you approve the exact payment.</span>
+              <span class="go">Begin setup</span>
+            </a>
+            <a class="path" id="path-team" href="/setup/?path=team">
+              <strong>A team</strong>
+              <span class="txt">One vault, many agents with their own limits, and approvers signing from their own wallets.</span>
+              <span class="go">Begin setup</span>
+            </a>
+          </div>
+          <div class="links">
+            <a class="button secondary" id="path-link" href="/?link">Get approval alerts on Telegram</a>
+            <a class="button secondary" href="https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8">Demo vault on Arc</a>
+          </div>
+        </div>
+      </div>
+
+      <footer class="river">
+        <div class="ticker">
+          <div class="ticker-row a" aria-hidden="true"><div class="track"><span>Spending limits</span><span>Signed exceptions</span><span>Owner-only rules</span><span>Checked against Arc</span><span>USDC on Arc testnet</span><span>Spending limits</span><span>Signed exceptions</span><span>Owner-only rules</span><span>Checked against Arc</span><span>USDC on Arc testnet</span></div></div>
+          <div class="ticker-row b" aria-hidden="true"><div class="track"><span>Spending limits</span><span>Signed exceptions</span><span>Owner-only rules</span><span>Checked against Arc</span><span>USDC on Arc testnet</span><span>Spending limits</span><span>Signed exceptions</span><span>Owner-only rules</span><span>Checked against Arc</span><span>USDC on Arc testnet</span></div></div>
+        </div>
+        <div class="river-note">
+          <nav aria-label="Links"><a href="https://github.com/PoulavBhowmick03/Styx">Source</a><a href="https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8">Demo vault</a></nav>
+        </div>
+        <div class="mark-band">
+          <div class="mark" role="img" aria-label="STYX"><span aria-hidden="true">STYX</span></div>
+        </div>
+      </footer>
     </section>
 
     <h1 id="page-title">Approve an exception</h1>
@@ -126,5 +206,6 @@
     </div>
 
     <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/landing.ts"></script>
   </body>
 </html>
