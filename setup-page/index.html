@@ -14,6 +14,14 @@
     <header class="top"><span class="brand">Styx</span><span class="net"><a href="/">Approval page</a></span></header>
     <h1>Vault setup</h1>
     <p class="note">Arc testnet and test funds only. Not audited. This page never asks for a private key: every transaction is signed in your own wallet. The agent's key is made on the agent's machine and never comes here.</p>
+    <section id="choose" hidden>
+      <h2>How will you use Styx?</h2>
+      <p>Pick the one that fits. You can open the other any time.</p>
+      <div class="links">
+        <a id="choose-me" class="button" href="?path=me">Just me: my agent spends from my wallet</a>
+        <a id="choose-team" class="button secondary" href="?path=team">A team: many agents and approvers</a>
+      </div>
+    </section>
     <div id="top">
       <div id="vault-banner" class="none" role="region" aria-label="Connected vault"></div>
       <div id="status" role="status" aria-live="polite"></div>
@@ -25,10 +33,86 @@
       </div>
     </div>
 
+
+    <section id="guide" hidden>
+      <h2>Set up your agent, one step at a time</h2>
+      <p class="note">What is done is read from the chain, so you can close this page and come back to the same place. Arc testnet and test funds only.</p>
+      <ol id="g-steps" class="steps"></ol>
+
+      <div data-gpanel="2" hidden>
+        <h3>Create your vault</h3>
+        <p>This makes a vault that you own, on Arc testnet, with USDC as its money. It costs a little gas. The vault holds the money; your agent can only spend what your limits allow.</p>
+        <button id="g-deploy" type="button">Create my vault</button>
+      </div>
+
+      <div data-gpanel="3" hidden>
+        <h3>Name your agent</h3>
+        <p>On the machine where your agent runs, run <code>scripts/agent_setup.sh</code>. It makes the agent's key there and prints the agent's address. <strong>The key never comes to this page</strong>, and this page never asks for it. Paste only the address.</p>
+        <label for="g-agent">Your agent's address</label>
+        <input id="g-agent" class="mono" placeholder="0x..." autocomplete="off" spellcheck="false" />
+        <button id="g-agent-use" type="button">Use this address</button>
+      </div>
+
+      <div data-gpanel="4" hidden>
+        <h3>Set the limits</h3>
+        <p id="g-limits-state" class="note"></p>
+        <div id="g-limits-agent">
+          <p>Say in plain words what your agent may spend without asking you.</p>
+          <label for="g-per">Most per payment (USDC). Anything above this needs your signature</label>
+          <input id="g-per" inputmode="decimal" value="1" />
+          <label for="g-daily">Most per day (USDC)</label>
+          <input id="g-daily" inputmode="decimal" value="10" />
+          <label for="g-days">How long these limits last (whole days)</label>
+          <input id="g-days" inputmode="numeric" value="7" />
+          <button id="g-limits-save" type="button">Review these limits</button>
+        </div>
+        <div id="g-limits-cap" hidden>
+          <div class="callout"><strong>One more step before the agent can pay.</strong> <span id="g-cap-line"></span></div>
+          <button id="g-cap-save" type="button">Review the vault's daily cap</button>
+        </div>
+      </div>
+
+      <div data-gpanel="7" hidden>
+        <h3>Phone alerts</h3>
+        <p>When your agent needs your signature, an alert can reach you on Telegram. Open <a id="g-link" href="/?link" target="_blank" rel="noopener">the alerts page</a> in this wallet's browser and connect Telegram, then come back and check.</p>
+        <p id="g-alerts-state" class="note"></p>
+        <button id="g-alerts-check" type="button">Check again</button>
+        <button id="g-alerts-skip" type="button" class="secondary">Skip for now</button>
+      </div>
+
+      <div data-gpanel="8" hidden>
+        <h3>Connect the agent</h3>
+        <p>Sign one short message so the relay will pass this agent's requests to you. It is a message, not a transaction. The relay answers with a token for the agent. <strong>The token is shown once.</strong></p>
+        <button id="g-connect-agent" type="button">Connect the agent</button>
+        <p id="g-connect-note" class="note"></p>
+      </div>
+
+      <div id="g-finish" hidden>
+        <h3>You are set up</h3>
+        <p>Agent <span id="g-finish-agent" class="mono"></span> can now pay your allowed vendors within your limits.</p>
+        <ol>
+          <li>Ask your agent: "Pay the invoice for 0.5 USDC to <em>your vendor</em>." It should go through.</li>
+          <li>To see an exception, ask for more than your per-payment limit, for example 5 USDC. The vault will not pay it, and you will get an alert to sign that exact payment.</li>
+        </ol>
+        <p class="note">To change limits, add a vendor or pause the vault later, open <a id="g-team-link" href="?path=team">the full controls</a>.</p>
+      </div>
+    </section>
+
+    <section id="token-panel" class="callout stop" hidden>
+      <h2>Your agent's settings. Store them now.</h2>
+      <p id="token-agent" class="mono"></p>
+      <p><strong>The token inside is shown once.</strong> Copy this into your agent's settings before you continue. If you lose it, connect the agent again: that makes a new token and the old one stops working. Replace the three paths marked REPLACE with the ones <code>scripts/agent_setup.sh</code> printed.</p>
+      <label for="token-config">Agent settings (MCP configuration)</label>
+      <textarea id="token-config" readonly spellcheck="false"></textarea>
+      <button id="token-copy" type="button" class="secondary">Copy</button>
+      <button id="token-done" type="button">I have stored it</button>
+    </section>
+
     <section id="s-wallet">
       <h2>1. Wallet</h2>
       <p class="note">Connect the wallet that will own the vault. Use a different address for the agent.</p>
       <button id="connect">Connect wallet</button>
+      <a id="open-in-wallet" class="button" hidden>Open in MetaMask</a>
       <button id="switch-arc" class="secondary" hidden>Switch to Arc Testnet</button>
       <dl class="facts"><dt>Account</dt><dd id="account" class="mono">not connected</dd><dt>Chain</dt><dd id="chain">-</dd></dl>
     </section>
@@ -162,7 +246,7 @@
         </section>
       </div>
 
-      <section>
+      <section data-guide="vendors">
         <h2>4. Vendors</h2>
         <div class="callout" id="vendor-warning"></div>
         <ul class="vendors" id="vendors"></ul>
@@ -179,7 +263,7 @@
         <button id="export-config" class="secondary">Download approval-page config</button>
       </section>
 
-      <section>
+      <section data-guide="fund">
         <h2>5. Move money into the vault</h2>
         <p>Funds go in through the USDC token's <code>transfer</code>, the only way this vault can receive them. Send the agent's address only what it needs for gas.</p>
         <div class="callout" id="fund-send-warning"><strong>Use this section, not your wallet's Send button.</strong> A plain send to the vault's address fails and costs you gas, because the vault cannot receive one.</div>

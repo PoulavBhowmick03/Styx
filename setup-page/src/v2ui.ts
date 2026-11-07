@@ -34,6 +34,26 @@ export interface V2Context {
   /** Hands the page's shared funding and withdrawal flows the numbers they check against. */
   shared(values: { vaultTokens: bigint; ownerTokens: bigint; token: Address; owner: Address; paused: boolean }): void;
   setControls(): void;
+  /** Whether a wallet has linked Telegram on the relay: null when the relay cannot be asked or there is none. */
+  linkedOf?(address: string): Promise<boolean | null>;
+  /** Signs and sends the registration that connects an agent to the relay. Asks for confirmation first. */
+  connectAgent?(agent: Address, approver: Address): void;
+  /** Called after every read of the vault with what was read. */
+  onRefreshed?(snapshot: Snapshot): void;
+}
+
+/** What the last read of the vault found. The guided path reads its steps from this, never from storage. */
+export interface Snapshot {
+  vault: Address;
+  owner: Address;
+  cap: bigint;
+  agents: AgentView[];
+  approvers: ApproverView[];
+  vendors: Address[];
+  vaultTokens: bigint;
+  paused: boolean;
+  now: bigint;
+  partial: boolean;
 }
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -65,13 +85,15 @@ export function initV2(ctx: V2Context) {
   let approvers: ApproverView[] = [];
   let ownerAddress: Address | undefined;
   let pending: (() => Promise<void>) | undefined;
+  let lastCap = 0n;
+  const linkStates = new Map<string, boolean | null>();
 
   // ---- The one confirmation panel ----
 
-  function ask(lines: string[], action: () => Promise<void>): void {
+  function ask(lines: string[], action: () => Promise<void>, header?: string): void {
     const vault = ctx.vault();
-    if (!vault) return;
-    setText("v2-confirm-text", [`Vault ${vault}, owned by ${ownerAddress ?? "(reading...)"}.`, ...lines].join("\n"));
+    if (!vault && header === undefined) return;
+    setText("v2-confirm-text", [header ?? `Vault ${vault}, owned by ${ownerAddress ?? "(reading...)"}.`, ...lines].join("\n"));
     $("v2-confirm").hidden = false;
     $("v2-confirm").focus(); // display only: the panel is a fixed second step and must be seen
     pending = action;
@@ -312,8 +334,10 @@ export function initV2(ctx: V2Context) {
     const capInput = $<HTMLInputElement>("v2-cap-input");
     if (!capInput.value && cap > 0n) capInput.value = formatUsdc(cap);
 
+    lastCap = cap;
     renderAgents(block.timestamp);
     renderApprovers();
+    void loadLinks();
     renderVendors(vendors);
     setText("v2-agent-note", partialNote);
     setText("vendors-note", partialNote || (vendors.length ? "" : "No vendors yet. Payments to any other address are refused."));
@@ -331,6 +355,18 @@ export function initV2(ctx: V2Context) {
     );
     setText("v2-verdict", isReady(checks) ? "An agent can pay now. This says the setup is complete, not that the contract has been audited." : "Not yet: work through the items above.");
     ctx.setControls();
+    ctx.onRefreshed?.({ vault: mine, owner: ownerAddress, cap, agents, approvers, vendors, vaultTokens, paused, now: block.timestamp, partial: partialNote !== "" });
+  }
+
+  /** Asks the relay, once per refresh, whether each approver has linked Telegram, then redraws the approvers. */
+  async function loadLinks(): Promise<void> {
+    if (!ctx.linkedOf) return;
+    const who = [ownerAddress, ...approvers.filter((a) => a.enabled).map((a) => a.address)].filter((a): a is Address => Boolean(a));
+    const mine = ctx.vault();
+    const answers = await Promise.all(who.map((a) => ctx.linkedOf!(a)));
+    if (ctx.vault() !== mine) return;
+    who.forEach((a, i) => linkStates.set(a.toLowerCase(), answers[i] ?? null));
+    renderApprovers();
   }
 
   // ---- Drawing the lists ----
@@ -374,9 +410,36 @@ export function initV2(ctx: V2Context) {
         body.append(address, badge(state, agent.enabled && live), detail);
         li.append(body, button("Edit", () => selectAgent(agent.address)));
         if (agent.enabled) li.append(button("Switch off", () => switchOff(agent.address)));
+        if (agent.enabled && ctx.connectAgent && ownerAddress) {
+          const choices = [ownerAddress, ...approvers.filter((a) => a.enabled).map((a) => getAddress(a.address))];
+          const label = document.createElement("label");
+          label.className = "approver-pick";
+          label.textContent = "Approver who gets this agent's alerts ";
+          const select = document.createElement("select");
+          select.className = "approver-select";
+          for (const choice of choices) {
+            const option = document.createElement("option");
+            option.value = choice;
+            option.textContent = `${choice === ownerAddress ? "Owner " : "Approver "}${choice}`;
+            select.append(option);
+          }
+          label.append(select);
+          const connectButton = button("Connect this agent", () => ctx.connectAgent!(getAddress(agent.address), getAddress(select.value)));
+          connectButton.className = "connect-agent";
+          li.append(label, connectButton);
+        }
         return li;
       }),
     );
+  }
+
+  /** Whether an approver can get alerts: they link Telegram by opening the approval site's /?link page. */
+  function linkNote(address: string | undefined): HTMLElement {
+    const note = document.createElement("span");
+    note.className = "note link-state";
+    const state = address ? linkStates.get(address.toLowerCase()) : undefined;
+    note.textContent = !ctx.linkedOf ? "" : state === true ? "Alerts: linked" : state === false ? "Alerts: not linked. Tell them to open https://styxco.xyz/?link" : "Alerts: not checked";
+    return note;
   }
 
   function renderApprovers(): void {
@@ -386,7 +449,7 @@ export function initV2(ctx: V2Context) {
     const ownerBody = document.createElement("div");
     ownerBody.className = "grow mono";
     ownerBody.textContent = ownerAddress ?? "";
-    owner.append(ownerBody, badge("OWNER, ALWAYS AN APPROVER", true));
+    owner.append(ownerBody, badge("OWNER, ALWAYS AN APPROVER", true), linkNote(ownerAddress));
     list.replaceChildren(
       owner,
       ...approvers.map((approver) => {
@@ -399,6 +462,7 @@ export function initV2(ctx: V2Context) {
         detail.className = "note";
         detail.textContent = `version ${approver.version}`;
         li.append(body, badge(approver.enabled ? "ON" : "OFF", approver.enabled), detail);
+        if (approver.enabled) li.append(linkNote(approver.address));
         if (approver.enabled) li.append(button("Remove", () => changeApprover(getAddress(approver.address), false)));
         return li;
       }),
@@ -436,5 +500,5 @@ export function initV2(ctx: V2Context) {
     for (const id of ["v2-agent-list", "v2-approver-list", "v2-checks"]) $(id).replaceChildren();
   }
 
-  return { refresh, reset, hasPending: () => pending !== undefined };
+  return { refresh, reset, ask, hasPending: () => pending !== undefined, cap: () => lastCap, forgetLinks: () => linkStates.clear() };
 }

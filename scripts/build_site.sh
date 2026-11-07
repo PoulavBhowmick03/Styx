@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist/styx-approve"
 rm -rf "$OUT"; mkdir -p "$OUT"
 (cd "$ROOT/owner-page" && npx vite build --outDir "$OUT" --emptyOutDir)
-(cd "$ROOT/setup-page" && npx vite build --base /setup/ --outDir "$OUT/setup" --emptyOutDir)
+(cd "$ROOT/setup-page" && npm run --silent prepare-artifact && VITE_DEPLOY_CURRENT=1 npx vite build --base /setup/ --outDir "$OUT/setup" --emptyOutDir)
 # The request ID is in the approval link, so it must not leak in a referrer. The page must not be framed.
 cat >"$OUT/vercel.json" <<'JSON'
 {

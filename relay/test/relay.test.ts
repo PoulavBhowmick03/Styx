@@ -102,7 +102,7 @@ describe("the agent's request", () => {
     expect(String(message.text)).toContain("Requested: 6 USDC");
     expect(String(message.text)).toContain(getAddress(VENDOR));
     expect(String(message.text)).toContain("This message proves nothing");
-    const link = new URL(String((message.reply_markup as any).inline_keyboard[0][0].url));
+    const link = new URL(String((message.reply_markup as any).inline_keyboard[1][0].url));
     expect(link.origin).toBe("https://approve.example");
     expect(link.searchParams.get("request")).toBe(body.requestId);
     expect(link.searchParams.get("relay")).toBe("https://relay.example");
@@ -541,5 +541,15 @@ describe("per-person alerts", () => {
     const signature = await person.signTypedData({ domain: { ...request.domain, chainId: parsed.chainId }, types: { ExceptionAuthorization: request.types.ExceptionAuthorization }, primaryType: "ExceptionAuthorization", message: { ...parsed.authorization } });
     await w.relay.sign(requestId, JSON.parse(await buildSignatureFileV2(parsed, signature)));
     expect(w.relay.signature(requestId, w.token).status).toBe("signed");
+  });
+});
+
+describe("the alert's buttons", () => {
+  it("offer the request directly in MetaMask, and in a browser", async () => {
+    const r = await setup();
+    await r.post("/requests", { pending: pendingJson("6000000", "buttons") });
+    const buttons = (r.sent.at(-1)!.reply_markup as { inline_keyboard: { text: string; url: string }[][] }).inline_keyboard.flat();
+    expect(buttons[0]!.url).toMatch(/^https:\/\/link\.metamask\.io\/dapp\/approve\.example\/\?relay=.*&request=/);
+    expect(buttons[1]!.url).toMatch(/^https:\/\/approve\.example\/\?relay=.*&request=/);
   });
 });

@@ -119,6 +119,12 @@ Balance after the attacks: 37.70 USDC in the vault, unchanged by them, and 0 at 
 
 **Not shown:** a Safe or other contract-wallet approver, because the page and relay support plain wallets only. Removing an approver or switching off an agent on Arc, which has only run on a local chain. On the phone, the page failed once with "could not be read" before working on retry, and the cause was not established. Reads now run one at a time with retries and a fallback. The page does not check daily caps or spent nonces, so a request it accepts can still revert. Poulav reports reviewing it. None of this is audited.
 
+## Alerts for each person, and two ways to set up
+
+Tested on a local chain with a fake Telegram: a wallet links Telegram by signing, a vault's owner registers an agent and chooses its approver, and the relay alerts only that person's chat. Any vault can use the relay. The site asks "Just me" or "A team", with a guided setup for one person. Pages and alerts open directly in MetaMask on a phone.
+
+**Not yet shown on Arc:** linking with the real bot, registering an agent on the live relay, and the guided setup from start to finish.
+
 ## Under the Styx name
 
 After the rename and the removal of unused code, on Arc through the `styx_*` tools and `styx-vault`, with the hosted relay and `styxco.xyz`:

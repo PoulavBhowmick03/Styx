@@ -519,6 +519,15 @@ try {
       body: JSON.stringify({ chainId: "31337", vault: v, agent: a, approver: b, issuedAt, signature: signAs(strangerKey, message) }) });
     assert.equal(reply.status, 403);
   });
+  await scenario("the link page on a browser with no wallet goes straight to opening MetaMask", async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${HOSTED_PORT}/?link`);
+    await page.locator("#wallet-help").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#open-wallet").getAttribute("href"), `https://link.metamask.io/dapp/127.0.0.1:${HOSTED_PORT}/?link`);
+    assert.equal(await page.locator("#link-connect").isVisible(), false);
+    await context.close();
+  });
   await scenario("the landing page offers the two paths and the Telegram link", async () => {
     const { page, context } = await openPage(HOSTED_PORT);
     await allowHosted(page);

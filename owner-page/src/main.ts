@@ -541,6 +541,15 @@ function showLinkView(): void {
   element("config-details").hidden = true;
   element("pending-label").hidden = true;
   if (!BUILT_IN_RELAY) showStatus("This build has no relay to link with.", true);
+  // Wallets can inject a moment after load, so this waits briefly before saying there is none.
+  setTimeout(() => {
+    if (window.ethereum) return;
+    const { host, pathname, search } = window.location;
+    element<HTMLAnchorElement>("open-wallet").href = `https://link.metamask.io/dapp/${host}${pathname}${search}`;
+    element("wallet-help").hidden = false;
+    element("link-connect").hidden = true;
+    showStatus("Open this page in MetaMask to connect your wallet.");
+  }, 600);
 }
 
 async function linkTelegram(): Promise<void> {

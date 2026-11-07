@@ -40,3 +40,23 @@ body[data-version="2"] .v1only { display: none !important; }
 .badge.on::before { content: "\2713"; }
 .badge.off { color: var(--ember); }
 .badge.off::before { content: "\2715"; }
+
+/* ---- The guided path ---- */
+ol.steps { list-style: none; padding: 0; margin: 0.5rem 0 1rem; }
+ol.steps li { padding: 0.5rem 0; border-top: 1px solid var(--rule); }
+ol.steps .mark { display: inline-block; min-width: 4rem; margin-right: 0.5rem; padding: 0.125rem 0.5rem; border: 1px solid var(--rule-2); border-radius: 0.25rem; font-size: 0.75rem; font-weight: 700; text-align: center; }
+ol.steps li.done .mark::before { content: "\2713  "; }
+ol.steps li.now { font-weight: 700; }
+ol.steps li.now .mark { color: var(--ember); border-color: var(--ember); }
+ol.steps li.later { color: var(--fore-2); }
+#token-config { min-height: 16rem; }
+.approver-pick { flex: 1 1 100%; font-weight: 400; }
+.approver-pick select { margin-top: 0.25rem; }
+select { display: block; width: 100%; min-height: 3rem; background: var(--ground); color: var(--fore); border: 1px solid var(--rule-2); border-radius: 0.375rem; padding: 0.5rem; font: inherit; }
+
+/* In the "just me" path only the screen for the current step is shown. The full controls stay in the page, hidden. */
+body[data-path="me"] #s-vault, body[data-path="me"] #s-wallet { display: none; }
+body[data-path="me"][data-gstep="1"] #s-wallet { display: block; }
+body[data-path="me"] #dashboard > section, body[data-path="me"] #dashboard > #v2 { display: none !important; }
+body[data-path="me"][data-gstep="5"] #dashboard > [data-guide="vendors"], body[data-path="me"][data-gstep="6"] #dashboard > [data-guide="fund"] { display: block !important; }
+body:not([data-path="me"]) #guide { display: none; }
