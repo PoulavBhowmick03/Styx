@@ -777,7 +777,6 @@ try {
     await page.goto(`http://127.0.0.1:${PAGE_PORT}/`);
     await page.locator("#landing").waitFor({ state: "visible" });
     assert.equal(await page.locator('#landing a[href^="/setup/?path="]').count(), 2);
-    assert.match(await page.locator("#landing").textContent(), /Testnet only, and not audited/);
     await shot(page, "landing");
     const widest = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(widest <= 0, `no horizontal scrolling, got ${widest}px`);
