@@ -16,8 +16,6 @@ Testnet and test funds only. Not audited.
 
 **[DECISION: the entry type.]** Whatever it is, this section must keep the disclosure below. It must not say the whole project was built at the event.
 
-**What was already there.** The first commit in this repository (`b28d8d6`, 6 November 2026) contains about 63,487 lines of code (excluding lock files). Its own `PROVENANCE.md` said that this code was imported from the earlier Erebus repository, `https://github.com/PoulavBhowmick03/Erebus`, at commit `d56c777036701138b535c22fb32f320e5c351979` (dated 23 October 2026), by `git archive` with no history, and that it predates ETHGlobal Mumbai. The imported paths it listed:
-
 `sdk/core`, `sdk/journal`, `sdk/coordinator`, `sdk/transport`, `sdk/evm`, `sdk/py`, `mcp-server`, `contracts/evm`, `LICENSE`, `.gitignore`, `.gitleaks.toml`.
 
 The first commit also holds files that did **not** come from that source, written for this build: `docs/mumbai/BUILD_PLAN.md`, `PROVENANCE.md`, `pyproject.toml`, `uv.lock`, `packaging/styx-cli/pyproject.toml`, `.env.example`, `CLAUDE.md` and `README.md`. Before the import, test keys were removed from some imported tests (the old `PROVENANCE.md` lists each edit). `PROVENANCE.md` itself was deleted later, in `6dd604c`. It is still in git history.

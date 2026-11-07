@@ -109,7 +109,7 @@ contract StyxPolicyVault {
 
     bytes32 private constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-    bytes32 private constant NAME_HASH = keccak256("ErebusPolicyVault");
+    bytes32 private constant NAME_HASH = keccak256("StyxPolicyVault");
     bytes32 private constant VERSION_HASH = keccak256("1");
     bytes32 private constant PAYMENT_TYPEHASH = keccak256(
         "Payment(bytes32 paymentId,address agent,address token,address recipient,uint256 amount,bytes32 evidenceCommitment,uint256 policyVersion,uint64 validUntil)"

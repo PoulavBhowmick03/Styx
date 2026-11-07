@@ -63,7 +63,7 @@ The guide was followed step by step from a clone of the public GitHub repository
 | Guide step | Result |
 | --- | --- |
 | Part 1: `cargo build --bins` with an empty target folder | Built in 31 seconds. Produced `styx-vault` and `styx-disclosure` |
-| Part 1: `uv sync --all-packages` | Worked. The MCP server is `.venv/bin/styx-mcp-server`, and no `erebus` command is left |
+| Part 1: `uv sync --all-packages` | Worked. The MCP server is `.venv/bin/styx-mcp-server`|
 | Part 1: `npm install` in `owner-page` | Worked |
 | Part 2: `local_vault.py` | Started. Printed the `env.sh` path (now with `STYX_VAULT_*` names) and the owner config path |
 | Part 2: first payment, allowed, with **no times in the prompt** | The agent proposed and submitted, and the vault reported `settled`. This is the first time the guide's "leave the times out" claim was followed through the guide, not just the trial harness |

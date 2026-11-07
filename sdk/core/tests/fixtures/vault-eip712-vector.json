@@ -1,7 +1,7 @@
 {
   "source": "cast abi-encode and cast keccak, independent of the contract",
   "domain": {
-    "name": "ErebusPolicyVault",
+    "name": "StyxPolicyVault",
     "version": "1",
     "chainId": "5042002",
     "verifyingContract": "0x1000000000000000000000000000000000000001"
@@ -21,11 +21,11 @@
     "authorizationExpiry": "1800000600"
   },
   "expected": {
-    "domainSeparator": "0xcd3acec86be3c7c092f6e59d0fda5638b5f81676bafa6e8a8a133ea991200f0c",
+    "domainSeparator": "0xd69a0d563e131faf18db8338a7f85361bc3184724894e661ee90df09f27d0db0",
     "paymentTypeHash": "0x54d1b3857ca85c48ece64062865af6c750b23f63416915b045268f9781d8c0ad",
     "authorizationTypeHash": "0x97e91ca0e46f5f0dc5ff615694876282fce03b65ce6a9b81e79e02488474d12d",
     "paymentHash": "0xaae447e0b3cc6969bb2f8f1b79060834eab3fd46cbc408515b626590cc6120f0",
     "authorizationHash": "0x803e30ef2fd62e9d2d1731231bc5648c5861582701341fdb1f4865ead4e93f53",
-    "approvalDigest": "0xc9ae5e823c90e84fd5c469919001cb9a0cf2789c6451c3b9ef5efd325f5c851b"
+    "approvalDigest": "0xbb2d8d6a79627f1908d65bb9f5bd5d0410b867a9a6102074687cc2d330c04b24"
   }
 }

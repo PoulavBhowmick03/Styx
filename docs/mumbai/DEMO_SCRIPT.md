@@ -39,7 +39,6 @@ The entry type (G0) and the partner picks are not decided in this file, and noth
 | 2:55 to 3:12 | The Arkiv fetch, with the command below. It prints the bytes saved. Then, only on the machine whose reviewer key the grant is sealed to, the verifier reports all four results `verified` | "The sealed record can also be fetched from Arkiv with no Styx process running. Only the reviewer's key opens it." | **G4 passed on one machine:** published on Rabdi and fetched there. The fetch itself also worked from a second Mac with no key, and a wrong writer address returned nothing. **The sealed grant opens only with the issuer's reviewer key, so the verify step must be filmed on that machine.** The grant expires on 12 November 2026 **The Arkiv grant is being reissued for the same reason. The recorded fetch was of the earlier grant; do not cite the rerun until it is recorded** |
 | 3:12 to 3:42 | A closing card: what is public, what is encrypted, and the limits | "Amounts, recipients and timing are public on Arc. Only the invoice and approval record are encrypted. This is testnet, it is not audited, the daily limit is the real cap on unsigned spending, and the approver has to hold the owner key." Then the closing line for the entry, below | |
 
-**Closing line.** The wording depends on the entry type, which is not decided. Whatever it is: do not say the whole project was built at the event, and do not drop the disclosure of the earlier Erebus code that `STATUS.md` describes under "Open conflict on G0".
 
 ## The commands
 

@@ -182,7 +182,7 @@ export function paymentHash(payment: Payment): Hex {
 
 function domain(pending: Pending) {
   return {
-    name: "ErebusPolicyVault",
+    name: "StyxPolicyVault",
     version: "1",
     chainId: pending.chainId,
     verifyingContract: pending.vault,

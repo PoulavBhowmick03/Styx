@@ -159,7 +159,7 @@ def payment_hash(p: tuple) -> str:
 
 def digest(auth: tuple) -> str:
     domain = cast("keccak", cast("abi-encode", "f(bytes32,bytes32,bytes32,uint256,address)", cast("keccak", DOMAIN_TYPE),
-                                 cast("keccak", "ErebusPolicyVault"), cast("keccak", "1"), str(CHAIN), VAULT))
+                                 cast("keccak", "StyxPolicyVault"), cast("keccak", "1"), str(CHAIN), VAULT))
     struct = cast("keccak", cast("abi-encode", "f(bytes32,bytes32,uint256,uint64)", cast("keccak", AUTH_TYPE), *[str(v) for v in auth]))
     return cast("keccak", "0x1901" + domain[2:] + struct[2:])
 

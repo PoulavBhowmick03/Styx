@@ -12,7 +12,7 @@ pub const AUTHORIZATION_TYPE: &str =
     "ExceptionAuthorization(bytes32 paymentHash,uint256 approvalNonce,uint64 authorizationExpiry)";
 const DOMAIN_TYPE: &str =
     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
-const DOMAIN_NAME: &str = "ErebusPolicyVault";
+const DOMAIN_NAME: &str = "StyxPolicyVault";
 const DOMAIN_VERSION: &str = "1";
 const EVIDENCE_TAG: &[u8] = b"VAULT_EVIDENCE_V1";
 
