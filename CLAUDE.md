@@ -41,3 +41,4 @@ The problem Styx answers: a recent study (Cornell and Yale, "I-HITL", arXiv 2610
 - A1 to A4 have run on Arc. **A5 and A6 have run on a local chain only.** Run them on Arc before saying so on camera or in writing.
 - The contract is unchanged by this work. `test_agentAndApproverCannotAdminOrWithdraw` in `contracts/evm/test/StyxVault.t.sol` is the unit test for the same refusal. Any change to `StyxVault.sol` needs Poulav's review and its own commit.
 - `scripts/demo.sh` runs A5, A1 and A4 by default (`DEMO_ATTACKS` overrides).
+- `scripts/demo.sh` reads `.env` at the repo root, which git ignores. Never commit it. It holds the relay token, so keep it out of the repo, screenshots and the video. `scripts/demo.sh auto` runs every step.

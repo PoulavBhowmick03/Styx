@@ -4,17 +4,57 @@
 #   scripts/demo.sh            every step, pausing before each
 #   scripts/demo.sh check      one step: check, pay, approve, attack, review, arkiv, links
 #
-# Settings come from a private file outside this repo (DEMO_ENV, default ~/.styx-mumbai/demo.env).
-# See docs/mumbai/RUNBOOK.md. Nothing here prints a key or token.
+# Settings come from the .env file at the repo root (git ignores it, so it never gets committed).
+# Set DEMO_ENV to read a different file. Without either, ~/.styx-mumbai/demo.env is tried.
+# .env.example lists every name. Most have a default read from the chain, so a short file is enough.
+#
+#   scripts/demo.sh auto       the whole demo with no pauses (it still waits for the phone signature)
+#
+# Nothing here prints a key or token.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEMO_ENV="${DEMO_ENV:-$HOME/.styx-mumbai/demo.env}"
-[ -r "$DEMO_ENV" ] || { echo "Settings file not found: $DEMO_ENV"; exit 2; }
+if [ -n "${DEMO_ENV:-}" ]; then ENV_FILE="$DEMO_ENV"
+elif [ -r "$ROOT/.env" ]; then ENV_FILE="$ROOT/.env"
+else ENV_FILE="$HOME/.styx-mumbai/demo.env"; fi
+[ -r "$ENV_FILE" ] || { echo "No settings file. Copy .env.example to .env at the repo root and fill it in."; exit 2; }
+set -a
 # shellcheck disable=SC1090
-source "$DEMO_ENV"
-: "${STYX_VAULT_ADDRESS:?}" "${STYX_VAULT_TOKEN:?}" "${STYX_VAULT_DIR:?}" "${STYX_VAULT_CODE_HASH:?}" "${STYX_VAULT_AGENT_KEY_FILE:?}"
-: "${DEMO_RPC:?}" "${DEMO_APPROVER:?}" "${DEMO_VENDOR_A:?}" "${DEMO_VENDOR_B:?}" "${DEMO_ISSUER:?}" "${ISSUER_KEY_FILE:?}" "${REVIEWER_KEY_FILE:?}" "${OTHER_REVIEWER_KEY_FILE:?}"
-export STYX_BACKEND=vault STYX_VAULT_VERSION=2
+source "$ENV_FILE"
+set +a
+
+# Defaults that can be read from the chain or are public.
+DEMO_RPC="${DEMO_RPC:-$(printf '%s' "${STYX_VAULT_RPC_URLS:-https://rpc.testnet.arc.io}" | cut -d, -f1)}"
+STYX_VAULT_CHAIN_ID="${STYX_VAULT_CHAIN_ID:-5042002}"
+STYX_VAULT_RPC_URLS="${STYX_VAULT_RPC_URLS:-$DEMO_RPC}"
+STYX_VAULT_DIR="${STYX_VAULT_DIR:-${STYX_VAULT_STATE_ROOT:-}}"
+STYX_VAULT_RELAY_URL="${STYX_VAULT_RELAY_URL:-https://styx-vault-relay.fly.dev}"
+DEMO_ARKIV_TAG="${DEMO_ARKIV_TAG:-32d6d9b6f1b63d3e8856ed1bc23eee2b}"
+DEMO_ARKIV_WRITER="${DEMO_ARKIV_WRITER:-0xbF21009ffB20f219513EAAE6E19DeC69d73cf258}"
+
+missing=""
+for name in STYX_VAULT_ADDRESS STYX_VAULT_AGENT_KEY_FILE STYX_VAULT_DIR STYX_VAULT_RELAY_TOKEN DEMO_VENDOR_A DEMO_VENDOR_B; do
+  [ -n "${!name:-}" ] || missing="$missing $name"
+done
+[ -z "$missing" ] || { echo "Missing in $ENV_FILE:$missing"; exit 2; }
+[ -r "$STYX_VAULT_AGENT_KEY_FILE" ] || { echo "Agent key file not readable: $STYX_VAULT_AGENT_KEY_FILE"; exit 2; }
+mkdir -p "$STYX_VAULT_DIR" && chmod 700 "$STYX_VAULT_DIR"
+
+# Read from the vault itself when not set: the token, the approver (the owner), and the code hash.
+chain() { cast call "$STYX_VAULT_ADDRESS" "$@" --rpc-url "$DEMO_RPC" 2>/dev/null | awk '{print $1}'; }
+STYX_VAULT_TOKEN="${STYX_VAULT_TOKEN:-$(chain 'token()(address)')}"
+DEMO_APPROVER="${DEMO_APPROVER:-$(chain 'owner()(address)')}"
+STYX_VAULT_CODE_HASH="${STYX_VAULT_CODE_HASH:-$(cast keccak "$(cast code "$STYX_VAULT_ADDRESS" --rpc-url "$DEMO_RPC" 2>/dev/null)" 2>/dev/null)}"
+for name in STYX_VAULT_TOKEN DEMO_APPROVER STYX_VAULT_CODE_HASH; do
+  [ -n "${!name:-}" ] || { echo "Could not read $name from the chain at $DEMO_RPC. Check the vault address and the network."; exit 2; }
+done
+
+# Demo-only key files for the issuer and the two reviewers, made on first use inside the state directory.
+KEYS="$STYX_VAULT_DIR/demo-keys"
+ISSUER_KEY_FILE="${ISSUER_KEY_FILE:-$KEYS/issuer.key}"
+REVIEWER_KEY_FILE="${REVIEWER_KEY_FILE:-$KEYS/reviewer.key}"
+OTHER_REVIEWER_KEY_FILE="${OTHER_REVIEWER_KEY_FILE:-$KEYS/other-reviewer.key}"
+DEMO_ISSUER="${DEMO_ISSUER:-}"
+export STYX_BACKEND=vault STYX_VAULT_VERSION=2 STYX_VAULT_DIR STYX_VAULT_TOKEN STYX_VAULT_CODE_HASH STYX_VAULT_CHAIN_ID STYX_VAULT_RPC_URLS STYX_VAULT_RELAY_URL
 export STYX_VAULT_CLI="$ROOT/sdk/evm/target/debug/styx-vault"
 DISCLOSURE="$ROOT/sdk/evm/target/debug/styx-disclosure"
 EXPLORER="https://explorer.testnet.arc.io"
@@ -140,15 +180,16 @@ for k,l in (("record_integrity","Record integrity"),("authorization","Authorizat
 
 step_review() {
   title "A reviewer checks one record against the chain"
-  local id dir record grant public expires pins answer
+  local id dir record grant public expires pins answer sealed
   id="$(last_exception)" || { bad "Run the approve step first."; return 1; }
   dir="$STYX_VAULT_DIR/demo-review-${id:2:12}-$(date +%s)"; mkdir -p "$dir"; chmod 700 "$dir"
   record="$dir/record"; grant="$dir/grant"
   printf '{"method":"export_record","payment_id":"%s","record_file":"%s"}' "$id" "$record" | vault_cli >/dev/null
   public="$(printf '{"method":"key_info","key_file":"%s"}' "$REVIEWER_KEY_FILE" | disclose | python3 -c 'import json,sys; print(json.load(sys.stdin)["recipient_public_key"])')"
   expires=$(( $(date +%s) + 86400 ))
-  printf '{"method":"export_vault_payment","record_file":"%s","issuer_key_file":"%s","recipient_public_key":"%s","grant_file":"%s","expires_at":%s}' \
-    "$record" "$ISSUER_KEY_FILE" "$public" "$grant" "$expires" | disclose >/dev/null
+  sealed="$(printf '{"method":"export_vault_payment","record_file":"%s","issuer_key_file":"%s","recipient_public_key":"%s","grant_file":"%s","expires_at":%s}' \
+    "$record" "$ISSUER_KEY_FILE" "$public" "$grant" "$expires" | disclose)"
+  DEMO_ISSUER="${DEMO_ISSUER:-$(get "$sealed" issuer)}"
   good "Record sealed to one reviewer's key"
   local lower; lower="$(printf '%s' "$STYX_VAULT_ADDRESS" | tr 'A-F' 'a-f')"
   pins="{\"chain_id\":5042002,\"rpc_urls\":[\"$DEMO_RPC\"],\"vault\":\"$lower\",\"vault_code_hash\":\"$STYX_VAULT_CODE_HASH\"}"
@@ -189,7 +230,18 @@ build() {
   (cd "$ROOT/sdk/evm" && cargo build --bins >/dev/null 2>&1) || { echo "Could not build the tools"; exit 2; }
 }
 
+make_keys() {
+  mkdir -p "$KEYS" && chmod 700 "$KEYS"
+  [ -s "$ISSUER_KEY_FILE" ] || { python3 -c 'import os,sys; sys.stdout.buffer.write(os.urandom(32))' >"$ISSUER_KEY_FILE"; chmod 600 "$ISSUER_KEY_FILE"; }
+  local f
+  for f in "$REVIEWER_KEY_FILE" "$OTHER_REVIEWER_KEY_FILE"; do
+    [ -s "$f" ] || printf '{"method":"keygen","key_file":"%s"}' "$f" | disclose >/dev/null
+  done
+}
+
 build
+make_keys
+[ "${1:-}" = auto ] && { DEMO_AUTO=1; set -- all; }
 case "${1:-all}" in
   check | pay | approve | attack | review | arkiv | links) "step_$1" ;;
   all)
@@ -201,5 +253,5 @@ case "${1:-all}" in
     pause "Arkiv"; step_arkiv
     pause "links"; step_links
     ;;
-  *) echo "usage: scripts/demo.sh [check|pay|approve|attack|review|arkiv|links]"; exit 2 ;;
+  *) echo "usage: scripts/demo.sh [auto|check|pay|approve|attack|review|arkiv|links]"; exit 2 ;;
 esac
