@@ -192,10 +192,6 @@ scripts/local_demo.sh         # the whole flow on a local chain
 - The vault's rules don't prevent prompt injection. An injected agent can still pay allowed recipients within its limits.
 - The contract accepts contract wallets as approvers, but these pages support plain wallets only.
 
-## How it was built
-
-The SDK and MCP layers started from the team's earlier Erebus codebase, and most of that code has since been removed or rewritten. The first vault contract was produced with Arc Studio, and the current one was deployed from it. Claude Code and Codex wrote much of the remaining code, tests and docs under the team's direction. People handled the wallets, keys, funds and real signatures.
-
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
