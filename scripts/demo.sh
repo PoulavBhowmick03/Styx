@@ -2,7 +2,7 @@
 # The live demo, one key press at a time, through the real MCP tools on Arc testnet.
 #
 #   scripts/demo.sh            every step, pausing before each
-#   scripts/demo.sh check      one step: check, pay, approve, attack, review, arkiv, links
+#   scripts/demo.sh check      one step: setup, check, pay, approve, attack, review, arkiv, links
 #
 # Settings come from a private file outside this repo (DEMO_ENV, default ~/.styx-mumbai/demo.env).
 # See docs/mumbai/RUNBOOK.md. Nothing here prints a key or token.
@@ -37,6 +37,17 @@ get() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); [d:=d.get(k,{}) 
 vault_cli() { "$STYX_VAULT_CLI"; }
 disclose() { "$DISCLOSURE"; }
 
+step_setup() {
+  title "Set the rules: the owner's wallet, on the website"
+  local url="https://styxco.xyz/setup/?path=team&vault=$STYX_VAULT_ADDRESS"
+  info "$url"
+  info "Connect the vault owner's wallet, then review limits, vendors and approvers."
+  if [ "${DEMO_AUTO:-}" != 1 ]; then
+    if command -v open >/dev/null 2>&1; then open "$url"; else info "Open the link above in your browser."; fi
+  fi
+  pause "when the vault is set up"
+}
+
 step_check() {
   title "Check: the vault, as the chain reports it"
   local agent day policy
@@ -56,6 +67,12 @@ step_check() {
   if [ "$room" -lt $(( ROUTINE_AMOUNT + EXCEPTION_AMOUNT )) ]; then bad "Only $(usdc "$room") left today, which is not enough for one more run"; return 1; fi
   good "Room for $(( room / (ROUTINE_AMOUNT + EXCEPTION_AMOUNT) )) more runs today"
   curl -s -m 15 -o /dev/null -w '%{http_code}' https://styx-vault-relay.fly.dev/requests/check | grep -q 404 && good "Relay is up" || bad "Relay did not answer"
+  # Not fatal: an unlinked approver on the configured vault falls back to the relay's own chat.
+  if curl -s -m 15 "https://styx-vault-relay.fly.dev/links/$DEMO_APPROVER" | grep -q '"linked":true'; then
+    good "Approver is linked to Telegram"
+  else
+    bad "Approver is not linked to Telegram, so their phone will not get an alert. Link: https://t.me/styx_agent_bot"
+  fi
 }
 
 invoice() { # reference text
@@ -90,8 +107,17 @@ step_approve() {
   [ -n "$id" ] || { bad "The tool refused: $(get "$answer" error message)"; return 1; }
   printf '  %sVault says: %s%s\n' "$Y" "$(get "$answer" result path)" "$N"
   asked="$(tool styx_request_owner_approval "{\"payment_id\":\"$id\",\"signer\":\"$DEMO_APPROVER\"}")"
-  [ "$(get "$asked" result owner_alerted)" = True ] || { bad "The alert did not go out. Run this step again."; return 1; }
-  good "Approver alerted on Telegram. Approve on the phone."
+  [ -n "$(get "$asked" result pending_file)" ] || { bad "The tool refused: $(get "$asked" error message)"; return 1; }
+  if [ "$(get "$asked" result owner_alerted)" = True ]; then
+    good "Approver alerted on Telegram. Approve on the phone."
+  else
+    # The request is still waiting on the relay, so Telegram failing does not have to stop the demo.
+    local relay_url="${STYX_VAULT_RELAY_URL:-https://styx-vault-relay.fly.dev}" request
+    request="$(cat "$STYX_VAULT_DIR/relay-${id:2:12}.txt" 2>/dev/null)"
+    [ -n "$request" ] || { bad "The relay did not take the request. Run this step again."; return 1; }
+    bad "The Telegram alert did not go out. Open this link in the approver's wallet instead:"
+    info "https://styxco.xyz/?relay=$relay_url&request=$request"
+  fi
   printf '  %sWaiting for the signature%s' "$D" "$N"
   for _ in $(seq 1 120); do
     check="$(tool styx_check_owner_approval "{\"payment_id\":\"$id\"}")"
@@ -128,7 +154,8 @@ step_attack() {
         *) bad "$verdict $label" ;;
       esac
     done
-  info "Vault balance $(usdc "$(balance "$STYX_VAULT_ADDRESS")"), and a notice goes to Telegram from the watcher"
+  info "Vault balance $(usdc "$(balance "$STYX_VAULT_ADDRESS")")"
+  pgrep -f "watcher.py.*$STYX_VAULT_ADDRESS" >/dev/null 2>&1 && info "The watcher is sending a notice to Telegram for each revert"
 }
 
 report() { python3 -c '
@@ -164,11 +191,34 @@ step_review() {
   answer="$(printf '{"method":"verify_vault_payment","grant_file":"%s","key_file":"%s","expected_issuer":"%s","deployment":%s,"opened_file":null}' "$grant" "$OTHER_REVIEWER_KEY_FILE" "$DEMO_ISSUER" "$pins" | disclose)"
   report "$answer"
   rm -f "$record"
+  printf '%s\n' "$grant" >"$STYX_VAULT_DIR/demo-last-grant.txt"
 }
 
 step_arkiv() {
   title "The same kind of record, from Arkiv, with nothing of ours running"
   local out; out="$(mktemp -d)/fetched.grant"
+  # A new vault publishes the record just made, then reads it back and verifies what came back.
+  local grant_file; grant_file="$(cat "$STYX_VAULT_DIR/demo-last-grant.txt" 2>/dev/null)"
+  if [ -n "${DEMO_ARKIV_PUBLISHER_KEY_FILE:-}" ] && [ -s "$grant_file" ]; then
+    local published tag lower pins answer
+    published="$(cd "$ROOT/arkiv" && ARKIV_PUBLISHER_KEY_FILE="$DEMO_ARKIV_PUBLISHER_KEY_FILE" npm run --silent publish-grant -- "$grant_file" 2>/dev/null)"
+    tag="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["lookupTag"])' "$published" 2>/dev/null)"
+    [ -n "$tag" ] || { bad "Arkiv did not take the record. That says nothing about the payment."; return 1; }
+    good "Published this payment's encrypted record to Arkiv, tag $tag"
+    (cd "$ROOT/arkiv" && npm run --silent fetch-grant -- "$tag" "$DEMO_ARKIV_WRITER" "$out" >/dev/null 2>&1) || { bad "Arkiv did not answer. That says nothing about the payment."; return 1; }
+    chmod 600 "$out"
+    good "Fetched $(wc -c <"$out" | tr -d ' ') encrypted bytes back from Arkiv"
+    lower="$(printf '%s' "$STYX_VAULT_ADDRESS" | tr 'A-F' 'a-f')"
+    pins="{\"chain_id\":5042002,\"rpc_urls\":[\"$DEMO_RPC\"],\"vault\":\"$lower\",\"vault_code_hash\":\"$STYX_VAULT_CODE_HASH\"}"
+    info "The copy from Arkiv, opened with the reviewer's key and checked against Arc:"
+    for _ in 1 2 3 4; do
+      answer="$(printf '{"method":"verify_vault_payment","grant_file":"%s","key_file":"%s","expected_issuer":"%s","deployment":%s,"opened_file":null}' "$out" "$REVIEWER_KEY_FILE" "$DEMO_ISSUER" "$pins" | disclose)"
+      printf '%s' "$answer" | grep -q '"unavailable"' || break
+      sleep 4
+    done
+    report "$answer"
+    return 0
+  fi
   if (cd "$ROOT/arkiv" && npm run --silent fetch-grant -- "$DEMO_ARKIV_TAG" "$DEMO_ARKIV_WRITER" "$out" 2>/dev/null); then
     good "Fetched $(wc -c <"$out" | tr -d ' ') encrypted bytes from Arkiv"
   else
@@ -191,8 +241,9 @@ build() {
 
 build
 case "${1:-all}" in
-  check | pay | approve | attack | review | arkiv | links) "step_$1" ;;
+  setup | check | pay | approve | attack | review | arkiv | links) "step_$1" ;;
   all)
+    step_setup
     step_check || exit 1
     pause "routine payment"; step_pay
     pause "exception"; step_approve
@@ -201,5 +252,5 @@ case "${1:-all}" in
     pause "Arkiv"; step_arkiv
     pause "links"; step_links
     ;;
-  *) echo "usage: scripts/demo.sh [check|pay|approve|attack|review|arkiv|links]"; exit 2 ;;
+  *) echo "usage: scripts/demo.sh [setup|check|pay|approve|attack|review|arkiv|links]"; exit 2 ;;
 esac
