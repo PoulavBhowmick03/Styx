@@ -5,7 +5,7 @@
 #
 # Reads ~/.styx-near/demo.env (outside the repo) for: STYX_NEAR_VAULT, STYX_NEAR_AGENT_KEY_FILE,
 # STYX_NEAR_STATE_ROOT, STYX_NEAR_APPROVER, APPROVER_KEY_FILE, APPROVER_ACCOUNT, VENDOR, VENDOR_B.
-# Optional: DEMO_ATTACKS (default "A5 A1 A4"), NETWORK for the near CLI (default testnet-fastnear).
+# Optional: DEMO_ATTACKS (default "A5 A1 A4"), NETWORK for the near CLI (default testnet).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ENV_FILE="${STYX_NEAR_DEMO_ENV:-$HOME/.styx-near/demo.env}"
@@ -13,7 +13,7 @@ ENV_FILE="${STYX_NEAR_DEMO_ENV:-$HOME/.styx-near/demo.env}"
 [ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
 : "${STYX_NEAR_VAULT:?}" "${STYX_NEAR_AGENT_KEY_FILE:?}" "${STYX_NEAR_STATE_ROOT:?}" "${APPROVER_KEY_FILE:?}" "${VENDOR:?}" "${VENDOR_B:?}"
 BIN="${STYX_NEAR_CLI:-$ROOT/sdk/near/target/release/styx-near-vault}"
-NETWORK="${NETWORK:-testnet-fastnear}"
+NETWORK="${NETWORK:-testnet}"
 AUTO="${1:-}"
 S="$STYX_NEAR_STATE_ROOT"
 AGENT_PK="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["public_key"])' "$STYX_NEAR_AGENT_KEY_FILE")"
