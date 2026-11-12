@@ -93,14 +93,14 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
 - [ ] Hostile-invoice trials on sandbox with Haiku 5.5 and Sonnet 5.5, results recorded
 
 ### 5. Disclosure
-- [ ] Sealed record posted via `post_record` on the vault (event log), reviewer CLI fetches
+- [x] Sealed record posted via `post_record` on the vault (event log), reviewer CLI fetches
       the log through NEAR RPC and verifies against `payment_executed`
 
 ### 6. Demo and submission
-- [ ] `scripts/near/demo.sh auto`: fund, pay within limit, exception with signature, A5, A1, A4
-- [ ] README for the NEAR build, `docs/near/SUBMISSION_FORM.md` draft, `docs/near/DEMO_SCRIPT.md`
+- [x] `scripts/near/demo.sh auto`: fund, pay within limit, exception with signature, A5, A1, A4
+- [x] README for the NEAR build, `docs/near/SUBMISSION_FORM.md` draft, `docs/near/DEMO_SCRIPT.md`
 - [ ] Demo video or screenshots recorded (user)
-- [ ] Branch pushed to the public Styx repo
+- [x] Branch pushed to the public Styx repo
 - [ ] X post and form submitted (user; needs the NEAR wallet address)
 
 ## Decisions log

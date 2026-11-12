@@ -4,6 +4,24 @@
 
 [Open the app](https://styxco.xyz) · [Set up a vault](https://styxco.xyz/setup/) · [Live vault on Arc testnet](https://explorer.testnet.arc.io/address/0xd596e0fca7b12dc7f92c6beb3c4537fe2794aba8) · [Arc Studio project](https://studio.arc.io/app/038ffe00-c21d-4804-99f6-90c3d44f5e16)
 
+## On NEAR (NEAR Hackathon, track: AI Security & Defense)
+
+The same vault, native to NEAR. **The agent is a function-call access key on the vault account,
+allowed to call only `pay`, `pay_with_exception` and `post_record`.** NEAR itself rejects that key's
+call to any owner method, before the contract runs. Going over the per-payment limit needs the
+approver's NEP-413 signature over that exact payment, which the vault verifies on chain.
+
+| Piece | Where |
+| --- | --- |
+| Vault contract (Rust, near-sdk) and a NEP-141 test token | [`contracts/near`](contracts/near) |
+| Agent CLI, same protocol as the EVM one, so the MCP server is reused unchanged | [`sdk/near`](sdk/near) |
+| Approval page (wallet-selector, NEP-413) and relay | [`approval-page-near`](approval-page-near), [`relay-near`](relay-near) |
+| Setup, attacks A1 to A6, demo, end-to-end scripts | [`scripts/near`](scripts/near) |
+| What has run on testnet, with every transaction | [`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md) |
+
+Live on testnet: vault `vault.styx-owner-c87a.testnet`, token `usdc.styx-owner-c87a.testnet`
+(our test token, not Circle's USDC). Plan and status: [`docs/near/PLAN.md`](docs/near/PLAN.md).
+
 ## The problem
 
 In [a recent study](https://arxiv.org/abs/2610.35835), AI agents with wallets often raised their own spending cap, for example by reading the emailed approval code meant for the owner. The limit and the approval both sat where the agent could reach them.
