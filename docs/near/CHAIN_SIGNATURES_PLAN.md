@@ -35,6 +35,16 @@ choose what gets signed beyond the fields the vault checks.
   USDC, outside the payment limits, bounded by the owner's gas caps.
 - The signer account is a constructor argument, so the sandbox test can use a mock signer.
 
+## First signature from the vault (12 Nov 2026)
+
+The agent's key called `pay_evm` on vault-v2 for 25 USDC to vendor A
+([DwK2BQJD…](https://testnet.nearblocks.io/txns/DwK2BQJD3C6HfEtWnRFZF7BkRgQ272VCtTotXx978L32)). In
+the same transaction the vault asked the MPC signer, got the signature back through the
+callback, and emitted `evm_payment_signed` with the raw Arc transaction (nonce 0, EVM hash
+`0x01475462…40ba`). `cast decode-transaction` recovers its signer as
+`0xb0241fcbd5a1d9d79a37c927559186ed08563cad`, the vault's derived address. Not broadcast yet: the
+address holds no USDC on Arc.
+
 ## Steps
 
 - [x] Probe the testnet signer and record its interface
@@ -44,7 +54,7 @@ choose what gets signed beyond the fields the vault checks.
 - [x] Contract: `pay_evm`, `pay_evm_with_exception`, signer call and callback with rollback, unit tests
 - [x] ~~Mock signer in the sandbox~~ replaced: unit tests cover the callback with a k256 stand-in signer
       and the rollback; the real signer is exercised on testnet below
-- [ ] Deploy vault-v2 on testnet; configure Arc, an EVM recipient, the agent and the approver
+- [x] Deploy vault-v2 on testnet; configure Arc, an EVM recipient, the agent and the approver
 - [ ] Fund `0xb0241fcB…3CAd` with Arc testnet USDC (user: faucet.circle.com, Arc testnet)
 - [ ] Agent CLI: EVM recipients (`0x…`), submit via `pay_evm`, broadcast to Arc, status from the receipt
 - [ ] Testnet run: within limits, exception with signature, refusals (over limit, recipient not allowed,
