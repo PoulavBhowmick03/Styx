@@ -18,6 +18,16 @@ Policy at the time: 100 tUSDC per payment.
 
 After the first two, `ft_balance_of` read 210 tUSDC for vendor-a and 790 for the vault.
 
+## Through the MCP server and the NEAR relay (`scripts/near/mcp_e2e.py`)
+
+The repo's MCP server, unchanged, drove `styx-near-vault` with `STYX_VAULT_CLI`. A 130 tUSDC payment
+to vendor-b was proposed, refused without approval (`OWNER_APPROVAL_REQUIRED`), sent to a local
+`relay-near`, signed by the test approver from the relay's copy of the request (standing in for
+the approval page and a wallet), fetched back through `styx_check_owner_approval`, and settled:
+[Egi7CJ84…](https://testnet.nearblocks.io/txns/Egi7CJ84mvtx8m4wch24Jn11fKAYmk7hkuC2eDFxHEW1).
+The receipt carries the `ft_transfer` and `payment_executed` events, and vendor-b's balance read
+130 tUSDC afterwards.
+
 ## Attacks (`scripts/near/attacks.py`), signed with the agent's own key
 
 | Attack | What the agent tried | Refused by | Evidence |
@@ -36,6 +46,6 @@ second barrier behind that; the unit tests `a5_agent_cannot_raise_its_own_limit`
 
 ## Not yet run
 
-- The approval page and NEAR relay with a real wallet (`relay-near/`, `approval-page-near/`).
-- The MCP server driving `styx-near-vault` with a model.
+- The approval page with a real wallet (Meteor or MyNearWallet). The relay has run locally only.
+- A model driving the MCP tools on NEAR.
 - Hostile-invoice model trials on NEAR.
