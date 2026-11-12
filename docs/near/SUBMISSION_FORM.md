@@ -9,7 +9,7 @@ DRAFT for Poulav to edit into his own voice before submitting. Every claim below
 | Team lead | (fill in) |
 | Email | (fill in) |
 | Team size | (fill in) |
-| Tracks | AI Security & Defense (primary), Agent Economy |
+| Tracks | AI Security & Defense (primary), Agent Economy, Autonomous Business |
 | NEAR wallet address | (fill in: the prize goes here) |
 | Repository | https://github.com/PoulavBhowmick03/Styx |
 | Demo post | (the X post link, tagging @NEARProtocol and #NEARHackathon) |
@@ -20,11 +20,11 @@ DRAFT for Poulav to edit into his own voice before submitting. Every claim below
 ```text
 A recent study (https://arxiv.org/abs/2610.35835) gave AI agents wallets with spending caps. Nine of ten models raised their own cap at least once, by reading the emailed approval code meant for the owner. The limit and the approval sat where the agent could reach them.
 
-Styx puts both on chain. The owner funds a vault contract and sets, per agent, the recipients it may pay and the most it can pay per payment and per day. On NEAR the agent is a function-call access key on the vault account, allowed to call only the pay methods. When the agent's key tries to raise its own limit or make itself an approver, NEAR rejects the transaction before the contract runs. Going over the per-payment limit needs the approver's NEP-413 signature over that exact payment, which the vault verifies on chain. A signature for one recipient fails for another, a payment ID pays once, and no signature lifts the daily limits.
+Styx puts both on chain. The owner funds a vault contract and sets, per agent, the recipients it may pay and the most it can pay per payment and per day. On NEAR the agent is a function-call access key on the vault account, allowed to call only the pay methods. When the agent's key tries to raise its own limit or make itself an approver, NEAR rejects the transaction before the contract runs. Going over the per-payment limit needs the approver's NEP-413 signature over that exact payment, which the vault verifies on chain. A signature for one recipient fails for another, a payment ID pays once, and no signature lifts the daily limits. Through NEAR Chain Signatures the same vault also pays USDC on Arc from an address NEAR's MPC network derives for it, under the same limits: the vault builds the transaction and the agent never holds an EVM key.
 
 Built on NEAR: a Rust vault contract (near-sdk) paying a NEP-141 token, with a callback that rolls the counters back if the transfer fails. A Rust agent CLI the existing MCP server drives unchanged. A wallet-selector approval page and relay for NEP-413 signing. Sealed records a reviewer opens with their own key.
 
-On testnet: payments inside the limits settled, exceptions settled with the approver's signature, and all six attacks signed with the agent's own key were refused: four by the vault with named errors, two by the network itself. We also ran Sonnet 5.5 and Haiku 5.5 as the agent against hostile invoices on testnet: no tokens reached the attacker's account and nothing went over the limit without a signature.
+On testnet: payments inside the limits settled on NEAR and on Arc, exceptions settled with the approver's signature, and all six attacks signed with the agent's own key were refused: four by the vault with named errors, two by the network itself. We also ran Sonnet 5.5 and Haiku 5.5 as the agent against hostile invoices on testnet: no tokens reached the attacker's account and nothing went over the limit without a signature.
 ```
 
 ## Notes for the post on X

@@ -11,12 +11,18 @@ allowed to call only `pay`, `pay_with_exception` and `post_record`.** NEAR itsel
 call to any owner method, before the contract runs. Going over the per-payment limit needs the
 approver's NEP-413 signature over that exact payment, which the vault verifies on chain.
 
+**The same rules hold on another chain.** Through NEAR Chain Signatures the vault owns an address on
+Arc testnet, derived by NEAR's MPC network from the vault's account. `pay_evm` checks the same limits
+and recipients, builds the Arc USDC transfer itself, and has the MPC network sign it. The agent still
+holds only its NEAR function-call key: no EVM key exists anywhere in the system.
+
 | Piece | Where |
 | --- | --- |
 | Vault contract (Rust, near-sdk) and a NEP-141 test token | [`contracts/near`](contracts/near) |
 | Agent CLI, same protocol as the EVM one, so the MCP server is reused unchanged | [`sdk/near`](sdk/near) |
 | Approval page (wallet-selector, NEP-413) and relay | [`approval-page-near`](approval-page-near), [`relay-near`](relay-near) |
 | Setup, attacks A1 to A6, demo, end-to-end scripts | [`scripts/near`](scripts/near) |
+| **Chain Signatures:** the same vault pays USDC on Arc testnet from its MPC-derived address (`pay_evm`) | [`docs/near/CHAIN_SIGNATURES_PLAN.md`](docs/near/CHAIN_SIGNATURES_PLAN.md), [`scripts/near/demo_arc.sh`](scripts/near/demo_arc.sh) |
 | What has run on testnet, with every transaction | [`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md) |
 
 ### Try it
@@ -43,7 +49,7 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
 Styx started at ETHGlobal Mumbai (5 to 7 Nov 2026) on Arc; the NEAR build began on 12 Nov 2026. The
 sections below the NEAR one describe the Arc build.
 
-Live on testnet: vault `vault.styx-owner-c87a.testnet`, token `usdc.styx-owner-c87a.testnet`
+Live on testnet: vault `vault.styx-owner-c87a.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet` (Arc address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet`
 (our test token, not Circle's USDC). Plan and status: [`docs/near/PLAN.md`](docs/near/PLAN.md).
 
 ## The problem

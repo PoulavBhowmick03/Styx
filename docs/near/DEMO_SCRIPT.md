@@ -1,8 +1,9 @@
-# NEAR demo script (about 2 minutes)
+# NEAR demo script (about 2.5 minutes)
 
 DRAFT. Recorded from `scripts/near/demo.sh` against `vault.styx-owner-c87a.testnet`. Keep
 `~/.styx-near/` (keys, `demo.env`) and the relay token out of frame. Run `demo.sh` once without
-recording first, so the RPC is warm.
+recording first, so the RPC is warm. Fund the vault's Arc address with enough USDC for the Arc
+segment first (3 + 6 USDC plus gas): an underfunded transfer reverts on Arc.
 
 | Time | On screen | Say |
 | --- | --- | --- |
@@ -14,6 +15,7 @@ recording first, so the RPC is warm.
 | 1:10 | Step 5: settled, open the tx on nearblocks | "The vault checks the signature itself and pays." |
 | 1:20 | Step 6: A5, A1, A4 | "Now the agent attacks with its own key. Raise its own limit: NEAR rejects the transaction before it reaches the contract. Pay over the limit directly: the vault refuses. Replay the approved payment: refused." |
 | 1:45 | Step 7: `get_agent` unchanged | "The rules are where the owner left them." |
+| 1:50 | `demo_arc.sh`: the vault's Arc address, a 3 USDC payment on Arc, then 6 USDC refused until signed | "And the same rules hold on another chain. NEAR's MPC network gives this vault an address on Arc. The agent pays there with the same NEAR key; the vault builds and signs the transfer, so the agent never holds an Arc key." |
 | 1:55 | Repo and `docs/near/TESTNET_RUN.md` | "Every transaction is listed in the repo. Built at the NEAR Hackathon." |
 
 Do not say "secure", "audited" or "solves". A2, A3 and A6 are in `TESTNET_RUN.md` if asked.

@@ -31,7 +31,8 @@ choose what gets signed beyond the fields the vault checks.
   Anyone can broadcast it. One request per chain in flight, so nonces stay sequential.
 - If the signer fails, the callback rolls back the counters, the payment id and the approval nonce.
 - Counters charge on signing, not on EVM inclusion, which over-counts if a signed transaction is
-  never broadcast; `set_evm_nonce` lets the owner resync. Gas is paid by the derived address in
+  never broadcast or reverts (seen on testnet: a 6 USDC transfer reverted for lack of funds and still
+  counted); `set_evm_nonce` lets the owner resync. Gas is paid by the derived address in
   USDC, outside the payment limits, bounded by the owner's gas caps.
 - The signer account is a constructor argument, so the sandbox test can use a mock signer.
 

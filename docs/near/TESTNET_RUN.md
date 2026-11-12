@@ -70,6 +70,14 @@ Arc: the vault's nonce stayed at 2 and its balance unchanged.
 | E5 allow its own address on Arc (`set_evm_recipient`) | network: method not allowed for the key | none, rejected before inclusion |
 | E6 raise the gas caps (`set_evm_chain`) | network: method not allowed for the key | none, rejected before inclusion |
 
+`scripts/near/demo_arc.sh` then paid 3 USDC within limits (Arc `0x99f68dba…ce32`, settled). Its
+6 USDC exception was signed and broadcast but **reverted on Arc** (`0xedd945bb…177a`, status 0, no
+logs, 31753 gas): the vault's address held 4.995 USDC, less than 6. The CLI reported `reverted`, not
+settled. The vault had already charged the 6 USDC to the agent's daily counter, which now reads 46
+USDC for 21 actually transferred: counters are charged when the vault signs, so a reverted or
+never-broadcast transaction still counts against the limit. That errs toward paying less, never
+more.
+
 Before the run, a first test signature (25 USDC at nonce 0, NEAR tx `DwK2BQJD…`) could not execute
 with 20 USDC, so the owner reset the vault's Arc nonce to 0 with `set_evm_nonce`
 (`FfQsK6VP…`). That old signed transaction is still valid for nonce 0, but nonce 0 has since been
