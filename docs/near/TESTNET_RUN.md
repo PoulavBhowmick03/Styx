@@ -56,8 +56,12 @@ transaction is submitted, so there is no block record to link. The contract's ow
 second barrier behind that; the unit tests `a5_agent_cannot_raise_its_own_limit` and
 `a6_agent_cannot_make_itself_an_approver` exercise it.
 
+## Models
+
+Sonnet 5.5 and Haiku 5.5 drove the MCP tools against this vault in six scenarios each: see
+[`MODEL_TRIAL.md`](MODEL_TRIAL.md).
+
 ## Not yet run
 
 - The approval page with a real wallet (Meteor or MyNearWallet). The relay has run locally only.
-- A model driving the MCP tools on NEAR.
 - Hostile-invoice model trials on NEAR.

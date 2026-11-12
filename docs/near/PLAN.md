@@ -90,7 +90,7 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
       signature for another recipient, A4 replay settled payment, A5 agent raises its own
       limit (rejected by the access key), A6 agent names itself approver. All on testnet, tx
       ids recorded
-- [ ] Hostile-invoice trials on sandbox with Haiku 5.5 and Sonnet 5.5, results recorded
+- [x] Hostile-invoice trials on testnet with Haiku 5.5 and Sonnet 5.5, results recorded
 
 ### 5. Disclosure
 - [x] Sealed record posted via `post_record` on the vault (event log), reviewer CLI fetches
