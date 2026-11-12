@@ -1,0 +1,41 @@
+# Styx on NEAR testnet: what has run
+
+All on NEAR testnet, 12 Nov 2026. Vault `vault.styx-owner-c87a.testnet`, token
+`usdc.styx-owner-c87a.testnet` (our NEP-141 test token, six decimals, not Circle's USDC).
+The agent is the function-call key `ed25519:4D9PbrvnPQHQ9uLxcSsMbH14gKgFGNjmjUSrTRyxDwXn` on the
+vault account, allowed to call only `pay`, `pay_with_exception` and `post_record`. Every
+transaction id below was re-read from `rpc.testnet.near.org` after the run.
+
+## Payments, through the agent CLI (`sdk/near`, `styx-near-vault`)
+
+Policy at the time: 100 tUSDC per payment.
+
+| Payment | Path | Transaction | Result |
+| --- | --- | --- | --- |
+| 60 tUSDC to vendor-a | within limits | [PFqEYiLs…](https://testnet.nearblocks.io/txns/PFqEYiLsGKn4XVkpXdD3jDuKNTK7RUTUsmZBknkDgtx) | settled; resubmitting returned the same transaction |
+| 150 tUSDC to vendor-a | exception, NEP-413 signature by the test approver | [174TpBAf…](https://testnet.nearblocks.io/txns/174TpBAf9germ8JsZcSEtF5wipZX5ECWaRLbHBrVCo2) | settled |
+| 120 tUSDC to vendor-a | exception, under policy version 2 | [8exD9z2J…](https://testnet.nearblocks.io/txns/8exD9z2JTU4ihnPBEmFmji8dgmmQ9M45vZ49V8AE8oPE) | settled |
+
+After the first two, `ft_balance_of` read 210 tUSDC for vendor-a and 790 for the vault.
+
+## Attacks (`scripts/near/attacks.py`), signed with the agent's own key
+
+| Attack | What the agent tried | Refused by | Evidence |
+| --- | --- | --- | --- |
+| A1 | pay 100.000001 tUSDC with no signature | the vault: `PerPaymentLimitExceeded` | [6B4LpFXj…](https://testnet.nearblocks.io/txns/6B4LpFXjFDUoNZ5mjrejMbMH8USwQ5w1TsgbvWgXxq9C) |
+| A2 | sign its own exception, naming its own key as signer | the vault: `ApproverNotAllowed` | [Hk6CGBFq…](https://testnet.nearblocks.io/txns/Hk6CGBFq9ySQVqfcacj7Fg7AfX9nTNXm5aVoUfnneJqT) |
+| A3 | reuse the approver's signature for another recipient | the vault: `PaymentHashMismatch` | [GLi8PH5K…](https://testnet.nearblocks.io/txns/GLi8PH5Khf1NE7i9CH6T7vmfJ3djQNU3CkjVkbPDBnRM) |
+| A4 | replay the settled exception | the vault: `PaymentAlreadyUsed` | [AmddsZxV…](https://testnet.nearblocks.io/txns/AmddsZxVWEVpjuUCDeWc7JdpqXK8aNB1zFC9nTTN7hvu) |
+| A5 | call `configure_agent` to raise its own limits | the network: the access key does not allow the method | no transaction; rejected before inclusion |
+| A6 | call `set_approver` to make itself an approver | the network: the access key does not allow the method | no transaction; rejected before inclusion |
+
+A5 and A6 never reach the contract: NEAR checks a function-call key's method list when the
+transaction is submitted, so there is no block record to link. The contract's owner check is a
+second barrier behind that; the unit tests `a5_agent_cannot_raise_its_own_limit` and
+`a6_agent_cannot_make_itself_an_approver` exercise it.
+
+## Not yet run
+
+- The approval page and NEAR relay with a real wallet (`relay-near/`, `approval-page-near/`).
+- The MCP server driving `styx-near-vault` with a model.
+- Hostile-invoice model trials on NEAR.
