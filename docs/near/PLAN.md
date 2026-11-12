@@ -34,6 +34,12 @@ The same thing as Styx on Arc, native to NEAR:
 
 Not on NEAR for this build: Telegram bot (reuse if time allows), setup page beyond a CLI.
 
+## Where
+
+This work lives in the Styx repo and is pushed to `main` after each step. Contracts build with
+`contracts/near/build.sh` (cargo-near 0.17 or later, which passes `--cfg near`; without it every
+refusal is a bare wasm trap with no name).
+
 ## Steps
 
 Check a step only after its verification ran. Keep commits small and conventional.
@@ -41,27 +47,28 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
 
 ### 0. Setup
 - [x] Branch `near-hackathon`, plan written
-- [ ] near-cli-rs installed, testnet owner account created (`styx-owner.testnet` or similar)
-- [ ] USDC-like NEP-141 on testnet chosen: deploy our own mock FT (`contracts/near/styx-usdc`)
+- [x] near-cli-rs 0.x and cargo-near 0.23 installed
+- [ ] testnet owner account created (`styx-owner-<suffix>.testnet`), key in ~/.near-credentials, never in the repo
+- [x] USDC-like NEP-141 on testnet chosen: deploy our own mock FT (`contracts/near/styx-usdc`)
       and say so honestly
 
 ### 1. Contract `contracts/near/styx-vault`
-- [ ] Scaffold with cargo-near, builds to wasm
-- [ ] State: owner, token, paused, vault daily limit, agents by public key (version,
+- [x] Scaffold with cargo-near, builds to wasm
+- [x] State: owner, token, paused, vault daily limit, agents by public key (version,
       per-payment limit, daily limit, valid_until, enabled), approvers by public key
       (version, enabled), recipients (allowed, version), spent by agent-day, spent by day,
       consumed payment ids, consumed approval nonces
-- [ ] Owner methods: `configure_agent`, `set_approver`, `set_recipient`,
+- [x] Owner methods: `configure_agent`, `set_approver`, `set_recipient`,
       `set_vault_daily_limit`, `pause`, `unpause`, `withdraw` (ft_transfer to owner)
-- [ ] `pay(payment)`: predecessor is the vault, signer pk is an enabled agent, every check
+- [x] `pay(payment)`: predecessor is the vault, signer pk is an enabled agent, every check
       from `_checkShared`, per-payment limit, commit counters, `ft_transfer`, callback with
       rollback on failure. Emits `payment_executed` event (NEP-297 style JSON log)
-- [ ] `pay_with_exception(payment, authorization, signature)`: NEP-413 reconstruction
+- [x] `pay_with_exception(payment, authorization, signature)`: NEP-413 reconstruction
       and ed25519 verification, nonce consumed, expiry checked, only the per-payment limit lifted
-- [ ] Views: `get_agent`, `get_approver`, `get_recipient`, `get_vault`, `payment_hash`,
+- [x] Views: `get_agent`, `get_approver`, `get_recipient`, `get_vault`, `payment_hash`,
       `exception_message` (the exact NEP-413 message the approver signs)
-- [ ] Unit tests (near-sdk test env) for every refusal path
-- [ ] near-workspaces integration test on sandbox: fund, pay, exception, A1 to A6, rollback
+- [x] Unit tests (near-sdk test env) for every refusal path
+- [x] near-workspaces integration test on sandbox: fund, pay, exception, A1 to A6, rollback
       when the recipient is not registered with the token
 - [ ] Deploy to testnet, record account id and tx in `docs/near/DEPLOYMENTS.md`
 
