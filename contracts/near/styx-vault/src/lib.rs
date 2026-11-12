@@ -23,8 +23,14 @@ const GAS_FOR_FT_TRANSFER: Gas = Gas::from_tgas(20);
 const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(15);
 /// Gas allowance each agent key gets. Gas only: the key holds no tokens.
 const AGENT_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(250);
-const AGENT_METHODS: &str = "pay,pay_with_exception,post_record";
-const CONTRACT_VERSION: u32 = 1;
+const AGENT_METHODS: &str = "pay,pay_with_exception,pay_evm,pay_evm_with_exception,post_record";
+/// The MPC signer used when the constructor names none.
+const DEFAULT_MPC_SIGNER: &str = "v1.signer-prod.testnet";
+/// Derivation path for the vault's EVM key. The address depends on this vault's account id and it.
+const EVM_KEY_PATH: &str = "styx-evm";
+const GAS_FOR_MPC_SIGN: Gas = Gas::from_tgas(50);
+const GAS_FOR_EVM_CALLBACK: Gas = Gas::from_tgas(20);
+const CONTRACT_VERSION: u32 = 2;
 const EVENT_STANDARD: &str = "styx";
 const EVENT_VERSION: &str = "1.0.0";
 
@@ -39,6 +45,10 @@ enum StorageKey {
     ConsumedPayments,
     ConsumedNonces,
     Records,
+    EvmChains,
+    EvmRecipients,
+    EvmNonces,
+    EvmSignedTxs,
 }
 
 /// An agent's policy. Keyed by the public key of the agent's function-call key.
@@ -99,6 +109,70 @@ pub struct ExceptionAuthorization {
     pub callback_url: Option<String>,
 }
 
+/// An EVM chain the vault may pay on: the token's ERC-20 address and the owner's gas caps.
+/// Gas is paid by the vault's derived address, outside the payment limits, bounded by these caps.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvmChain {
+    pub token: String,
+    pub max_fee_per_gas: U128,
+    pub max_priority_fee_per_gas: U128,
+    pub gas_limit: U64,
+    pub enabled: bool,
+}
+
+/// A payment on an EVM chain. The vault builds the transaction from these fields and its own
+/// state (nonce, gas caps, token); the agent cannot choose anything else that gets signed.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvmPayment {
+    pub payment_id: String,
+    pub agent: PublicKey,
+    pub chain_id: u64,
+    /// `0x` + 40 hex digits, lowercase.
+    pub recipient: String,
+    pub amount: U128,
+    pub evidence_commitment: Base64VecU8,
+    pub policy_version: u64,
+    pub recipient_version: u64,
+    /// Unix seconds.
+    pub valid_until: U64,
+}
+
+/// A signed EVM transaction, ready for anyone to broadcast.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignedEvmTx {
+    pub payment_id: String,
+    pub chain_id: u64,
+    pub nonce: u64,
+    /// `0x`-prefixed raw transaction for `eth_sendRawTransaction`.
+    pub raw_tx: String,
+    /// `0x`-prefixed keccak256 of `raw_tx`, the EVM transaction hash.
+    pub tx_hash: String,
+}
+
+/// The MPC signer's secp256k1 answer.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MpcSignature {
+    pub big_r: MpcPoint,
+    pub s: MpcScalar,
+    pub recovery_id: u8,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MpcPoint {
+    pub affine_point: String,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MpcScalar {
+    pub scalar: String,
+}
+
 #[near(serializers = [json])]
 #[derive(Clone, Debug)]
 pub struct VaultInfo {
@@ -107,6 +181,8 @@ pub struct VaultInfo {
     pub paused: bool,
     pub vault_daily_limit: U128,
     pub contract_version: u32,
+    pub mpc_signer: AccountId,
+    pub evm_key_path: String,
 }
 
 #[near(contract_state)]
@@ -126,12 +202,22 @@ pub struct Contract {
     consumed_nonces: LookupSet<(PublicKey, [u8; 32])>,
     /// payment id -> the agent key that posted a sealed record for it.
     records: LookupMap<String, PublicKey>,
+    mpc_signer: AccountId,
+    evm_chains: LookupMap<u64, EvmChain>,
+    /// (chain id, recipient address) -> allowed and version.
+    evm_recipients: LookupMap<(u64, [u8; 20]), RecipientState>,
+    /// The next nonce of the vault's derived address on each chain.
+    evm_nonces: LookupMap<u64, u64>,
+    /// (chain id, nonce) -> the signed transaction, so anyone can broadcast or rebroadcast it.
+    evm_signed: LookupMap<(u64, u64), SignedEvmTx>,
+    /// The chain with a signature request in flight. One at a time keeps nonces sequential.
+    evm_pending: Option<u64>,
 }
 
 #[near]
 impl Contract {
     #[init]
-    pub fn new(owner: AccountId, token: AccountId) -> Self {
+    pub fn new(owner: AccountId, token: AccountId, mpc_signer: Option<AccountId>) -> Self {
         Self {
             owner,
             token,
@@ -145,6 +231,12 @@ impl Contract {
             consumed_payments: LookupMap::new(StorageKey::ConsumedPayments),
             consumed_nonces: LookupSet::new(StorageKey::ConsumedNonces),
             records: LookupMap::new(StorageKey::Records),
+            mpc_signer: mpc_signer.unwrap_or_else(|| DEFAULT_MPC_SIGNER.parse().expect("signer id")),
+            evm_chains: LookupMap::new(StorageKey::EvmChains),
+            evm_recipients: LookupMap::new(StorageKey::EvmRecipients),
+            evm_nonces: LookupMap::new(StorageKey::EvmNonces),
+            evm_signed: LookupMap::new(StorageKey::EvmSignedTxs),
+            evm_pending: None,
         }
     }
 
@@ -237,6 +329,44 @@ impl Contract {
         ft_transfer(&self.token, &to, amount.0, "styx withdrawal")
     }
 
+
+    // ---- owner methods for EVM chains -------------------------------------------------------
+
+    /// Adds or changes an EVM chain: the token's ERC-20 address and the gas caps the vault uses.
+    pub fn set_evm_chain(&mut self, chain_id: u64, chain: EvmChain) {
+        self.assert_owner();
+        let token = evm::parse_address(&chain.token).unwrap_or_else(|| env::panic_str("InvalidAddress"));
+        require!(chain.max_priority_fee_per_gas.0 <= chain.max_fee_per_gas.0, "InvalidGasCaps");
+        require!(chain.gas_limit.0 >= 21_000, "InvalidGasCaps");
+        let chain = EvmChain { token: format!("0x{}", evm::hex(&token)), ..chain };
+        self.evm_chains.insert(chain_id, chain.clone());
+        emit("evm_chain_set", &near_sdk::serde_json::json!({ "chain_id": chain_id, "chain": chain }));
+    }
+
+    pub fn set_evm_recipient(&mut self, chain_id: u64, recipient: String, allowed: bool) {
+        self.assert_owner();
+        let address = evm::parse_address(&recipient.to_ascii_lowercase()).unwrap_or_else(|| env::panic_str("InvalidAddress"));
+        let key = (chain_id, address);
+        let version = self.evm_recipients.get(&key).map(|r| r.version).unwrap_or(0) + 1;
+        let state = RecipientState { version, allowed };
+        self.evm_recipients.insert(key, state.clone());
+        emit(
+            "evm_recipient_set",
+            &near_sdk::serde_json::json!({ "chain_id": chain_id, "recipient": format!("0x{}", evm::hex(&address)), "state": state }),
+        );
+    }
+
+    /// Resyncs the vault's nonce for a chain, for when a signed transaction was never broadcast
+    /// or another transaction used the nonce. Also clears a stuck in-flight request.
+    pub fn set_evm_nonce(&mut self, chain_id: u64, nonce: u64) {
+        self.assert_owner();
+        self.evm_nonces.insert(chain_id, nonce);
+        if self.evm_pending == Some(chain_id) {
+            self.evm_pending = None;
+        }
+        emit("evm_nonce_set", &near_sdk::serde_json::json!({ "chain_id": chain_id, "nonce": nonce }));
+    }
+
     // ---- agent methods ----------------------------------------------------------------------
 
     /// A payment within every limit. Callable only through an agent's function-call key.
@@ -256,20 +386,28 @@ impl Contract {
     ) -> Promise {
         let (_, day) = self.check_shared(&payment);
         let hash = hash_payment(&payment);
-        require!(authorization.payment_hash.0 == hash, "PaymentHashMismatch");
-        let state = self.approvers.get(&authorization.signer).cloned();
-        let state = state.filter(|s| s.enabled).unwrap_or_else(|| env::panic_str("ApproverNotAllowed"));
-        require!(authorization.signer_version == state.version, "SignerVersionMismatch");
-        let nonce = to_32(&authorization.approval_nonce.0, "BadNonce");
-        let nonce_key = (authorization.signer.clone(), nonce);
-        require!(!self.consumed_nonces.contains(&nonce_key), "ApprovalNonceUsed");
-        require!(now_seconds() <= authorization.authorization_expiry.0, "AuthorizationExpired");
-        let digest = self.nep413_digest(&authorization);
-        let sig: [u8; 64] = signature.0.as_slice().try_into().unwrap_or_else(|_| env::panic_str("BadSignature"));
-        let pk = ed25519_bytes(&authorization.signer);
-        require!(env::ed25519_verify(&sig, &digest, &pk), "BadSignature");
-        self.consumed_nonces.insert(nonce_key);
+        let digest = self.check_authorization(&hash, &authorization, &signature);
         self.execute(payment, day, Some((authorization, digest)))
+    }
+
+    /// A payment on an EVM chain within every limit. The vault builds and signs the transfer.
+    pub fn pay_evm(&mut self, payment: EvmPayment) -> Promise {
+        let (policy, day) = self.check_evm(&payment);
+        require!(payment.amount.0 <= policy.per_payment_limit.0, "PerPaymentLimitExceeded");
+        self.execute_evm(payment, day, None)
+    }
+
+    /// An EVM payment over the per-payment limit, with an approver's NEP-413 signature over it.
+    pub fn pay_evm_with_exception(
+        &mut self,
+        payment: EvmPayment,
+        authorization: ExceptionAuthorization,
+        signature: Base64VecU8,
+    ) -> Promise {
+        let (_, day) = self.check_evm(&payment);
+        let hash = hash_evm_payment(&payment);
+        let digest = self.check_authorization(&hash, &authorization, &signature);
+        self.execute_evm(payment, day, Some((authorization, digest)))
     }
 
     /// Posts a sealed record for a settled payment. Only the agent key that paid can post it,
@@ -363,6 +501,89 @@ impl Contract {
         }
     }
 
+    /// Assembles the signed EVM transaction from the MPC signer's answer, or rolls back.
+    #[private]
+    pub fn on_evm_signed(
+        &mut self,
+        payment: EvmPayment,
+        day: u64,
+        nonce: u64,
+        transfer_fields: (U128, U128, U64),
+        exception: Option<ExceptionAuthorization>,
+        approval_digest: Option<Base64VecU8>,
+        #[callback_result] result: Result<MpcSignature, PromiseError>,
+    ) -> Option<SignedEvmTx> {
+        self.evm_pending = None;
+        let chain = self.evm_chains.get(&payment.chain_id).cloned();
+        let signed = match (result, chain) {
+            (Ok(sig), Some(chain)) => {
+                let big_r = evm::unhex::<33>(&sig.big_r.affine_point);
+                let s = evm::unhex::<32>(&sig.s.scalar);
+                match (big_r, s) {
+                    (Some(big_r), Some(s)) => evm::normalize(&big_r, &s, sig.recovery_id).map(|(r, s, v)| {
+                        let transfer = self.transfer_for(&payment, &chain, nonce, transfer_fields);
+                        let raw = transfer.signed(v, &r, &s);
+                        SignedEvmTx {
+                            payment_id: payment.payment_id.clone(),
+                            chain_id: payment.chain_id,
+                            nonce,
+                            tx_hash: format!("0x{}", evm::hex(&env::keccak256_array(&raw))),
+                            raw_tx: format!("0x{}", evm::hex(&raw)),
+                        }
+                    }),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        match signed {
+            Some(tx) => {
+                self.evm_nonces.insert(payment.chain_id, nonce + 1);
+                self.evm_signed.insert((payment.chain_id, nonce), tx.clone());
+                let policy = self.agents.get(&payment.agent).cloned().expect("agent");
+                emit(
+                    "evm_payment_signed",
+                    &near_sdk::serde_json::json!({
+                        "payment_id": payment.payment_id,
+                        "agent": payment.agent,
+                        "chain_id": payment.chain_id,
+                        "recipient": payment.recipient,
+                        "amount": payment.amount,
+                        "payment_hash": Base64VecU8::from(hash_evm_payment(&payment).to_vec()),
+                        "evidence_commitment": payment.evidence_commitment,
+                        "nonce": nonce,
+                        "tx_hash": tx.tx_hash,
+                        "raw_tx": tx.raw_tx,
+                        "per_payment_limit": policy.per_payment_limit,
+                        "daily_limit": policy.daily_limit,
+                        "day": day,
+                        "agent_day_spent_after": U128(self.spent_by_agent_day.get(&(payment.agent.clone(), day)).copied().unwrap_or(0)),
+                        "vault_day_spent_after": U128(self.spent_by_day.get(&day).copied().unwrap_or(0)),
+                        "exception": exception.is_some(),
+                        "signer": exception.as_ref().map(|a| a.signer.clone()),
+                        "approval_digest": approval_digest,
+                    }),
+                );
+                Some(tx)
+            }
+            None => {
+                self.rollback(&payment.payment_id, &payment.agent, payment.amount.0, day, exception);
+                emit(
+                    "payment_failed",
+                    &near_sdk::serde_json::json!({
+                        "payment_id": payment.payment_id,
+                        "agent": payment.agent,
+                        "chain_id": payment.chain_id,
+                        "recipient": payment.recipient,
+                        "amount": payment.amount,
+                        "reason": "signature unavailable",
+                    }),
+                );
+                None
+            }
+        }
+    }
+
     // ---- views ------------------------------------------------------------------------------
 
     pub fn get_vault(&self) -> VaultInfo {
@@ -372,6 +593,8 @@ impl Contract {
             paused: self.paused,
             vault_daily_limit: U128(self.vault_daily_limit),
             contract_version: CONTRACT_VERSION,
+            mpc_signer: self.mpc_signer.clone(),
+            evm_key_path: EVM_KEY_PATH.to_string(),
         }
     }
 
@@ -403,6 +626,31 @@ impl Contract {
         Base64VecU8::from(hash_payment(&payment).to_vec())
     }
 
+    pub fn get_evm_chain(&self, chain_id: u64) -> Option<EvmChain> {
+        self.evm_chains.get(&chain_id).cloned()
+    }
+
+    pub fn get_evm_recipient(&self, chain_id: u64, recipient: String) -> Option<RecipientState> {
+        let address = evm::parse_address(&recipient.to_ascii_lowercase())?;
+        self.evm_recipients.get(&(chain_id, address)).cloned()
+    }
+
+    pub fn evm_nonce(&self, chain_id: u64) -> u64 {
+        self.evm_nonces.get(&chain_id).copied().unwrap_or(0)
+    }
+
+    pub fn signed_evm_tx(&self, chain_id: u64, nonce: u64) -> Option<SignedEvmTx> {
+        self.evm_signed.get(&(chain_id, nonce)).cloned()
+    }
+
+    pub fn evm_pending(&self) -> Option<u64> {
+        self.evm_pending
+    }
+
+    pub fn evm_payment_hash(&self, payment: EvmPayment) -> Base64VecU8 {
+        Base64VecU8::from(hash_evm_payment(&payment).to_vec())
+    }
+
     pub fn consumed_payment(&self, payment_id: String) -> Option<Base64VecU8> {
         self.consumed_payments.get(&payment_id).map(|h| Base64VecU8::from(h.to_vec()))
     }
@@ -417,6 +665,139 @@ impl Contract {
 
     fn assert_owner(&self) {
         require!(env::predecessor_account_id() == self.owner, "NotOwner");
+    }
+
+    /// The approver checks shared by both exception methods, in the Arc vault's order.
+    /// Consumes the approval nonce and returns the NEP-413 digest.
+    fn check_authorization(
+        &mut self,
+        payment_hash: &[u8; 32],
+        authorization: &ExceptionAuthorization,
+        signature: &Base64VecU8,
+    ) -> [u8; 32] {
+        require!(authorization.payment_hash.0 == payment_hash, "PaymentHashMismatch");
+        let state = self.approvers.get(&authorization.signer).cloned();
+        let state = state.filter(|s| s.enabled).unwrap_or_else(|| env::panic_str("ApproverNotAllowed"));
+        require!(authorization.signer_version == state.version, "SignerVersionMismatch");
+        let nonce = to_32(&authorization.approval_nonce.0, "BadNonce");
+        let nonce_key = (authorization.signer.clone(), nonce);
+        require!(!self.consumed_nonces.contains(&nonce_key), "ApprovalNonceUsed");
+        require!(now_seconds() <= authorization.authorization_expiry.0, "AuthorizationExpired");
+        let digest = self.nep413_digest(authorization);
+        let sig: [u8; 64] = signature.0.as_slice().try_into().unwrap_or_else(|_| env::panic_str("BadSignature"));
+        let pk = ed25519_bytes(&authorization.signer);
+        require!(env::ed25519_verify(&sig, &digest, &pk), "BadSignature");
+        self.consumed_nonces.insert(nonce_key);
+        digest
+    }
+
+    /// The same checks as `check_shared`, in the same order, for an EVM payment.
+    fn check_evm(&self, p: &EvmPayment) -> (AgentPolicy, u64) {
+        require!(env::predecessor_account_id() == env::current_account_id(), "NotAgent");
+        let agent = env::signer_account_pk();
+        let policy = self.agents.get(&agent).cloned().filter(|p| p.enabled);
+        let policy = policy.unwrap_or_else(|| env::panic_str("NotAgent"));
+        require!(!self.paused, "VaultPaused");
+        let now = now_seconds();
+        require!(now <= policy.valid_until.0, "PolicyExpired");
+        require!(p.agent == agent, "AgentMismatch");
+        require!(self.evm_chains.get(&p.chain_id).map(|c| c.enabled).unwrap_or(false), "ChainNotAllowed");
+        require!(p.policy_version == policy.version, "PolicyVersionMismatch");
+        require!(now <= p.valid_until.0, "PaymentExpired");
+        require!(p.amount.0 > 0, "ZeroAmount");
+        let address = evm::parse_address(&p.recipient).unwrap_or_else(|| env::panic_str("InvalidAddress"));
+        require!(p.recipient == format!("0x{}", evm::hex(&address)), "InvalidAddress");
+        let recipient = self.evm_recipients.get(&(p.chain_id, address)).cloned().filter(|r| r.allowed);
+        let recipient = recipient.unwrap_or_else(|| env::panic_str("RecipientNotAllowed"));
+        require!(p.recipient_version == recipient.version, "RecipientVersionMismatch");
+        require!(!self.consumed_payments.contains_key(&p.payment_id), "PaymentAlreadyUsed");
+        require!(self.evm_pending.is_none(), "EvmRequestInFlight");
+        let day = now / DAY_SECONDS;
+        let spent = self.spent_by_agent_day.get(&(agent, day)).copied().unwrap_or(0);
+        require!(
+            spent <= policy.daily_limit.0 && p.amount.0 <= policy.daily_limit.0 - spent,
+            "DailyLimitExceeded"
+        );
+        let spent = self.spent_by_day.get(&day).copied().unwrap_or(0);
+        require!(
+            spent <= self.vault_daily_limit && p.amount.0 <= self.vault_daily_limit - spent,
+            "VaultDailyLimitExceeded"
+        );
+        (policy, day)
+    }
+
+    /// The transfer the vault signs for this payment: its token, gas caps and nonce, never the agent's.
+    fn transfer_for(&self, p: &EvmPayment, chain: &EvmChain, nonce: u64, fields: (U128, U128, U64)) -> evm::Transfer {
+        evm::Transfer {
+            chain_id: p.chain_id,
+            nonce,
+            max_priority_fee_per_gas: fields.1 .0,
+            max_fee_per_gas: fields.0 .0,
+            gas_limit: fields.2 .0,
+            token: evm::parse_address(&chain.token).expect("token checked when set"),
+            recipient: evm::parse_address(&p.recipient).expect("recipient checked"),
+            amount: p.amount.0,
+        }
+    }
+
+    /// Commits the counters, builds the transfer, and asks the MPC signer to sign it.
+    fn execute_evm(
+        &mut self,
+        payment: EvmPayment,
+        day: u64,
+        exception: Option<(ExceptionAuthorization, [u8; 32])>,
+    ) -> Promise {
+        let chain = self.evm_chains.get(&payment.chain_id).cloned().expect("chain checked");
+        let nonce = self.evm_nonce(payment.chain_id);
+        // The gas fields are fixed now and passed to the callback, so the signed transaction is
+        // exactly the one whose hash the signer saw, even if the owner changes the caps meanwhile.
+        let fields = (chain.max_fee_per_gas, chain.max_priority_fee_per_gas, chain.gas_limit);
+        let transfer = self.transfer_for(&payment, &chain, nonce, fields);
+        let sighash = env::keccak256_array(&transfer.signing_payload());
+        self.consumed_payments.insert(payment.payment_id.clone(), hash_evm_payment(&payment));
+        let key = (payment.agent.clone(), day);
+        let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
+        self.spent_by_agent_day.insert(key, agent_spent + payment.amount.0);
+        let vault_spent = self.spent_by_day.get(&day).copied().unwrap_or(0);
+        self.spent_by_day.insert(day, vault_spent + payment.amount.0);
+        self.evm_pending = Some(payment.chain_id);
+        let (authorization, digest) = match exception {
+            Some((a, d)) => (Some(a), Some(Base64VecU8::from(d.to_vec()))),
+            None => (None, None),
+        };
+        let args = near_sdk::serde_json::json!({
+            "request": {
+                "path": EVM_KEY_PATH,
+                "payload_v2": { "Ecdsa": evm::hex(&sighash) },
+                "domain_id": 0,
+            }
+        });
+        Promise::new(self.mpc_signer.clone())
+            .function_call(
+                "sign".to_string(),
+                near_sdk::serde_json::to_vec(&args).expect("json"),
+                NearToken::from_yoctonear(1),
+                GAS_FOR_MPC_SIGN,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_EVM_CALLBACK)
+                    .on_evm_signed(payment, day, nonce, fields, authorization, digest),
+            )
+    }
+
+    /// Undoes what a payment committed: the payment id, both day counters, the approval nonce.
+    fn rollback(&mut self, payment_id: &str, agent: &PublicKey, amount: u128, day: u64, exception: Option<ExceptionAuthorization>) {
+        self.consumed_payments.remove(payment_id);
+        let key = (agent.clone(), day);
+        let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
+        self.spent_by_agent_day.insert(key, agent_spent.saturating_sub(amount));
+        let vault_spent = self.spent_by_day.get(&day).copied().unwrap_or(0);
+        self.spent_by_day.insert(day, vault_spent.saturating_sub(amount));
+        if let Some(a) = exception {
+            let nonce = to_32(&a.approval_nonce.0, "BadNonce");
+            self.consumed_nonces.remove(&(a.signer, nonce));
+        }
     }
 
     /// Every check shared by `pay` and `pay_with_exception`, in the same order as the Arc vault.
@@ -515,6 +896,13 @@ fn build_exception_message(vault: &AccountId, a: &ExceptionAuthorization) -> Str
     )
 }
 
+fn hash_evm_payment(p: &EvmPayment) -> [u8; 32] {
+    // Domain-separated from `hash_payment`, so a NEAR payment's approval can never match an EVM one.
+    let mut bytes = b"styx-evm-payment".to_vec();
+    p.serialize(&mut bytes).expect("borsh");
+    env::sha256_array(&bytes)
+}
+
 fn hash_payment(p: &Payment) -> [u8; 32] {
     let mut bytes = Vec::new();
     p.serialize(&mut bytes).expect("borsh");
@@ -573,6 +961,8 @@ fn emit(event: &str, data: &near_sdk::serde_json::Value) {
     });
     env::log_str(&format!("EVENT_JSON:{payload}"));
 }
+
+mod evm;
 
 #[cfg(test)]
 mod tests;

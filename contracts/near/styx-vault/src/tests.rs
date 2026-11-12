@@ -57,7 +57,7 @@ fn as_agent(pk: PublicKey, ts: u64) {
 /// vendor allowed, approver 2.
 fn setup() -> Contract {
     as_owner(DAY_NS);
-    let mut c = Contract::new(owner(), token());
+    let mut c = Contract::new(owner(), token(), None);
     c.configure_agent(agent(), U128(100), U128(250), U64(10 * DAY_SECONDS), true);
     c.set_recipient(vendor(), true);
     c.set_vault_daily_limit(U128(500));
@@ -373,4 +373,197 @@ fn nep413_digest_matches_the_spec_layout() {
     bytes.extend_from_slice(recipient.as_bytes());
     bytes.push(0);
     assert_eq!(c.nep413_digest(&a), env::sha256_array(&bytes));
+}
+
+// ---- EVM payments -------------------------------------------------------------------------------
+
+const ARC: u64 = 5_042_002;
+const EVM_VENDOR: &str = "0x1111111111111111111111111111111111111111";
+
+fn evm_setup() -> Contract {
+    let mut c = setup();
+    c.set_evm_chain(
+        ARC,
+        EvmChain {
+            token: "0x3600000000000000000000000000000000000000".into(),
+            max_fee_per_gas: U128(50_000_000_000),
+            max_priority_fee_per_gas: U128(1_000_000_000),
+            gas_limit: U64(100_000),
+            enabled: true,
+        },
+    );
+    c.set_evm_recipient(ARC, EVM_VENDOR.into(), true);
+    c
+}
+
+fn evm_payment(id: &str, amount: u128) -> EvmPayment {
+    EvmPayment {
+        payment_id: id.to_string(),
+        agent: agent(),
+        chain_id: ARC,
+        recipient: EVM_VENDOR.into(),
+        amount: U128(amount),
+        evidence_commitment: Base64VecU8::from(vec![7u8; 32]),
+        policy_version: 1,
+        recipient_version: 1,
+        valid_until: U64(10 * DAY_SECONDS),
+    }
+}
+
+fn fields() -> (U128, U128, U64) {
+    (U128(50_000_000_000), U128(1_000_000_000), U64(100_000))
+}
+
+#[test]
+fn evm_payment_commits_counters_and_waits_for_the_signer() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay_evm(evm_payment("e1", 60));
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 60);
+    assert_eq!(c.evm_pending(), Some(ARC));
+    assert!(c.consumed_payment("e1".into()).is_some());
+}
+
+#[test]
+#[should_panic(expected = "EvmRequestInFlight")]
+fn one_evm_request_at_a_time() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay_evm(evm_payment("e1", 10));
+    c.pay_evm(evm_payment("e2", 10));
+}
+
+#[test]
+#[should_panic(expected = "PerPaymentLimitExceeded")]
+fn evm_over_the_limit_without_a_signature() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay_evm(evm_payment("e1", 101));
+}
+
+#[test]
+#[should_panic(expected = "RecipientNotAllowed")]
+fn evm_pays_only_allowed_addresses() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    let mut p = evm_payment("e1", 10);
+    p.recipient = "0x2222222222222222222222222222222222222222".into();
+    c.pay_evm(p);
+}
+
+#[test]
+#[should_panic(expected = "InvalidAddress")]
+fn evm_recipient_must_be_canonical_lowercase() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    let mut p = evm_payment("e1", 10);
+    p.recipient = format!("0x{}", "AB".repeat(20));
+    c.pay_evm(p);
+}
+
+#[test]
+#[should_panic(expected = "ChainNotAllowed")]
+fn evm_pays_only_on_configured_chains() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    let mut p = evm_payment("e1", 10);
+    p.chain_id = 1;
+    c.pay_evm(p);
+}
+
+#[test]
+#[should_panic(expected = "DailyLimitExceeded")]
+fn evm_and_near_payments_share_the_daily_limit() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("p1", 100));
+    c.pay(payment("p2", 100));
+    c.pay_evm(evm_payment("e1", 51));
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn agent_cannot_add_a_chain_or_an_evm_recipient() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    c.set_evm_recipient(ARC, "0x2222222222222222222222222222222222222222".into(), true);
+}
+
+#[test]
+fn evm_exception_with_a_valid_signature_is_sent_to_the_signer() {
+    let mut c = evm_setup();
+    let (sk, pk) = key(2);
+    let p = evm_payment("e1", 150);
+    let mut a = authorization(&payment("unused", 1), &pk, 1);
+    a.payment_hash = Base64VecU8::from(hash_evm_payment(&p).to_vec());
+    let sig = sign(&c, &sk, &a);
+    as_agent(agent(), DAY_NS);
+    c.pay_evm_with_exception(p, a, sig);
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 150);
+}
+
+#[test]
+#[should_panic(expected = "PaymentHashMismatch")]
+fn a_near_payment_approval_does_not_work_for_an_evm_payment() {
+    let mut c = evm_setup();
+    let (sk, pk) = key(2);
+    let near_payment = payment("e1", 150);
+    let a = authorization(&near_payment, &pk, 1);
+    let sig = sign(&c, &sk, &a);
+    as_agent(agent(), DAY_NS);
+    c.pay_evm_with_exception(evm_payment("e1", 150), a, sig);
+}
+
+#[test]
+fn signer_answer_becomes_a_raw_transaction_that_recovers_to_the_signing_key() {
+    use k256::ecdsa::{SigningKey as K256Key, VerifyingKey};
+    use sha3::{Digest, Keccak256};
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    let p = evm_payment("e1", 60);
+    c.pay_evm(p.clone());
+    // Stand-in for the MPC signer: sign the same sighash with a known secp256k1 key.
+    let chain = c.get_evm_chain(ARC).unwrap();
+    let transfer = c.transfer_for(&p, &chain, 0, fields());
+    let sighash = Keccak256::digest(transfer.signing_payload());
+    let mpc_key = K256Key::from_slice(&[9u8; 32]).unwrap();
+    let (sig, rid) = mpc_key.sign_prehash_recoverable(&sighash).unwrap();
+    let r_bytes: [u8; 32] = sig.r().to_bytes().into();
+    let s_bytes: [u8; 32] = sig.s().to_bytes().into();
+    let mut big_r = vec![if rid.is_y_odd() { 0x03 } else { 0x02 }];
+    big_r.extend_from_slice(&r_bytes);
+    let answer = MpcSignature {
+        big_r: MpcPoint { affine_point: evm::hex(&big_r) },
+        s: MpcScalar { scalar: evm::hex(&s_bytes) },
+        recovery_id: rid.to_byte(),
+    };
+    testing_env!(context(vault(), agent(), DAY_NS).build());
+    let tx = c.on_evm_signed(p, 1, 0, fields(), None, None, Ok(answer)).expect("signed");
+    assert_eq!(c.evm_nonce(ARC), 1);
+    assert_eq!(c.evm_pending(), None);
+    assert_eq!(c.signed_evm_tx(ARC, 0), Some(tx.clone()));
+    // k256 already returns low-s, so the vault must emit exactly this transaction.
+    assert_eq!(tx.raw_tx, format!("0x{}", evm::hex(&transfer.signed(rid.to_byte(), &r_bytes, &s_bytes))));
+    let recovered = VerifyingKey::recover_from_prehash(&sighash, &sig, rid).unwrap();
+    assert_eq!(recovered, *mpc_key.verifying_key());
+    assert_eq!(tx.tx_hash, format!("0x{}", evm::hex(&Keccak256::digest(hex_decode(&tx.raw_tx[2..])))));
+    assert!(get_logs().iter().any(|l| l.contains("evm_payment_signed")));
+}
+
+#[test]
+fn signer_failure_rolls_back_and_frees_the_chain() {
+    let mut c = evm_setup();
+    as_agent(agent(), DAY_NS);
+    let p = evm_payment("e1", 60);
+    c.pay_evm(p.clone());
+    testing_env!(context(vault(), agent(), DAY_NS).build());
+    assert!(c.on_evm_signed(p, 1, 0, fields(), None, None, Err(PromiseError::Failed)).is_none());
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 0);
+    assert_eq!(c.evm_pending(), None);
+    assert_eq!(c.evm_nonce(ARC), 0);
+    assert!(c.consumed_payment("e1".into()).is_none());
+}
+
+fn hex_decode(text: &str) -> Vec<u8> {
+    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
