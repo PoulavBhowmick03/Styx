@@ -112,3 +112,25 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
 - Approvers identified by ed25519 public key, registered by the owner, so verification does
   not need to look up the approver account's keys on chain.
 - Day = block timestamp (ns) / 86400 s, UTC calendar day, same as the Arc build.
+
+## Notes for the agent side (step 2, not started)
+
+- Mirror the EVM seam exactly so `mcp-server` is reused unchanged: the binary reads one JSON
+  request on stdin (`method` in version, propose, request_approval, submit, status,
+  export_record) and prints one JSON response (`status: ok` with only the fields
+  `VaultSeam._public_fields` allows, or `status: error` with a `KNOWN_CODES` code). See
+  `sdk/py/src/styx/_vault.py` and `sdk/evm/src/arc_vault/v2/service.rs` for the field names.
+- Crate scaffold is in `sdk/near` (binary `styx-near-vault`, deps near-api 0.8, near-crypto 0.38).
+  near-api: `Contract(id).call_function(name, json).read_only().fetch_from(&network)` for views,
+  `.transaction().with_signer(vault_id, Signer::from_secret_key(sk))` then `.send_to(&network)`
+  for calls; `NetworkConfig::from_rpc_url(name, url)`; `signer.sign_message_nep413(account, pk,
+  &NEP413Payload{..})` signs exceptions for tests and A2.
+- Env: `STYX_NEAR_RPC_URL`, `STYX_NEAR_VAULT`, `STYX_NEAR_AGENT_KEY_FILE` (near legacy keychain
+  JSON, outside the repo), `STYX_NEAR_STATE_ROOT`. The agent signs as the vault account with its
+  function-call key.
+- Submit is retry-safe through the contract: check `consumed_payment(payment_id)` first
+  (settled or unknown), otherwise send `pay` or `pay_with_exception`.
+- Pending file for the NEAR approval page: vault, payment, authorization, the exact
+  `exception_message` view output, nonce (base64), recipient (the vault id). The existing relay
+  validates EVM shapes (`relay/src/relay.ts` lines 150-245, signature regex `0x` + 130 hex), so
+  it needs a NEAR branch or a small separate relay.
