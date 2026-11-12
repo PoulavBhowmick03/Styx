@@ -1,0 +1,1 @@
+{"model":"z-ai/glm-5.3-flash","messages":[{"role":"user","content":"Call the ping tool with message hello."}],"tools":[{"type":"function","function":{"name":"ping","description":"Ping","parameters":{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}}}],"stream":false,"max_tokens":300}

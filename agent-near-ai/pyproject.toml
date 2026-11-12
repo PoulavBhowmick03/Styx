@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "styx-near-ai-agent"
+version = "0.1.0"
+description = "Runs the Styx payment agent's model in NEAR AI Cloud and checks its attestation and response signatures before it acts"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=2.0.0,<3.0.0",
+    "requests>=2.31,<3",
+    "styx-near-review[inference]",
+]
+
+[project.scripts]
+styx-near-ai-agent = "styx_near_ai.cli:main"
+
+[tool.uv.sources]
+styx-near-review = { path = "../reviewer-near", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["styx_near_ai*"]
