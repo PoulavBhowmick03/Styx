@@ -1,0 +1,4 @@
+import bs58 from 'bs58';
+import { Buffer, type Pending } from './protocol';
+export const publicKey='ed25519:'+bs58.encode(new Uint8Array(32).fill(7));
+export function fixture():Pending{return {schema:'styx-near-pending/1',network:'testnet',rpcUrl:'https://test.rpc.fastnear.com',vault:'vault.testnet',token:'usdc.testnet',payment:{payment_id:'payment-1',agent:publicKey,token:'usdc.testnet',recipient:'vendor.testnet',amount:'150000000',evidence_commitment:Buffer.alloc(32).toString('base64'),policy_version:1,recipient_version:1,valid_until:'2000'},authorization:{payment_hash:Buffer.alloc(32).toString('base64'),signer:publicKey,signer_version:1,approval_nonce:Buffer.alloc(32,1).toString('base64'),authorization_expiry:'1500',callback_url:null},message:'Styx exception test',invoiceReference:'Invoice <script>',perPaymentLimit:'100000000',exceededRule:'perPaymentLimit'};}

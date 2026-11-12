@@ -6,7 +6,7 @@ import { mkdtempSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Relay,server } from './relay';
-import { fixture } from '../../approval-page-near/src/fixture';
+import { fixture } from './fixture';
 const pair=nacl.sign.keyPair.fromSeed(new Uint8Array(32).fill(42));
 function pending(){const p=fixture();p.authorization.signer='ed25519:'+bs58.encode(pair.publicKey);return p;}
 // Independent manual encoding, rather than the production borsh helper.
@@ -23,3 +23,12 @@ it('accepts signed callback and refuses a changed callback',()=>{const r=new Rel
 for(const mutation of ['nonce','key','message']) it(`refuses wrong ${mutation}`,()=>{const r=new Relay('token',undefined,()=>1000);const {requestId}=r.submit(pending(),'token');const p=pending();let s=signature();if(mutation==='nonce')s.nonce=Buffer.alloc(32,2).toString('base64');if(mutation==='key')s.publicKey=fixture().payment.agent;if(mutation==='message'){p.message='wrong';s=signature(p);}expect(()=>r.sign(requestId,s)).toThrow();expect(r.signature(requestId,'token').status).toBe('pending');});
 it('checks auth, expiry window and over-limit rule',()=>{const r=new Relay('token',undefined,()=>1000);expect(()=>r.submit(pending(),'bad')).toThrow('unauthorized');for(const expiry of ['999','87401']){const p=pending();p.authorization.authorization_expiry=expiry;expect(()=>r.submit(p,'token')).toThrow('expiry');}const p=pending();p.payment.amount=p.perPaymentLimit;expect(()=>r.submit(p,'token')).toThrow('invalid pending');});
 it('serves HTTP public pending, protected fetch and signature post',async()=>{const app=server(new Relay('token',undefined,()=>1000));await new Promise<void>(resolve=>app.listen(0,'127.0.0.1',resolve));try{const base=`http://127.0.0.1:${(app.address() as any).port}`;const create=await fetch(base+'/requests',{method:'POST',headers:{Authorization:'Bearer token','Content-Type':'application/json'},body:JSON.stringify({pending:pending()})});const {requestId}=await create.json();expect(create.status).toBe(200);expect((await fetch(base+'/requests/'+requestId)).status).toBe(200);expect((await fetch(base+'/requests/'+requestId+'/signature')).status).toBe(401);expect((await fetch(base+'/requests/'+requestId+'/signature',{method:'POST',body:JSON.stringify(signature())})).status).toBe(200);}finally{await new Promise<void>(resolve=>app.close(()=>resolve()));}});
+it('allows configured browser origins, rejects others, and exposes health',async()=>{
+ const app=server(new Relay('token'),['https://approval.example']);await new Promise<void>(r=>app.listen(0,'127.0.0.1',r));
+ try{const url=`http://127.0.0.1:${(app.address() as any).port}/health`;
+ expect(await (await fetch(url)).json()).toEqual({ok:true});
+ const allowed=await fetch(url,{headers:{Origin:'https://approval.example'}});expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe('https://approval.example');
+ expect((await fetch(url,{headers:{Origin:'https://evil.example'}})).status).toBe(403);
+ const preflight=await fetch(url,{method:'OPTIONS',headers:{Origin:'https://approval.example'}});expect(preflight.status).toBe(204);
+ }finally{await new Promise<void>(r=>app.close(()=>r()));}
+});

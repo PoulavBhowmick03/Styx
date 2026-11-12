@@ -1,0 +1,29 @@
+app = "styx-relay-near"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8788"
+  RELAY_STATE_FILE = "/data/relay/requests.json"
+  ALLOWED_ORIGINS = "https://REPLACE-WITH-APPROVAL-PAGE.vercel.app"
+
+[[mounts]]
+  source = "relay_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8788
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"

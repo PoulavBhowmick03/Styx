@@ -6,7 +6,9 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "tsx src/main.ts"
+    "start": "node dist/main.js",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --outfile=dist/main.js",
+    "dev": "tsx src/main.ts"
   },
   "dependencies": {
     "borsh": "^2.0.0",
@@ -20,6 +22,7 @@
     "tsx": "^4.20.5",
     "vitest": "^4.0.0",
     "vite": "^7.0.0",
-    "@types/node": "^22.18.0"
+    "@types/node": "^22.18.0",
+    "esbuild": "^0.25.0"
   }
 }

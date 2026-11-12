@@ -10,7 +10,7 @@ const status=document.querySelector('#status')!, details=document.querySelector(
 const connect=document.querySelector<HTMLButtonElement>('#connect')!,sign=document.querySelector<HTMLButtonElement>('#sign')!;
 const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);};
 async function main(){
- const query=new URLSearchParams(location.search),id=query.get('request'),relay=new URL(query.get('relay')??'');
+ const query=new URLSearchParams(location.search),id=query.get('request'),relay=new URL(query.get('relay')??import.meta.env.VITE_DEFAULT_RELAY??'');
  if(!id || !/^[A-Za-z0-9_-]{43}$/.test(id) || !['https:','http:'].includes(relay.protocol)) throw new Error('Invalid relay or request');
  const endpoint=new URL(`/requests/${id}`,relay).toString();
  const response=await fetch(endpoint);if(!response.ok) throw new Error('Cannot load request');

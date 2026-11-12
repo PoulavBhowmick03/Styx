@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { createServer } from 'node:http';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { pendingSchema, signatureSchema, signingBytes, type Pending, type Signature } from '../../approval-page-near/src/protocol';
+import { pendingSchema, signatureSchema, signingBytes, type Pending, type Signature } from './protocol';
 export class RelayError extends Error { constructor(public status:number,message:string){super(message);} }
 const fail=(status:number,message:string):never=>{throw new RelayError(status,message);};
 type Entry={pending:Pending;signature?:Signature};
@@ -46,11 +46,15 @@ export class Relay {
  sign(id:string,input:unknown){const e=this.find(id);if(this.expired(e)) fail(410,'expired');if(e.signature) fail(409,'already signed');const signature=verify(e.pending,input);const next=new Map(this.entries);next.set(id,{...e,signature});this.save(next);return {status:'signed'};}
  signature(id:string,token?:string){this.auth(token);const e=this.find(id);if(this.expired(e)) fail(410,'expired');return e.signature?{status:'signed',signature:e.signature}:{status:'pending'};}
 }
-export function server(relay:Relay){return createServer(async(req,res)=>{
- res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Cache-Control','no-store');
+export function server(relay:Relay, allowedOrigins:string[] = []){return createServer(async(req,res)=>{
+ const origin=req.headers.origin;
+ res.setHeader('Vary','Origin');
+ if(origin && !allowedOrigins.includes(origin)){res.writeHead(403).end();return;}
+ if(origin) res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Cache-Control','no-store');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
  try {
   const path=new URL(req.url??'/', 'http://localhost').pathname;
+  if(path==='/health' && req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true}));return;}
   const token=req.headers.authorization?.replace(/^Bearer /,'');
   let body:unknown;
   if(req.method==='POST'){let data='';for await(const chunk of req){data+=chunk;if(Buffer.byteLength(data)>65536) fail(413,'body too large');}try{body=JSON.parse(data);}catch{fail(400,'invalid JSON');}}
