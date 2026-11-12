@@ -14,7 +14,9 @@ approver's NEP-413 signature over that exact payment, which the vault verifies o
 **The same rules hold on another chain.** Through NEAR Chain Signatures the vault owns an address on
 Arc testnet, derived by NEAR's MPC network from the vault's account. `pay_evm` checks the same limits
 and recipients, builds the Arc USDC transfer itself, and has the MPC network sign it. The agent still
-holds only its NEAR function-call key: no EVM key exists anywhere in the system.
+holds only its NEAR function-call key: no EVM key exists anywhere in the system. The vault's address is the same on every EVM
+chain, and one run has paid on Arc and on Base Sepolia with the same agent key, the invoice naming the
+chain (`eip155:84532:0x…`). See [`scripts/near/demo_multichain.sh`](scripts/near/demo_multichain.sh).
 
 | Piece | Where |
 | --- | --- |

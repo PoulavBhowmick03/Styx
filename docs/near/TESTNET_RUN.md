@@ -40,6 +40,35 @@ reviewer's key gave back the invoice, its salted hash matched the payment's evid
 and the payment id and hash matched the event. This was a hand check; the reviewer tool in
 `reviewer-near/` (Codex task 2) is meant to make it repeatable.
 
+## One key, two chains: Arc and Base Sepolia (`scripts/near/demo_multichain.sh`)
+
+13 Nov 2026, vault-v2. The owner enabled Base Sepolia once (`set_evm_chain` `Bfkd4wzL…`, two
+vendors allowed). Then one run of the agent CLI, one agent key, the chain named by each invoice as a
+CAIP-10 recipient (`eip155:<chain>:0x…`). The vault's address `0xb0241fcB…3CAd` is the same on both
+chains. Per-payment limit 5 USDC.
+
+| Payment | NEAR transaction | EVM transaction | Result |
+| --- | --- | --- | --- |
+| 2 USDC on Arc (5042002), within limits | [HNoHC3BZ…](https://testnet.nearblocks.io/txns/HNoHC3BZv9NXm5AQRP1GExDCSs9AN6H1AND4STxa4E7q) | `0x5f113c47…6a80`, block 72103873 | status 1, from the vault's address |
+| 3 USDC on Base Sepolia (84532), within limits | [5QGj41SK…](https://testnet.nearblocks.io/txns/5QGj41SKFbbAJzdrpcJnnsf3AdrDmwQ22ZjHkq2KU7kk) | [`0x974f30f7…644a`](https://sepolia.basescan.org/tx/0x974f30f7e3c9d1c6f42dd85fbd374f04810175cf76440360cfec1793e5e1644a), block 57967391 | status 1, from the vault's address |
+| 7 USDC on Base, over the limit: refused alone, then the approver's signature | [9HWhbfja…](https://testnet.nearblocks.io/txns/9HWhbfjaGGDQ2V6y6M7Dy39KKvuNDobbf6VyQNrQsZWs) | [`0xf844657a…e5ba`](https://sepolia.basescan.org/tx/0xf844657a9eda4f45f4afd408eafc8d5d05241b693127e094c120edbee2e3e5ba), block 57967519 | status 1, from the vault's address |
+
+Attacks in the same run, with the agent's key, each refused:
+
+| Attack | Refused by | NEAR transaction |
+| --- | --- | --- |
+| E1 over the limit with no signature, on Arc | vault: `PerPaymentLimitExceeded` | [74Z4oKGF…](https://testnet.nearblocks.io/txns/74Z4oKGFaF7XJoXZ5yUkxHvgdfPhgHgdunDpRk9nJ3vh) |
+| E1 over the limit with no signature, on Base | vault: `PerPaymentLimitExceeded` | [DDJpnaLc…](https://testnet.nearblocks.io/txns/DDJpnaLc7qcbo9Jw4iascHmpmWFFAQkGAdpcUDUyyh5d) |
+| E2 an address never allowed, on Base | vault: `RecipientNotAllowed` | [3WsrEVe4…](https://testnet.nearblocks.io/txns/3WsrEVe4zjxokPqaoGmALXEdQK9GDKPm38myTJ1FtiBZ) |
+| E3 the Base approval reused for another address | vault: `PaymentHashMismatch` | [Fq6WwMsc…](https://testnet.nearblocks.io/txns/Fq6WwMscxK28gmApx7ogPjc8gEEXFq4kS5qTAkYw7BjU) |
+| E4 the settled Base exception sent again | vault: `PaymentAlreadyUsed` | [G5N8NJev…](https://testnet.nearblocks.io/txns/G5N8NJevkYDDAxwLxjDn8w5JJVUh6dp2W4z5yKpJWufc) |
+| E5 allow its own address (`set_evm_recipient`) | network: method not allowed for the key | none |
+| E6 raise the gas caps (`set_evm_chain`) | network: method not allowed for the key | none |
+
+Balances after: on Arc the vendor went from 15 to 17 USDC; on Base from 0 to 10 USDC, and the
+vault's address from 20 to 10 USDC (Base gas is paid in ETH). Base emits one `Transfer` log per
+transfer, from the USDC contract; Arc emits two (see above). The CLI checks the token's log either way.
+
 ## Paying on Arc through Chain Signatures (vault-v2)
 
 `vault-v2.styx-owner-c87a.testnet` (contract version 2) pays USDC on Arc testnet (chain 5042002) from
