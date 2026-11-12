@@ -1,0 +1,22 @@
+[package]
+name = "styx-near"
+description = "The agent's NEAR client for the Styx vault: proposes, requests approval, submits and checks payments over the same JSON protocol as styx-vault"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/PoulavBhowmick03/Styx"
+
+[[bin]]
+name = "styx-near-vault"
+path = "src/main.rs"
+
+[dependencies]
+near-api = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+borsh = "1"
+sha2 = "0.10"
+base64 = "0.22"
+bs58 = "0.5"
+hex = "0.4"
+rand = "0.8"
