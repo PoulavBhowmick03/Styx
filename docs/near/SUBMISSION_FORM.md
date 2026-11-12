@@ -24,7 +24,7 @@ Styx puts both on chain. The owner funds a vault contract and sets, per agent, t
 
 Built on NEAR: a Rust vault contract (near-sdk) paying a NEP-141 token, with a callback that rolls the counters back if the transfer fails. A Rust agent CLI the existing MCP server drives unchanged. A wallet-selector approval page and relay for NEP-413 signing. Sealed records a reviewer opens with their own key.
 
-On testnet: payments inside the limits settled, exceptions settled with the approver's signature, and all six attacks signed with the agent's own key were refused: four by the vault with named errors, two by the network itself.
+On testnet: payments inside the limits settled, exceptions settled with the approver's signature, and all six attacks signed with the agent's own key were refused: four by the vault with named errors, two by the network itself. We also ran Sonnet 5.5 and Haiku 5.5 as the agent against hostile invoices on testnet: no tokens reached the attacker's account and nothing went over the limit without a signature.
 ```
 
 ## Notes for the post on X
