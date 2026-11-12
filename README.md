@@ -19,6 +19,30 @@ approver's NEP-413 signature over that exact payment, which the vault verifies o
 | Setup, attacks A1 to A6, demo, end-to-end scripts | [`scripts/near`](scripts/near) |
 | What has run on testnet, with every transaction | [`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md) |
 
+### Try it
+
+You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://github.com/near/cargo-near)
+0.17 or later, [`near-cli-rs`](https://github.com/near/near-cli-rs), Python 3.11+ and
+[`uv`](https://docs.astral.sh/uv/). No keys of ours are involved.
+
+1. **On a local NEAR sandbox, no accounts needed.** Run
+   `cd contracts/near/styx-vault && cargo test`. You should see 25 unit tests and 2 sandbox tests
+   pass. The sandbox tests deploy the vault and token, pay through a real function-call key, settle
+   an exception with a NEP-413 signature, roll back a failed transfer, and check that attacks A1 to
+   A6 are refused by name.
+2. **On NEAR testnet, with your own faucet account.** Run `scripts/near/quickstart.sh`. It creates
+   a testnet account from the faucet, deploys a token and a vault under it, sets the agent's limits
+   (100 per payment, 1000 per day), then runs the agent. You should see a 25 tUSDC payment settle,
+   140 tUSDC refused with `OWNER_APPROVAL_REQUIRED`, 140 settle with the approver's signature, and
+   six lines `PASS A1` to `PASS A6`, the first four with the transaction of the vault's refusal.
+   Keys go to `~/.near-credentials` and `~/.styx-near-quickstart/`.
+3. **Through the MCP server an agent uses.** `scripts/near/mcp_e2e.py` drives the repo's MCP tools
+   over the NEAR CLI and the relay; `scripts/near/model_trial.py` puts a real model in the agent's
+   seat. See [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md) for what Sonnet and Haiku did.
+
+Styx started at ETHGlobal Mumbai (5 to 7 Nov 2026) on Arc; the NEAR build began on 12 Nov 2026. The
+sections below the NEAR one describe the Arc build.
+
 Live on testnet: vault `vault.styx-owner-c87a.testnet`, token `usdc.styx-owner-c87a.testnet`
 (our test token, not Circle's USDC). Plan and status: [`docs/near/PLAN.md`](docs/near/PLAN.md).
 
