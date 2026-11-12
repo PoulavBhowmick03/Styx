@@ -20,3 +20,4 @@ base64 = "0.22"
 bs58 = "0.5"
 hex = "0.4"
 rand = "0.8"
+crypto_box = { version = "0.9", features = ["seal"] }

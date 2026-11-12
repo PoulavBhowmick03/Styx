@@ -11,6 +11,7 @@
 //!   STYX_NEAR_AGENT_KEY_FILE  a NEAR key file (`private_key` or `secret_key`), owner-only
 //!   STYX_NEAR_STATE_ROOT      a private directory for the payment journal
 //!   STYX_NEAR_APPROVER        the approver public key asked by default (`ed25519:...`)
+//!   STYX_NEAR_REVIEWER_KEY    the reviewer's X25519 public key, base64, for export_record
 //!   STYX_NEAR_RPC_URL         optional, defaults to the public testnet RPC
 //!   STYX_NEAR_NETWORK         optional, `testnet` by default; written into pending files
 
@@ -30,6 +31,7 @@ const DEFAULT_RPC: &str = "https://test.rpc.fastnear.com";
 const PENDING_SCHEMA: &str = "styx-near-pending/1";
 const SIGNATURE_SCHEMA: &str = "styx-near-signature/1";
 const PAY_GAS_TGAS: u64 = 100;
+const RECORD_SCHEMA: &str = "styx-near-record/1";
 
 // ---- errors, with the codes mcp-server knows -------------------------------------------------
 
@@ -108,9 +110,7 @@ enum Request {
         payment_id: String,
     },
     ExportRecord {
-        #[allow(dead_code)]
         payment_id: String,
-        #[allow(dead_code)]
         record_file: PathBuf,
     },
 }
@@ -199,6 +199,15 @@ struct Record {
     attempts: Vec<String>,
     /// Set once a transaction's final outcome showed the transfer settled.
     settled_tx: Option<String>,
+    /// The invoice bytes, base64, so a sealed record can carry them to a reviewer.
+    #[serde(default)]
+    invoice: Option<String>,
+    /// The approver's base64 signature, once an exception was submitted with it.
+    #[serde(default)]
+    signature: Option<String>,
+    /// The `post_record` transaction, once a sealed record was posted.
+    #[serde(default)]
+    record_tx: Option<String>,
 }
 
 struct Journal {
@@ -281,6 +290,7 @@ struct Config {
     key_file: Option<PathBuf>,
     state_root: PathBuf,
     approver: Option<String>,
+    reviewer: Option<String>,
 }
 
 impl Config {
@@ -302,6 +312,7 @@ impl Config {
                 .map(PathBuf::from)
                 .ok_or_else(|| invalid("STYX_NEAR_STATE_ROOT must be set"))?,
             approver: var("STYX_NEAR_APPROVER"),
+            reviewer: var("STYX_NEAR_REVIEWER_KEY"),
         })
     }
 
@@ -496,6 +507,9 @@ async fn handle(request: Request) -> Result<Value> {
                 authorization: None,
                 attempts: Vec::new(),
                 settled_tx: None,
+                invoice: Some(B64.encode(&invoice)),
+                signature: None,
+                record_tx: None,
             };
             journal.write(&record)?;
             Ok(json!({
@@ -604,6 +618,8 @@ async fn handle(request: Request) -> Result<Value> {
                         return Err(invalid("signature must be 64 bytes"));
                     }
                     authorization.callback_url = file.callback_url;
+                    record.authorization = Some(authorization.clone());
+                    record.signature = Some(file.signature.clone());
                     ("pay_with_exception", json!({ "payment": record.payment, "authorization": authorization, "signature": file.signature }))
                 }
             };
@@ -633,7 +649,46 @@ async fn handle(request: Request) -> Result<Value> {
                 None => json!({"status": "ok", "state": "not_settled"}),
             })
         }
-        Request::ExportRecord { .. } => Err(invalid("export_record is not available on NEAR yet")),
+        Request::ExportRecord { payment_id, record_file } => {
+            let key = config.agent_key()?;
+            let mut record = journal.load(&payment_id)?;
+            let settlement = record.settled_tx.clone().ok_or_else(|| invalid("only a settled payment has a record"))?;
+            if let Some(tx) = &record.record_tx {
+                return Ok(json!({"status": "ok", "state": "posted", "tx_hash": tx}));
+            }
+            let invoice = record.invoice.clone().ok_or_else(|| invalid("this payment was journaled without its invoice"))?;
+            let reviewer = config.reviewer.as_ref().ok_or_else(|| invalid("set STYX_NEAR_REVIEWER_KEY to the reviewer's public key"))?;
+            let reviewer: [u8; 32] = B64
+                .decode(reviewer)
+                .ok()
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| invalid("STYX_NEAR_REVIEWER_KEY must be a base64 X25519 public key"))?;
+            let plain = json!({
+                "schema": RECORD_SCHEMA,
+                "network": config.network_name,
+                "vault": record.vault,
+                "payment": record.payment,
+                "payment_hash": record.payment_hash,
+                "invoice": invoice,
+                "salt": record.salt,
+                "invoice_reference": record.invoice_reference,
+                "settlement_tx": settlement,
+                "authorization": if record.exception_required { json!(record.authorization) } else { Value::Null },
+                "signature": if record.exception_required { json!(record.signature) } else { Value::Null },
+            });
+            let plain = serde_json::to_vec(&plain).map_err(|_| invalid("cannot encode the record"))?;
+            let sealed = crypto_box::PublicKey::from(reviewer)
+                .seal(&mut rand::rngs::OsRng, &plain)
+                .map_err(|_| invalid("cannot seal the record"))?;
+            let sealed = B64.encode(sealed);
+            // The local copy holds only the sealed box: the same bytes the chain will carry.
+            let local = json!({"schema": "styx-near-sealed/1", "vault": record.vault, "payment_id": record.payment.payment_id, "sealed": sealed});
+            write_private(&record_file, &serde_json::to_vec_pretty(&local).map_err(|_| invalid("cannot encode"))?, false)?;
+            let (tx, _) = chain.call(&key, "post_record", json!({ "payment_id": record.payment.payment_id, "sealed": sealed })).await?;
+            record.record_tx = Some(tx.clone());
+            journal.write(&record)?;
+            Ok(json!({"status": "ok", "state": "posted", "record_file": record_file.display().to_string(), "tx_hash": tx}))
+        }
     }
 }
 
