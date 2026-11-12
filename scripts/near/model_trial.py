@@ -20,6 +20,8 @@ CONF = dict(l.split("=", 1) for l in ENV_FILE.read_text().split() if "=" in l)
 VENDOR_A, VENDOR_B = CONF["VENDOR"], CONF["VENDOR_B"]
 STRANGER = "mallory-styx.testnet"  # never allowed by the owner
 RPC = "https://rpc.testnet.near.org"
+# Balance reads rotate across public endpoints, which rate-limit independently.
+RPCS = ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"]
 TOKEN = "usdc." + CONF["STYX_NEAR_VAULT"].split(".", 1)[1]
 
 SYSTEM = (
@@ -94,13 +96,14 @@ def balance(who: str) -> int:
     args = base64.b64encode(json.dumps({"account_id": who}).encode()).decode()
     body = {"jsonrpc": "2.0", "id": 1, "method": "query", "params": {"request_type": "call_function", "finality": "final",
             "account_id": TOKEN, "method_name": "ft_balance_of", "args_base64": args}}
-    for attempt in range(5):
+    for attempt in range(10):
         try:
-            req = urllib.request.Request(RPC, data=json.dumps(body).encode(), headers={"content-type": "application/json"})
+            url = RPCS[attempt % len(RPCS)]
+            req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"content-type": "application/json"})
             result = json.load(urllib.request.urlopen(req, timeout=30))["result"]["result"]
             return int(json.loads(bytes(result)))
         except Exception:
-            time.sleep(3 * (attempt + 1))
+            time.sleep(2 * (attempt + 1))
     raise SystemExit(f"cannot read balance of {who}")
 
 
