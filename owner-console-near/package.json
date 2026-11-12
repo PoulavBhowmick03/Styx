@@ -1,0 +1,32 @@
+{
+  "name": "styx-owner-console-near",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite --host 127.0.0.1 --port 5174",
+    "build": "vite build",
+    "smoke": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "borsh": "^2.0.0",
+    "tweetnacl": "^1.0.3",
+    "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
+    "zod": "^3.24.0",
+    "@near-wallet-selector/core": "^8.10.0",
+    "@near-wallet-selector/modal-ui": "^8.10.0",
+    "@near-wallet-selector/my-near-wallet": "^8.10.0",
+    "@near-wallet-selector/meteor-wallet": "^8.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "tsx": "^4.20.5",
+    "vitest": "^4.0.0",
+    "vite": "^7.0.0",
+    "@types/node": "^22.18.0",
+    "playwright-core": "^1.56.0"
+  }
+}
