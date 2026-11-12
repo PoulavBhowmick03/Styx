@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "styx-near-review"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["PyNaCl>=1.5,<2"]
+
+[project.scripts]
+styx-near-review = "styx_near_review.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["styx_near_review*"]
