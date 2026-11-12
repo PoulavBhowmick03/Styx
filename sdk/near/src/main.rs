@@ -14,8 +14,10 @@
 //!   STYX_NEAR_REVIEWER_KEY    the reviewer's X25519 public key, base64, for export_record
 //!   STYX_NEAR_RPC_URL         optional, defaults to the public testnet RPC
 //!   STYX_NEAR_NETWORK         optional, `testnet` by default; written into pending files
-//!   STYX_NEAR_EVM_CHAIN_ID    for EVM payments (a `0x…` recipient): the chain to pay on
-//!   STYX_NEAR_EVM_RPC         for EVM payments: that chain's JSON-RPC URL
+//!   STYX_NEAR_EVM_RPCS        for EVM payments: `<chain id>=<rpc url>` pairs, comma separated. A
+//!                             recipient `eip155:<chain id>:0x…` (CAIP-10) pays on that chain.
+//!   STYX_NEAR_EVM_CHAIN_ID    optional: the chain for a bare `0x…` recipient
+//!   STYX_NEAR_EVM_RPC         optional: that chain's RPC, if it is not in STYX_NEAR_EVM_RPCS
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -359,7 +361,46 @@ struct Config {
     approver: Option<String>,
     reviewer: Option<String>,
     evm_chain_id: Option<u64>,
-    evm_rpc: Option<String>,
+    /// chain id -> RPC URL.
+    evm_rpcs: std::collections::BTreeMap<u64, String>,
+}
+
+/// Builds the chain-to-RPC map from `STYX_NEAR_EVM_RPCS`, plus the single-chain pair if set.
+fn parse_rpcs(list: Option<&str>, chain: Option<&str>, rpc: Option<&str>) -> Result<std::collections::BTreeMap<u64, String>> {
+    let mut map = std::collections::BTreeMap::new();
+    for pair in list.unwrap_or("").split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let (id, url) = pair.split_once('=').ok_or_else(|| invalid("STYX_NEAR_EVM_RPCS entries look like 84532=https://…"))?;
+        let id: u64 = id.trim().parse().map_err(|_| invalid("STYX_NEAR_EVM_RPCS chain ids must be numbers"))?;
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return Err(invalid("STYX_NEAR_EVM_RPCS URLs must be http or https"));
+        }
+        map.insert(id, url.trim().to_string());
+    }
+    if let (Some(chain), Some(rpc)) = (chain, rpc) {
+        let id: u64 = chain.parse().map_err(|_| invalid("STYX_NEAR_EVM_CHAIN_ID must be a number"))?;
+        map.entry(id).or_insert_with(|| rpc.to_string());
+    }
+    Ok(map)
+}
+
+/// Splits a recipient into (EVM chain, address) or a NEAR account. `eip155:<chain>:0x…` names its
+/// chain; a bare `0x…` uses the default chain; anything else is a NEAR account id.
+fn parse_recipient(recipient: &str, default_chain: Option<u64>) -> Result<(Option<u64>, String)> {
+    let (chain, address) = if let Some(rest) = recipient.strip_prefix("eip155:") {
+        let (id, address) = rest.split_once(':').ok_or_else(|| invalid("CAIP-10 recipients look like eip155:<chain id>:0x…"))?;
+        let id: u64 = id.parse().map_err(|_| invalid("CAIP-10 chain id must be a number"))?;
+        (Some(id), address)
+    } else if recipient.starts_with("0x") {
+        (Some(default_chain.ok_or_else(|| invalid("write the recipient as eip155:<chain id>:0x… or set STYX_NEAR_EVM_CHAIN_ID"))?), recipient)
+    } else {
+        let account: AccountId = recipient.parse().map_err(|_| invalid("recipient is not a NEAR account id"))?;
+        return Ok((None, account.to_string()));
+    };
+    let lower = address.to_ascii_lowercase();
+    if lower.len() != 42 || !lower.starts_with("0x") || !lower[2..].bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(invalid("recipient is not an EVM address"));
+    }
+    Ok((chain, lower))
 }
 
 impl Config {
@@ -383,7 +424,7 @@ impl Config {
             approver: var("STYX_NEAR_APPROVER"),
             reviewer: var("STYX_NEAR_REVIEWER_KEY"),
             evm_chain_id: var("STYX_NEAR_EVM_CHAIN_ID").map(|v| v.parse().map_err(|_| invalid("STYX_NEAR_EVM_CHAIN_ID must be a number"))).transpose()?,
-            evm_rpc: var("STYX_NEAR_EVM_RPC"),
+            evm_rpcs: parse_rpcs(var("STYX_NEAR_EVM_RPCS").as_deref(), var("STYX_NEAR_EVM_CHAIN_ID").as_deref(), var("STYX_NEAR_EVM_RPC").as_deref())?,
         })
     }
 
@@ -523,25 +564,15 @@ async fn handle(request: Request) -> Result<Value> {
             let key = config.agent_key()?;
             let agent: PublicKey = key.public_key();
             let agent = agent.to_string();
-            // A `0x…` recipient is a payment on the configured EVM chain, signed through the vault.
-            let evm_chain = if recipient.starts_with("0x") {
-                let chain_id = config.evm_chain_id.ok_or_else(|| invalid("set STYX_NEAR_EVM_CHAIN_ID to pay an EVM address"))?;
+            // An EVM recipient is paid on its chain through the vault's Chain Signatures.
+            let (evm_chain, recipient) = parse_recipient(&recipient, config.evm_chain_id)?;
+            if let Some(chain_id) = evm_chain {
                 let info: Option<EvmChain> = chain.view("get_evm_chain", json!({ "chain_id": chain_id })).await?;
                 info.filter(|c| c.enabled).ok_or_else(|| policy("the vault does not pay on this chain"))?;
-                Some(chain_id)
-            } else {
-                None
-            };
-            let recipient = match evm_chain {
-                Some(_) => {
-                    let lower = recipient.to_ascii_lowercase();
-                    if lower.len() != 42 || !lower[2..].bytes().all(|b| b.is_ascii_hexdigit()) {
-                        return Err(invalid("recipient is not an EVM address"));
-                    }
-                    lower
+                if !config.evm_rpcs.contains_key(&chain_id) {
+                    return Err(invalid(format!("no RPC for chain {chain_id}; add it to STYX_NEAR_EVM_RPCS")));
                 }
-                None => recipient.parse::<AccountId>().map_err(|_| invalid("recipient is not a NEAR account id"))?.to_string(),
-            };
+            }
             let amount = parse_amount(&amount)?;
             if invoice_reference.len() > 4096 {
                 return Err(invalid("invoice reference too long"));
@@ -842,7 +873,7 @@ async fn handle(request: Request) -> Result<Value> {
 async fn settle_evm(config: &Config, chain: &Chain<'_>, vault: &VaultInfo, record: &mut Record, journal: &Journal) -> Result<Value> {
     let chain_id = record.chain_id.ok_or_else(|| invalid("not an EVM payment"))?;
     let tx = record.evm_tx.clone().ok_or_else(|| invalid("the vault has not signed this payment"))?;
-    let url = config.evm_rpc.as_ref().ok_or_else(|| invalid("set STYX_NEAR_EVM_RPC to settle EVM payments"))?;
+    let url = config.evm_rpcs.get(&chain_id).ok_or_else(|| invalid(format!("no RPC for chain {chain_id}; add it to STYX_NEAR_EVM_RPCS")))?;
     let rpc = evm::EvmRpc::new(url);
     if rpc.chain_id().await.map_err(unavailable)? != chain_id {
         return Err(invalid("STYX_NEAR_EVM_RPC is for another chain"));
@@ -957,6 +988,20 @@ mod tests {
         assert_eq!(from_contract("PaymentAlreadyUsed").code, "PAYMENT_ALREADY_SETTLED");
         assert_eq!(from_contract("DailyLimitExceeded").code, "POLICY_LIMIT");
         assert_eq!(contract_refusal("no refusal here"), None);
+    }
+
+    #[test]
+    fn recipients_name_their_chain() {
+        let a = "0xF4D88218d13333247BF7616AFFb45F24a21E07cc";
+        assert_eq!(parse_recipient(&format!("eip155:84532:{a}"), None).unwrap(), (Some(84532), a.to_ascii_lowercase()));
+        assert_eq!(parse_recipient(a, Some(5042002)).unwrap().0, Some(5042002));
+        assert!(parse_recipient(a, None).is_err());
+        assert_eq!(parse_recipient("vendor.testnet", None).unwrap(), (None, "vendor.testnet".into()));
+        assert!(parse_recipient("eip155:base:0x11", None).is_err());
+        assert!(parse_recipient("eip155:84532:0x1234", None).is_err());
+        let rpcs = parse_rpcs(Some("84532=https://sepolia.base.org, 5042002=https://rpc.testnet.arc.network"), Some("1"), Some("https://x.example")).unwrap();
+        assert_eq!(rpcs.len(), 3);
+        assert!(parse_rpcs(Some("84532:https://x"), None, None).is_err());
     }
 
     #[test]
