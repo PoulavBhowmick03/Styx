@@ -16,6 +16,7 @@ def main():
     check = commands.add_parser('verify')
     for name in ['key', 'rpc', 'vault', 'tx']:
         check.add_argument('--' + name, required=True)
+    check.add_argument('--attestation', help='raw NEAR AI Cloud attestation report saved by the agent runner; re-verified when the record has inference evidence')
     args = parser.parse_args()
     try:
         if args.command == 'keygen':
@@ -29,7 +30,8 @@ def main():
             print(data['public_key'])
             return 0
         key = json.loads(Path(args.key).expanduser().read_text())
-        ok, lines = verify(RPC(args.rpc), args.vault, args.tx, key)
+        report = Path(args.attestation).expanduser().read_bytes() if args.attestation else None
+        ok, lines = verify(RPC(args.rpc), args.vault, args.tx, key, report)
         print('\n'.join(lines))
         return 0 if ok else 1
     except Exception as error:

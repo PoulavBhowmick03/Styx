@@ -118,7 +118,7 @@ def open_record(key, sealed):
     return json.loads(SealedBox(private).decrypt(decode(sealed)))
 
 
-def verify(rpc, vault, tx_id, key):
+def verify(rpc, vault, tx_id, key, attestation=None, **verifiers):
     lines = []
     def passed(name):
         lines.append(name + ': PASS')
@@ -175,6 +175,12 @@ def verify(rpc, vault, tx_id, key):
         else:
             require(record['signature'] is None and execution.get('signer') is None, 'unexpected signature or signer')
             lines.append('6 exception NEP-413 signature: NOT APPLICABLE (routine payment)')
+        if record.get('inference_evidence') is None:
+            # Optional field: records without it stay valid under styx-near-record/1.
+            lines.append('7 inference evidence: NONE in this record (not a failure)')
+        else:
+            from .inference import verify_evidence
+            lines.extend(verify_evidence(record['inference_evidence'], record, attestation, **verifiers))
         lines.append('PASS')
         return True, lines
     except Exception as error:

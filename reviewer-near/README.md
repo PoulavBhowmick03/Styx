@@ -24,5 +24,12 @@ the transaction receipt graph. The submitted payment/authorization must match th
 The memo binds the token transfer to the payment ID. Exception verification uses the contract's
 message view and independently encodes the NEP-413 Borsh payload in Python.
 
+Inference evidence (optional). When the sealed record has `inference_evidence` (see
+`../docs/near/NEAR_AI.md`), `verify` adds check 7: payment id, invoice hash, a recorded tool call that
+proposes this payment, and each completion's response signature. Add `--attestation <file>` (the
+`attestation-<id12>.json` the agent runner saved) to re-verify the report and its hash and bind every
+signer to it; that needs `pip install -e '.[inference]'` and the network. A record without the field
+prints `7 inference evidence: NONE in this record (not a failure)`.
+
 Tests generate fresh keys in memory; no test private keys are stored in the repository.
 See ../docs/near/REVIEWER.md for the live verification and remaining limits.
