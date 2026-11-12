@@ -48,7 +48,7 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
 ### 0. Setup
 - [x] Branch `near-hackathon`, plan written
 - [x] near-cli-rs 0.x and cargo-near 0.23 installed
-- [ ] testnet owner account created (`styx-owner-<suffix>.testnet`), key in ~/.near-credentials, never in the repo
+- [x] testnet owner account created (`styx-owner-<suffix>.testnet`), key in ~/.near-credentials, never in the repo
 - [x] USDC-like NEP-141 on testnet chosen: deploy our own mock FT (`contracts/near/styx-usdc`)
       and say so honestly
 
@@ -70,23 +70,23 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
 - [x] Unit tests (near-sdk test env) for every refusal path
 - [x] near-workspaces integration test on sandbox: fund, pay, exception, A1 to A6, rollback
       when the recipient is not registered with the token
-- [ ] Deploy to testnet, record account id and tx in `docs/near/DEPLOYMENTS.md`
+- [x] Deploy to testnet, record account id and tx in `docs/near/DEPLOYMENTS.md`
 
 ### 2. Agent side
-- [ ] `sdk/near` Rust CLI `styx-near`: build payment, sign and send `pay` with the
+- [x] `sdk/near` Rust CLI `styx-near`: build payment, sign and send `pay` with the
       function-call key, fetch approval, send `pay_with_exception`, read vault views,
       write the journal record (reuse `sdk/journal`)
-- [ ] MCP server: `mcp-server/src/styx_near_mcp` with `styx_propose_payment`,
+- [x] MCP server: reused unchanged (`STYX_VAULT_CLI` points at `styx-near-vault`); tools `styx_propose_payment`,
       `styx_request_owner_approval`, `styx_submit_payment`, `styx_payment_status`
-- [ ] Local run against sandbox: propose, submit within limit, exception flow end to end
+- [x] Run on testnet: propose, submit within limit, exception flow end to end, through MCP and relay
 
 ### 3. Approval page and relay
-- [ ] Relay: accept NEP-413 signatures (public key, signature, nonce) for a payment id
-- [ ] Approval page: wallet-selector, read payment from chain, `signMessage`, post to relay
+- [x] Relay: accept NEP-413 signatures (public key, signature, nonce) for a payment id
+- [x] Approval page: wallet-selector, read payment from chain, `signMessage`, post to relay
 - [ ] Owner signs on testnet and the agent settles the exception
 
 ### 4. Attacks and trials
-- [ ] `scripts/near/attacks.sh`: A1 over limit, A2 agent signs its own exception, A3 reuse
+- [x] `scripts/near/attacks.py`: A1 over limit, A2 agent signs its own exception, A3 reuse
       signature for another recipient, A4 replay settled payment, A5 agent raises its own
       limit (rejected by the access key), A6 agent names itself approver. All on testnet, tx
       ids recorded
