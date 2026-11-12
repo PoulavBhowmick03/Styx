@@ -55,9 +55,9 @@ address holds no USDC on Arc.
 - [x] ~~Mock signer in the sandbox~~ replaced: unit tests cover the callback with a k256 stand-in signer
       and the rollback; the real signer is exercised on testnet below
 - [x] Deploy vault-v2 on testnet; configure Arc, an EVM recipient, the agent and the approver
-- [ ] Fund `0xb0241fcB…3CAd` with Arc testnet USDC (user: faucet.circle.com, Arc testnet)
+- [x] Fund `0xb0241fcB…3CAd` with Arc testnet USDC (user: faucet.circle.com, Arc testnet)
 - [x] Agent CLI: EVM recipients (`0x…`), submit via `pay_evm`, broadcast to Arc, status from the receipt
-- [ ] Testnet run: within limits, exception with signature, refusals (over limit, recipient not allowed,
+- [x] Testnet run: within limits, exception with signature, refusals (over limit, recipient not allowed,
       agent key on owner methods), each with NEAR and Arc transaction ids
 - [ ] Docs: TESTNET_RUN, README, submission draft, demo script
 - [ ] Approval page: show EVM payments (chain, address) and check them with `evm_payment_hash`

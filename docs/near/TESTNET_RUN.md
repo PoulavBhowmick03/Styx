@@ -40,6 +40,41 @@ reviewer's key gave back the invoice, its salted hash matched the payment's evid
 and the payment id and hash matched the event. This was a hand check; the reviewer tool in
 `reviewer-near/` (Codex task 2) is meant to make it repeatable.
 
+## Paying on Arc through Chain Signatures (vault-v2)
+
+`vault-v2.styx-owner-c87a.testnet` (contract version 2) pays USDC on Arc testnet (chain 5042002) from
+its own derived address `0xb0241fcB…3CAd`. The agent's NEAR function-call key calls `pay_evm`; the
+vault checks the same rules, builds the Arc transfer, has NEAR's MPC signer
+(`v1.signer-prod.testnet`) sign it, and the agent CLI broadcasts it. Per-payment limit at the time:
+5 USDC. The address was funded with 20 Arc testnet USDC.
+
+| Payment | NEAR transaction (rules checked, MPC signed) | Arc transaction | Result |
+| --- | --- | --- | --- |
+| 4 USDC to `0xf4D8…07cc`, within limits | [AVhY1A9c…](https://testnet.nearblocks.io/txns/AVhY1A9ciXkhhV9JkAxduYjqmkMN6pC9xCtuFV1FVX1r) | `0xde70dac7…537d`, block 72089069 | status 1, USDC Transfer from the vault's address |
+| 8 USDC, over the limit: refused alone (`OWNER_APPROVAL_REQUIRED`), then approver's NEP-413 signature | [3ZTXNwhp…](https://testnet.nearblocks.io/txns/3ZTXNwhprKzYm87ZzxLBUvrFavwfdmgjUzPEtYCUjjU9) | `0x5a9f891c…dd8a`, block 72089105 | status 1, USDC Transfer from the vault's address |
+
+Afterwards the vendor held 12 USDC on Arc and the vault's address 7.997419; the difference is gas,
+paid in USDC by the vault's address. Arc logs each transfer twice: the native balance in 18
+decimals from a system address, and the ERC-20 `Transfer` in 6 decimals from `0x3600…0000`; the CLI
+requires the latter with the exact amount.
+
+Attacks with the agent's own key (`scripts/near/attacks_evm.py`), each refused, nothing signed for
+Arc: the vault's nonce stayed at 2 and its balance unchanged.
+
+| Attack | Refused by | NEAR transaction |
+| --- | --- | --- |
+| E1 pay 5.000001 USDC on Arc with no signature | vault: `PerPaymentLimitExceeded` | [4qvEtqeZ…](https://testnet.nearblocks.io/txns/4qvEtqeZUH4ts3iQmybCpeTi3X5ACFrEgjTQJrguczx2) |
+| E2 pay an address the owner never allowed | vault: `RecipientNotAllowed` | [5A4Hvh9C…](https://testnet.nearblocks.io/txns/5A4Hvh9Cx2Mv4Gt4xDDJiaKZyewq6LmQ8BFD3y95Jo3m) |
+| E3 reuse the approver's signature for another address | vault: `PaymentHashMismatch` | [VgCSKiEC…](https://testnet.nearblocks.io/txns/VgCSKiEC6Q4TVz15vssaty9SqHUfjCyuNdFQRTP3tCr) |
+| E4 send the settled exception again | vault: `PaymentAlreadyUsed` | [3PWL1dQd…](https://testnet.nearblocks.io/txns/3PWL1dQdXk9caFFnRVJJV7YQrLSudu7ngKTdxvjSPjf6) |
+| E5 allow its own address on Arc (`set_evm_recipient`) | network: method not allowed for the key | none, rejected before inclusion |
+| E6 raise the gas caps (`set_evm_chain`) | network: method not allowed for the key | none, rejected before inclusion |
+
+Before the run, a first test signature (25 USDC at nonce 0, NEAR tx `DwK2BQJD…`) could not execute
+with 20 USDC, so the owner reset the vault's Arc nonce to 0 with `set_evm_nonce`
+(`FfQsK6VP…`). That old signed transaction is still valid for nonce 0, but nonce 0 has since been
+used by the 4 USDC payment, so it can never execute.
+
 ## Attacks (`scripts/near/attacks.py`), signed with the agent's own key
 
 | Attack | What the agent tried | Refused by | Evidence |
