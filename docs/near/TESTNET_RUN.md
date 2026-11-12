@@ -28,6 +28,18 @@ the approval page and a wallet), fetched back through `styx_check_owner_approval
 The receipt carries the `ft_transfer` and `payment_executed` events, and vendor-b's balance read
 130 tUSDC afterwards.
 
+## A sealed record for a reviewer (`export_record`)
+
+A 140 tUSDC exception to vendor-a settled in
+[7esYgW17…](https://testnet.nearblocks.io/txns/7esYgW17uGo4tw5Lggj9LVgCUpvXufUWnMYzezLo2LyR). The
+agent CLI then sealed its record (payment, invoice, salt, authorization, signature, settlement
+transaction) to a reviewer's X25519 key and posted it through `post_record` in
+[8MA4pdMq…](https://testnet.nearblocks.io/txns/8MA4pdMqH9TQy8x2xHVG3FrP4KmTXVwCzj5LfzajBm2y).
+A second `export_record` returned the same transaction. Opening the `record_sealed` event with the
+reviewer's key gave back the invoice, its salted hash matched the payment's evidence commitment,
+and the payment id and hash matched the event. This was a hand check; the reviewer tool in
+`reviewer-near/` (Codex task 2) is meant to make it repeatable.
+
 ## Attacks (`scripts/near/attacks.py`), signed with the agent's own key
 
 | Attack | What the agent tried | Refused by | Evidence |
