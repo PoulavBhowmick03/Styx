@@ -16,6 +16,6 @@ segment first (3 + 6 USDC plus gas): an underfunded transfer reverts on Arc.
 | 1:20 | Step 6: A5, A1, A4 | "Now the agent attacks with its own key. Raise its own limit: NEAR rejects the transaction before it reaches the contract. Pay over the limit directly: the vault refuses. Replay the approved payment: refused." |
 | 1:45 | Step 7: `get_agent` unchanged | "The rules are where the owner left them." |
 | 1:50 | `demo_arc.sh`: the vault's Arc address, a 3 USDC payment on Arc, then 6 USDC refused until signed | "And the same rules hold on another chain. NEAR's MPC network gives this vault an address on Arc. The agent pays there with the same NEAR key; the vault builds and signs the transfer, so the agent never holds an Arc key." |
-| 1:55 | Repo and `docs/near/TESTNET_RUN.md` | "Every transaction is listed in the repo. Built at the NEAR Hackathon." |
+| 2:20 | Repo and `docs/near/TESTNET_RUN.md` | "Every transaction is listed in the repo. Built at the NEAR Hackathon." |
 
 Do not say "secure", "audited" or "solves". A2, A3 and A6 are in `TESTNET_RUN.md` if asked.

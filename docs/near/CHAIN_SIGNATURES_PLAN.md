@@ -60,6 +60,6 @@ address holds no USDC on Arc.
 - [x] Agent CLI: EVM recipients (`0x…`), submit via `pay_evm`, broadcast to Arc, status from the receipt
 - [x] Testnet run: within limits, exception with signature, refusals (over limit, recipient not allowed,
       agent key on owner methods), each with NEAR and Arc transaction ids
-- [ ] Docs: TESTNET_RUN, README, submission draft, demo script
+- [x] Docs: TESTNET_RUN, README, submission draft, demo script
 - [ ] Approval page: show EVM payments (chain, address) and check them with `evm_payment_hash`
       (Codex, once the run works)
