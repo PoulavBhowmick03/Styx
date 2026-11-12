@@ -7,3 +7,9 @@ The relay verifies the exact NEP-413 payload; it does not read chain state or au
 No Telegram alerts. Requests expire after at most 24 hours. Public reads contain the pending request.
 
 Run `npm test` and `npm run typecheck`. See ../docs/near/APPROVAL_PAGE.md for the wire flow.
+
+EVM requests use non-null chainId matching payment.chain_id and an EvmPayment without token.
+Absent/null chainId retains the NEAR Payment shape. NEP-413 verification is unchanged. The
+relay does not query the vault; the page checks the EVM hash, chain configuration and recipient.
+Tests include the actual public signature of a vault-v2 testnet exception, with a frozen clock.
+See ../docs/near/APPROVAL_PAGE.md for fixture provenance and tested scope.
