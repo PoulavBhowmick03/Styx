@@ -21,3 +21,5 @@ bs58 = "0.5"
 hex = "0.4"
 rand = "0.8"
 crypto_box = { version = "0.9", features = ["seal"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sha3 = "0.10"

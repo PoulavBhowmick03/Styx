@@ -14,6 +14,8 @@
 //!   STYX_NEAR_REVIEWER_KEY    the reviewer's X25519 public key, base64, for export_record
 //!   STYX_NEAR_RPC_URL         optional, defaults to the public testnet RPC
 //!   STYX_NEAR_NETWORK         optional, `testnet` by default; written into pending files
+//!   STYX_NEAR_EVM_CHAIN_ID    for EVM payments (a `0x…` recipient): the chain to pay on
+//!   STYX_NEAR_EVM_RPC         for EVM payments: that chain's JSON-RPC URL
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -26,6 +28,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+mod evm;
 
 const DEFAULT_RPC: &str = "https://test.rpc.fastnear.com";
 const PENDING_SCHEMA: &str = "styx-near-pending/1";
@@ -167,6 +171,24 @@ struct VaultInfo {
     paused: bool,
     vault_daily_limit: String,
     contract_version: u32,
+    #[serde(default)]
+    mpc_signer: Option<String>,
+    #[serde(default)]
+    evm_key_path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct EvmChain {
+    token: String,
+    enabled: bool,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct SignedEvmTx {
+    chain_id: u64,
+    nonce: u64,
+    raw_tx: String,
+    tx_hash: String,
 }
 
 #[derive(Deserialize)]
@@ -208,6 +230,32 @@ struct Record {
     /// The `post_record` transaction, once a sealed record was posted.
     #[serde(default)]
     record_tx: Option<String>,
+    /// Set for a payment on an EVM chain; `payment.recipient` is then a `0x…` address.
+    #[serde(default)]
+    chain_id: Option<u64>,
+    /// The transaction the vault signed for an EVM payment, once it exists.
+    #[serde(default)]
+    evm_tx: Option<SignedEvmTx>,
+}
+
+impl Record {
+    /// The payment as the contract takes it: `Payment` on NEAR, `EvmPayment` on an EVM chain.
+    fn contract_payment(&self) -> Value {
+        match self.chain_id {
+            None => json!(self.payment),
+            Some(chain_id) => json!({
+                "payment_id": self.payment.payment_id,
+                "agent": self.payment.agent,
+                "chain_id": chain_id,
+                "recipient": self.payment.recipient,
+                "amount": self.payment.amount,
+                "evidence_commitment": self.payment.evidence_commitment,
+                "policy_version": self.payment.policy_version,
+                "recipient_version": self.payment.recipient_version,
+                "valid_until": self.payment.valid_until,
+            }),
+        }
+    }
 }
 
 struct Journal {
@@ -291,6 +339,8 @@ struct Config {
     state_root: PathBuf,
     approver: Option<String>,
     reviewer: Option<String>,
+    evm_chain_id: Option<u64>,
+    evm_rpc: Option<String>,
 }
 
 impl Config {
@@ -313,6 +363,8 @@ impl Config {
                 .ok_or_else(|| invalid("STYX_NEAR_STATE_ROOT must be set"))?,
             approver: var("STYX_NEAR_APPROVER"),
             reviewer: var("STYX_NEAR_REVIEWER_KEY"),
+            evm_chain_id: var("STYX_NEAR_EVM_CHAIN_ID").map(|v| v.parse().map_err(|_| invalid("STYX_NEAR_EVM_CHAIN_ID must be a number"))).transpose()?,
+            evm_rpc: var("STYX_NEAR_EVM_RPC"),
         })
     }
 
@@ -344,7 +396,11 @@ struct Chain<'a> {
 
 impl Chain<'_> {
     async fn view<T: serde::de::DeserializeOwned + Send + Sync>(&self, method: &str, args: Value) -> Result<T> {
-        let data: Data<T> = Contract(self.config.vault.clone())
+        self.view_on(self.config.vault.clone(), method, args).await
+    }
+
+    async fn view_on<T: serde::de::DeserializeOwned + Send + Sync>(&self, account: AccountId, method: &str, args: Value) -> Result<T> {
+        let data: Data<T> = Contract(account)
             .call_function(method, args)
             .read_only()
             .fetch_from(&self.config.network)
@@ -399,8 +455,8 @@ impl Chain<'_> {
 
     async fn check_vault(&self) -> Result<VaultInfo> {
         let info: VaultInfo = self.view("get_vault", json!({})).await?;
-        if info.contract_version != 1 {
-            return Err(invalid("configured account is not a Styx NEAR vault version 1"));
+        if info.contract_version != 1 && info.contract_version != 2 {
+            return Err(invalid("configured account is not a Styx NEAR vault version 1 or 2"));
         }
         Ok(info)
     }
@@ -448,7 +504,25 @@ async fn handle(request: Request) -> Result<Value> {
             let key = config.agent_key()?;
             let agent: PublicKey = key.public_key();
             let agent = agent.to_string();
-            let recipient: AccountId = recipient.parse().map_err(|_| invalid("recipient is not a NEAR account id"))?;
+            // A `0x…` recipient is a payment on the configured EVM chain, signed through the vault.
+            let evm_chain = if recipient.starts_with("0x") {
+                let chain_id = config.evm_chain_id.ok_or_else(|| invalid("set STYX_NEAR_EVM_CHAIN_ID to pay an EVM address"))?;
+                let info: Option<EvmChain> = chain.view("get_evm_chain", json!({ "chain_id": chain_id })).await?;
+                info.filter(|c| c.enabled).ok_or_else(|| policy("the vault does not pay on this chain"))?;
+                Some(chain_id)
+            } else {
+                None
+            };
+            let recipient = match evm_chain {
+                Some(_) => {
+                    let lower = recipient.to_ascii_lowercase();
+                    if lower.len() != 42 || !lower[2..].bytes().all(|b| b.is_ascii_hexdigit()) {
+                        return Err(invalid("recipient is not an EVM address"));
+                    }
+                    lower
+                }
+                None => recipient.parse::<AccountId>().map_err(|_| invalid("recipient is not a NEAR account id"))?.to_string(),
+            };
             let amount = parse_amount(&amount)?;
             if invoice_reference.len() > 4096 {
                 return Err(invalid("invoice reference too long"));
@@ -465,7 +539,10 @@ async fn handle(request: Request) -> Result<Value> {
             if vault.paused {
                 return Err(policy("vault is paused"));
             }
-            let state: Option<RecipientState> = chain.view("get_recipient", json!({ "recipient": recipient })).await?;
+            let state: Option<RecipientState> = match evm_chain {
+                Some(chain_id) => chain.view("get_evm_recipient", json!({ "chain_id": chain_id, "recipient": recipient })).await?,
+                None => chain.view("get_recipient", json!({ "recipient": recipient })).await?,
+            };
             let state = state.filter(|s| s.allowed).ok_or_else(|| policy("recipient is not allowed"))?;
             let day: u64 = chain.view("current_day", json!({})).await?;
             let agent_spent = u128_of(&chain.view::<String>("spent_by_agent", json!({ "agent": agent, "day": day })).await?)?;
@@ -484,8 +561,8 @@ async fn handle(request: Request) -> Result<Value> {
             let payment = Payment {
                 payment_id: format!("0x{}", hex::encode(random32())),
                 agent,
-                token: vault.token.clone(),
-                recipient: recipient.to_string(),
+                token: match evm_chain { Some(id) => format!("evm:{id}"), None => vault.token.clone() },
+                recipient: recipient.clone(),
                 amount: amount.to_string(),
                 evidence_commitment: B64.encode(evidence),
                 policy_version: rules.version,
@@ -493,13 +570,12 @@ async fn handle(request: Request) -> Result<Value> {
                 valid_until: valid_until.to_string(),
             };
             // The vault computes the hash, so the agent and the approver read the same value.
-            let payment_hash: String = chain.view("payment_hash", json!({ "payment": payment })).await?;
             let per = u128_of(&rules.per_payment_limit)?;
             let record = Record {
                 version: 1,
                 vault: config.vault.to_string(),
                 payment: payment.clone(),
-                payment_hash: payment_hash.clone(),
+                payment_hash: String::new(),
                 invoice_reference,
                 salt: B64.encode(salt),
                 per_payment_limit: per.to_string(),
@@ -510,7 +586,15 @@ async fn handle(request: Request) -> Result<Value> {
                 invoice: Some(B64.encode(&invoice)),
                 signature: None,
                 record_tx: None,
+                chain_id: evm_chain,
+                evm_tx: None,
             };
+            let mut record = record;
+            record.payment_hash = match evm_chain {
+                Some(_) => chain.view("evm_payment_hash", json!({ "payment": record.contract_payment() })).await?,
+                None => chain.view("payment_hash", json!({ "payment": record.payment })).await?,
+            };
+            let payment_hash = record.payment_hash.clone();
             journal.write(&record)?;
             Ok(json!({
                 "status": "ok",
@@ -563,7 +647,8 @@ async fn handle(request: Request) -> Result<Value> {
                 "rpcUrl": config.rpc_url,
                 "vault": config.vault,
                 "token": vault.token,
-                "payment": record.payment,
+                "chainId": record.chain_id,
+                "payment": record.contract_payment(),
                 "authorization": authorization,
                 "message": message,
                 "invoiceReference": record.invoice_reference,
@@ -591,6 +676,9 @@ async fn handle(request: Request) -> Result<Value> {
             if let Some(tx) = &record.settled_tx {
                 return Ok(json!({"status": "ok", "state": "settled", "tx_hash": tx}));
             }
+            if record.evm_tx.is_some() {
+                return settle_evm(&config, &chain, &vault, &mut record, &journal).await;
+            }
             // The vault marks a payment id when it sends the transfer and frees it if the transfer
             // fails, so a marked id is never safe to pay again.
             let consumed: Option<String> = chain.view("consumed_payment", json!({ "payment_id": record.payment.payment_id })).await?;
@@ -598,11 +686,21 @@ async fn handle(request: Request) -> Result<Value> {
                 if hash != record.payment_hash {
                     return Err(invalid("payment ID was consumed by a different payment"));
                 }
+                if let Some(chain_id) = record.chain_id {
+                    if let Some(signed) = find_signed(&chain, chain_id, &record.payment.payment_id).await? {
+                        record.evm_tx = Some(signed);
+                        journal.write(&record)?;
+                        return settle_evm(&config, &chain, &vault, &mut record, &journal).await;
+                    }
+                }
                 return Ok(json!({"status": "ok", "state": "unknown", "payment_hash": hash}));
             }
             let (method, args) = match (&signature_file, record.exception_required) {
                 (None, true) => return Err(approval("this payment is over the per-payment limit; request approval and pass the signature")),
-                (None, false) => ("pay", json!({ "payment": record.payment })),
+                (None, false) => (
+                    if record.chain_id.is_some() { "pay_evm" } else { "pay" },
+                    json!({ "payment": record.contract_payment() }),
+                ),
                 (Some(path), _) => {
                     let mut authorization = record.authorization.clone().ok_or_else(|| invalid("request approval first"))?;
                     let file: SignatureFile = serde_json::from_slice(&read_bounded(path, 16 * 1024)?)
@@ -620,11 +718,29 @@ async fn handle(request: Request) -> Result<Value> {
                     authorization.callback_url = file.callback_url;
                     record.authorization = Some(authorization.clone());
                     record.signature = Some(file.signature.clone());
-                    ("pay_with_exception", json!({ "payment": record.payment, "authorization": authorization, "signature": file.signature }))
+                    (
+                        if record.chain_id.is_some() { "pay_evm_with_exception" } else { "pay_with_exception" },
+                        json!({ "payment": record.contract_payment(), "authorization": authorization, "signature": file.signature }),
+                    )
                 }
             };
             let result = chain.call(&key, method, args).await;
             match result {
+                Ok((tx, value)) if record.chain_id.is_some() => {
+                    record.attempts.push(tx.clone());
+                    match serde_json::from_value::<SignedEvmTx>(value) {
+                        Ok(signed) => {
+                            record.evm_tx = Some(signed);
+                            journal.write(&record)?;
+                            settle_evm(&config, &chain, &vault, &mut record, &journal).await
+                        }
+                        // The signer did not answer; the vault rolled the payment back.
+                        Err(_) => {
+                            journal.write(&record)?;
+                            Ok(json!({"status": "ok", "state": "reverted", "tx_hash": tx}))
+                        }
+                    }
+                }
                 Ok((tx, value)) => {
                     record.attempts.push(tx.clone());
                     let settled = value.as_bool() == Some(true);
@@ -638,9 +754,12 @@ async fn handle(request: Request) -> Result<Value> {
             }
         }
         Request::Status { payment_id } => {
-            let record = journal.load(&payment_id)?;
+            let mut record = journal.load(&payment_id)?;
             if let Some(tx) = &record.settled_tx {
                 return Ok(json!({"status": "ok", "state": "settled", "tx_hash": tx}));
+            }
+            if record.evm_tx.is_some() {
+                return settle_evm(&config, &chain, &vault, &mut record, &journal).await;
             }
             let consumed: Option<String> = chain.view("consumed_payment", json!({ "payment_id": record.payment.payment_id })).await?;
             Ok(match consumed {
@@ -690,6 +809,76 @@ async fn handle(request: Request) -> Result<Value> {
             Ok(json!({"status": "ok", "state": "posted", "record_file": record_file.display().to_string(), "tx_hash": tx}))
         }
     }
+}
+
+/// Carries the vault's signed EVM transactions to the chain and reads the payment's outcome.
+/// Broadcasts every signed transaction the chain has not included yet, in nonce order, so an
+/// earlier one that was never sent cannot block this one.
+async fn settle_evm(config: &Config, chain: &Chain<'_>, vault: &VaultInfo, record: &mut Record, journal: &Journal) -> Result<Value> {
+    let chain_id = record.chain_id.ok_or_else(|| invalid("not an EVM payment"))?;
+    let tx = record.evm_tx.clone().ok_or_else(|| invalid("the vault has not signed this payment"))?;
+    let url = config.evm_rpc.as_ref().ok_or_else(|| invalid("set STYX_NEAR_EVM_RPC to settle EVM payments"))?;
+    let rpc = evm::EvmRpc::new(url);
+    if rpc.chain_id().await.map_err(unavailable)? != chain_id {
+        return Err(invalid("STYX_NEAR_EVM_RPC is for another chain"));
+    }
+    let signer: AccountId = vault
+        .mpc_signer
+        .clone()
+        .ok_or_else(|| invalid("this vault has no MPC signer"))?
+        .parse()
+        .map_err(|_| unavailable("malformed signer id"))?;
+    let path = vault.evm_key_path.clone().unwrap_or_else(|| "styx-evm".into());
+    let key: String = chain
+        .view_on(signer, "derived_public_key", json!({ "path": path, "predecessor": config.vault, "domain_id": 0 }))
+        .await?;
+    let from = evm::address_from_near_key(&key).ok_or_else(|| unavailable("malformed derived key"))?;
+    let included = rpc.nonce(&from).await.map_err(unavailable)?;
+    let next: u64 = chain.view("evm_nonce", json!({ "chain_id": chain_id })).await?;
+    for nonce in included..next {
+        let signed: Option<SignedEvmTx> = chain.view("signed_evm_tx", json!({ "chain_id": chain_id, "nonce": nonce })).await?;
+        if let Some(signed) = signed {
+            rpc.send_raw(&signed.raw_tx).await.map_err(|e| unavailable(format!("broadcast of nonce {nonce} failed: {e}")))?;
+        }
+    }
+    let info: Option<EvmChain> = chain.view("get_evm_chain", json!({ "chain_id": chain_id })).await?;
+    let token = info.map(|c| c.token).ok_or_else(|| unavailable("chain settings disappeared"))?;
+    let amount = u128_of(&record.payment.amount)?;
+    for _ in 0..30 {
+        if let Some(receipt) = rpc.receipt(&tx.tx_hash).await.map_err(unavailable)? {
+            return match evm::check_receipt(&receipt, &token, &from, &record.payment.recipient, amount) {
+                evm::Outcome::Transferred => {
+                    record.settled_tx = Some(tx.tx_hash.clone());
+                    journal.write(record)?;
+                    Ok(json!({"status": "ok", "state": "settled", "tx_hash": tx.tx_hash}))
+                }
+                evm::Outcome::Failed(_) => Ok(json!({"status": "ok", "state": "reverted", "tx_hash": tx.tx_hash})),
+            };
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
+    // Signed and sent but not seen yet: never treat as unpaid; retry with the same payment id.
+    Ok(json!({"status": "ok", "state": "unknown", "tx_hash": tx.tx_hash}))
+}
+
+/// Finds the transaction the vault signed for a payment id among the most recent nonces.
+async fn find_signed(chain: &Chain<'_>, chain_id: u64, payment_id: &str) -> Result<Option<SignedEvmTx>> {
+    #[derive(Deserialize)]
+    struct WithId {
+        payment_id: String,
+        chain_id: u64,
+        nonce: u64,
+        raw_tx: String,
+        tx_hash: String,
+    }
+    let next: u64 = chain.view("evm_nonce", json!({ "chain_id": chain_id })).await?;
+    for nonce in (next.saturating_sub(50)..next).rev() {
+        let signed: Option<WithId> = chain.view("signed_evm_tx", json!({ "chain_id": chain_id, "nonce": nonce })).await?;
+        if let Some(t) = signed.filter(|t| t.payment_id == payment_id) {
+            return Ok(Some(SignedEvmTx { chain_id: t.chain_id, nonce: t.nonce, raw_tx: t.raw_tx, tx_hash: t.tx_hash }));
+        }
+    }
+    Ok(None)
 }
 
 /// The NEP-413 digest the approver's wallet signs. Shown to the agent as `approval_digest`.
