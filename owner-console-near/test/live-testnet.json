@@ -1337,5 +1337,97 @@
     "agent": "ed25519:4D9PbrvnPQHQ9uLxcSsMbH14gKgFGNjmjUSrTRyxDwXn",
     "approver": "ed25519:8s1H4pCFJNMqwXiMpV1NN1DxBw2V8HgTwdmp1JGkC7CF",
     "recipient": "vendor-a.styx-owner-c87a.testnet"
+  },
+  "status": {
+    "chain_id": "testnet",
+    "genesis_hash": "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
+    "latest_protocol_version": 88,
+    "node_key": null,
+    "node_public_key": "ed25519:B87Qq34LbWadFx2dq5bwUEtB5KBgr8ZhsoEpAiSP2qVX",
+    "protocol_version": 88,
+    "rpc_addr": "0.0.0.0:3030",
+    "sync_info": {
+      "earliest_block_hash": "CJ7Ub4gwLV8SX2Cz4yRSMcZ8U3cGhfgysUmH96yE2bQY",
+      "earliest_block_height": 277213255,
+      "earliest_block_time": "2026-11-11T12:07:09.985769041Z",
+      "epoch_id": "Ja4aat2oQiB4EbbLxL1bqCBegyUuqdhWH6UgQt1JxcV",
+      "epoch_start_height": 277386055,
+      "latest_block_hash": "5sUqJ8cU87P5bKpLqDkPMegW8VQ9FWf9eC5apsuN3kXg",
+      "latest_block_height": 277392992,
+      "latest_block_time": "2026-11-12T17:20:20.372091063Z",
+      "latest_state_root": "AAkqhyBndzEa3v3C5ocAXZSYBfPmt4dLqiwvzdYtyknM",
+      "syncing": false
+    },
+    "uptime_sec": 57186,
+    "validator_account_id": null,
+    "validator_public_key": null,
+    "validators": [
+      {
+        "account_id": "node0"
+      },
+      {
+        "account_id": "node1"
+      },
+      {
+        "account_id": "kiln.pool.f863973.m0"
+      },
+      {
+        "account_id": "node2"
+      },
+      {
+        "account_id": "node3"
+      },
+      {
+        "account_id": "aurora.pool.f863973.m0"
+      },
+      {
+        "account_id": "01node.pool.f863973.m0"
+      },
+      {
+        "account_id": "stakely_v2.pool.f863973.m0"
+      },
+      {
+        "account_id": "legends.pool.f863973.m0"
+      },
+      {
+        "account_id": "validator4.testnet"
+      },
+      {
+        "account_id": "validator5.testnet"
+      },
+      {
+        "account_id": "validator6.testnet"
+      },
+      {
+        "account_id": "validator7.testnet"
+      },
+      {
+        "account_id": "validator8.testnet"
+      },
+      {
+        "account_id": "validator9.testnet"
+      },
+      {
+        "account_id": "validator10.testnet"
+      },
+      {
+        "account_id": "validator11.testnet"
+      },
+      {
+        "account_id": "ni.pool.f863973.m0"
+      },
+      {
+        "account_id": "ts.pool.f863973.m0"
+      },
+      {
+        "account_id": "lunanova2.pool.f863973.m0"
+      }
+    ],
+    "version": {
+      "build": "2.14.1",
+      "commit": "0ad2bdb2630e85bbacecab2a3b77072c78b46bc6",
+      "rustc_version": "1.95.0",
+      "version": "2.14.1"
+    }
   }
 }

@@ -9,7 +9,8 @@ try{
  await page.route('https://api-testnet.nearblocks.io/**',route=>route.fulfill(indexerDown?{status:403}:{json:{txns:Object.keys(fixture.transactions).map(hash=>({transaction_hash:hash,signer_account_id:fixture.vault}))}}));
  await page.route(fixture.rpc,async route=>{
   const q=route.request().postDataJSON(),p=q.params;let result;
-  if(q.method==='query'){
+  if(q.method==='status')result=fixture.status;
+  else if(q.method==='query'){
    if(p.request_type==='view_access_key_list')result=fixture.accessKeys;
    else{
     const args=JSON.parse(Buffer.from(p.args_base64,'base64').toString());

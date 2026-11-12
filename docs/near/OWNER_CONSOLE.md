@@ -39,7 +39,7 @@ Only the public key is retained in the configure_agent form. No private key is s
 logged or saved in browser storage. Save the download outside this repo. Configure its policy
 and sign to install it as a function-call key restricted to pay/pay_with_exception/post_record.
 
-Before a write, the page rechecks the current owner, wallet account and token. It passes the
+On load and before a write, the page checks RPC status.chain_id against the selected wallet network. It also rechecks the current owner, wallet account and token. It passes the
 previewed receiver, method, JSON, gas and deposit to the wallet. After a known transaction hash
 returns, it checks finality and success, then re-reads state. MyNearWallet's callback keeps the
 RPC/network/vault context. Unknown wallet/RPC outcomes are not automatically retried.
@@ -61,10 +61,10 @@ for a project rooted at owner-console-near. No deployment was performed.
 
 Verified locally on 12 November 2026:
 
-- 19 Vitest cases pass: exact conversion/uint128 boundary, invalid amounts, every form's arguments
+- 20 Vitest cases pass: exact conversion/uint128 boundary, invalid amounts, every form's arguments
   and attached deposit, test mint restrictions, real payment-event parsing and key discovery,
   rejecting failed/foreign/malformed events, other lifecycle event shapes, indexer shape errors,
-  captured overview reads and indexer outage handling.
+  captured overview reads indexer outage handling and RPC/wallet network mismatch rejection.
 - Fresh public FastNEAR RPC responses from vault.styx-owner-c87a.testnet are committed in
   test/live-testnet.json. They include the actual 140 tUSDC exception transaction
   7esYgW17uGo4tw5Lggj9LVgCUpvXufUWnMYzezLo2LyR, views, access keys and block header.
@@ -84,8 +84,7 @@ Verified locally on 12 November 2026:
 Not tested: real wallet connection/signing or MyNearWallet redirects; actual configure/fund/
 withdraw/mint transactions; real browser key-download handling; a live successful indexer history
 request; complete key enumeration; a mainnet vault; Vercel deployment; load, concurrent owner
-changes or exhaustive malformed RPC responses. The supplied RPC is trusted and the page does
-not independently attest its network. Poulav must review signing code before it is trusted.
+changes or exhaustive malformed RPC responses. The supplied RPC is trusted; its reported chain_id is checked, not independently attested. Poulav must review signing code before it is trusted.
 
 Optional new-vault deployment is not implemented. No wasm is bundled or fetched, no deploy_code
 call exists and VITE_VAULT_WASM_URL is unused. This console manages existing vaults. No contract

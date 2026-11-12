@@ -136,6 +136,7 @@ $('#send').onclick=async()=>{
  if(!plan || !context || !selector || context!==planContext || busy) return;
  const selected=plan,c=context;busy=true;role();
  try{
+  await c.rpc.assertNetwork(c.network);
   const current=await c.rpc.view(c.vault,'get_vault');
   const active=selector.store.getState().accounts.find(a=>a.active)?.accountId;
   if(active!==current.owner || current.token!==facts?.info.token) throw Error('Owner or token changed; read and preview again');
@@ -178,7 +179,7 @@ loadForm.onsubmit=async e=>{
   const values=readForm(loadForm);if(!['testnet','mainnet'].includes(values.network)) throw Error('Unsupported network');
   context={vault:account(values.vault),network:values.network,rpc:new RPC(values.rpc)};
   known={agents:new Set(),approvers:new Set(),recipients:new Set()};rows=[];
-  say('Reading finalized vault state…');await refresh();
+  say('Reading finalized vault state…');await context.rpc.assertNetwork(context.network);await refresh();
   await walletSetup(context.network,context.vault);say('Vault state read from the chain.');
   const loadedUrl=new URL(location.href);loadedUrl.searchParams.set('vault',context.vault);loadedUrl.searchParams.set('rpc',context.rpc.url);loadedUrl.searchParams.set('network',context.network);window.history.replaceState(null,'',loadedUrl);
   const hashes=new URLSearchParams(location.search).get('transactionHashes');

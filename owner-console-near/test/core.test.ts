@@ -24,3 +24,4 @@ describe('events and chain reads from the live vault snapshot',()=>{
  });
  it('reports indexer outage without treating it as no history',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('',{status:403})));try{const result=await history(new RPC('https://example.com'),LIVE_VAULT,'testnet');expect(result.notice).toContain('unavailable or partial');expect(result.notice).toContain('Manual key lookups');}finally{vi.unstubAllGlobals();}});
 });
+it('rejects RPC/wallet network mismatch before signing',async()=>{const rpc=new RPC('https://example.com');vi.spyOn(rpc,'call').mockResolvedValue({chain_id:'testnet'});await rpc.assertNetwork('testnet');await expect(rpc.assertNetwork('mainnet')).rejects.toThrow('differs');});

@@ -63,6 +63,6 @@ previews need their exact origins listed too. No RELAY_TOKEN belongs in the brow
 ## Validation
 
 Local tests cover configured/denied CORS origins, preflight and health, alongside signature tests.
-The bundled relay, TypeScript checks and static approval build are checked locally. No Fly or
+The bundled CommonJS relay starts locally and GET /health returns {"ok":true}. TypeScript checks and the static approval build pass. A Chrome check against a static build verifies VITE_DEFAULT_RELAY and its query-string override (mock relay responses). No Fly or
 Vercel deployment, remote volume permission setup, TLS check or production wallet round trip
 was performed. Docker image execution was not tested: the local Docker daemon is unavailable.

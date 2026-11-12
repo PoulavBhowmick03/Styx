@@ -24,7 +24,7 @@ shown in the payment table; failed-payment and record events are listed separate
 The rule forms cover configure_agent, set_recipient, set_approver, set_vault_daily_limit,
 pause, unpause and withdraw. Funding supports vault token registration (0.00125 NEAR), ft_transfer
 (1 yoctoNEAR) and a test-token-only mint button restricted to testnet and the exact deployed test
-contract. The send action rechecks the connected owner and token. After the wallet returns, the
+contract. On load and before sending, RPC status.chain_id must match the selected wallet network. The send action also rechecks the connected owner and token. After the wallet returns, the
 page waits for a known transaction's finality and re-reads chain state. Browser-wallet redirects
 return to the same RPC/network/vault. An unavailable result is not a confirmed failure; inspect
 state and transaction status before retrying. There is no automatic transaction retry.

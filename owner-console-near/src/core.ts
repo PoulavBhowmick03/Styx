@@ -66,6 +66,7 @@ export class RPC{
   const r=await fetch(this.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:'styx-console',method,params}),signal:AbortSignal.timeout(20000)});
   if(!r.ok) throw Error(`RPC unavailable (${r.status})`);const data=await r.json();if(data.error || !('result' in data)) throw Error('RPC returned an error or incomplete response');return data.result;
  }
+ async assertNetwork(network:string){const status=await this.call('status',{});if(status.chain_id!==network) throw Error(`RPC chain ${status.chain_id??'unavailable'} differs from selected network ${network}`);}
  async view(account_id:string,method_name:string,args:Record<string,unknown>={}){
   const r=await this.call('query',{request_type:'call_function',finality:'final',account_id,method_name,args_base64:Buffer.from(JSON.stringify(args)).toString('base64')});
   return JSON.parse(Buffer.from(r.result).toString());
