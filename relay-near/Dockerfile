@@ -12,4 +12,4 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/package.json ./package.json
 USER node
 EXPOSE 8788
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/main.cjs"]
