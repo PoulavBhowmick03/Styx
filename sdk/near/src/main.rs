@@ -318,6 +318,25 @@ fn write_private(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
     file.write_all(bytes).map_err(|_| unavailable("cannot write file"))
 }
 
+/// Largest inference evidence file the record will carry.
+const INFERENCE_EVIDENCE_LIMIT: u64 = 256 * 1024;
+
+/// Reads `inference-<first 12 hex of the payment id>.json` from the vault directory, if there is
+/// one, and returns its JSON as it is. A file that is not valid JSON is an error: the record must
+/// not silently drop evidence the runner wrote.
+fn read_inference_evidence(root: &Path, payment_id: &str) -> Result<Option<Value>> {
+    let id = payment_id.strip_prefix("0x").unwrap_or(payment_id);
+    if id.len() < 12 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(invalid("payment_id must be 0x and 64 hex digits"));
+    }
+    let path = root.join(format!("inference-{}.json", id[..12].to_ascii_lowercase()));
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let bytes = read_bounded(&path, INFERENCE_EVIDENCE_LIMIT)?;
+    serde_json::from_slice(&bytes).map(Some).map_err(|_| invalid(format!("{} is not valid JSON", path.display())))
+}
+
 fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>> {
     let file = std::fs::File::open(path).map_err(|_| invalid(format!("cannot read {}", path.display())))?;
     let mut bytes = Vec::new();
@@ -782,7 +801,7 @@ async fn handle(request: Request) -> Result<Value> {
                 .ok()
                 .and_then(|b| b.try_into().ok())
                 .ok_or_else(|| invalid("STYX_NEAR_REVIEWER_KEY must be a base64 X25519 public key"))?;
-            let plain = json!({
+            let mut plain = json!({
                 "schema": RECORD_SCHEMA,
                 "network": config.network_name,
                 "vault": record.vault,
@@ -795,6 +814,12 @@ async fn handle(request: Request) -> Result<Value> {
                 "authorization": if record.exception_required { json!(record.authorization) } else { Value::Null },
                 "signature": if record.exception_required { json!(record.signature) } else { Value::Null },
             });
+            // Optional: the agent runner's evidence about the model that decided to pay. Included
+            // verbatim when its file exists; the field is absent otherwise, so records without it
+            // stay valid under the same schema.
+            if let Some(evidence) = read_inference_evidence(&config.state_root, &record.payment.payment_id)? {
+                plain["inference_evidence"] = evidence;
+            }
             let plain = serde_json::to_vec(&plain).map_err(|_| invalid("cannot encode the record"))?;
             let sealed = crypto_box::PublicKey::from(reviewer)
                 .seal(&mut rand::rngs::OsRng, &plain)
@@ -941,6 +966,32 @@ mod tests {
         assert!(parse_amount("010").is_err());
         assert!(parse_amount("1.5").is_err());
         assert!(parse_amount("").is_err());
+    }
+
+    #[test]
+    fn inference_evidence_is_included_verbatim_or_omitted() {
+        let dir = std::env::temp_dir().join(format!("styx-evidence-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = format!("0xABCDEF0123456789{}", "00".repeat(24));
+        // No file: the field is omitted.
+        assert_eq!(read_inference_evidence(&dir, &id).unwrap(), None);
+        // A file named by the first 12 hex digits (lowercase) comes back unchanged.
+        let evidence = json!({"schema": "styx-near-inference/1", "model": "m", "extra": {"kept": [1, 2]}});
+        std::fs::write(dir.join("inference-abcdef012345.json"), serde_json::to_vec(&evidence).unwrap()).unwrap();
+        assert_eq!(read_inference_evidence(&dir, &id).unwrap(), Some(evidence));
+        // A different payment id does not pick it up.
+        let other = format!("0x{}", "11".repeat(32));
+        assert_eq!(read_inference_evidence(&dir, &other).unwrap(), None);
+        // A damaged file is an error, not a silent omission.
+        std::fs::write(dir.join("inference-111111111111.json"), b"not json").unwrap();
+        assert!(read_inference_evidence(&dir, &other).is_err());
+        // The base record is unchanged when the field is absent.
+        let mut plain = json!({"schema": RECORD_SCHEMA});
+        if let Some(e) = read_inference_evidence(&dir, &format!("0x{}", "22".repeat(32))).unwrap() {
+            plain["inference_evidence"] = e;
+        }
+        assert_eq!(plain, json!({"schema": "styx-near-record/1"}));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
