@@ -26,6 +26,11 @@ can pay per payment and per day.
 - **Going over the per-payment limit needs an approver's NEP-413 signature over that exact payment.**
   The vault verifies it on chain. A signature for one recipient fails for another, a payment id pays
   once, and no signature lifts the daily limits.
+- **Each approver gets the request in their own Telegram chat.** They send `/start` to
+  `@Styx_pvt_bot` and sign a one-time link message with the same NEAR key that approves payments
+  (NEP-413, addressed to `styx-telegram-link`, so it can never pass as an approval). The relay then
+  routes every request to the chats linked to the key it asks to sign. The alert opens the payment on
+  the approval page, read back from the vault; nothing is paid until that key signs it.
 - **The same rules hold on other chains.** Through NEAR Chain Signatures the vault owns one address on
   every EVM chain, derived by NEAR's MPC network. `pay_evm` checks the same limits, builds the USDC
   transfer itself, and has the MPC network sign it. The agent never holds an EVM key. It has paid on
@@ -74,7 +79,7 @@ flowchart LR
   subgraph Agent["Agent's machine"]
     AG["Agent model (optionally in a NEAR AI Cloud TEE)"] --> MCP["MCP server"] --> CLI["styx-near-vault, function-call key"]
   end
-  RL["Relay on Fly, holds no keys"] -.-> TG["Telegram alert"]
+  RL["Relay on Fly, holds no keys"] -.->|"alert to the signer's linked chat"| TG["Approver's Telegram"]
   subgraph Site["styxco.xyz"]
     PG["Approval page"]
     OC["Owner console"]
@@ -113,7 +118,8 @@ All in [`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md), every transaction
 payments within limits and exceptions with a signature on NEAR, Arc and Base; attacks A1 to A6 on
 NEAR and E1 to E6 on the EVM path, four refused by the vault by name and two by NEAR itself in each
 set; Sonnet 5.5 and Haiku 5.5 against hostile invoices; the TEE-attested agent with its sealed record
-passing the reviewer.
+passing the reviewer; an approver linking Telegram and signing an exception in the Meteor app on a
+phone, settled in [`Eauk4L8M…`](https://testnet.nearblocks.io/txns/Eauk4L8MRK13NccLXDcxQseA7uDWacFBhfa9SZXGQ195).
 
 Live: vault `vault.styx-owner-c87a.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet`
 (EVM address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet` (our test token, not Circle's
