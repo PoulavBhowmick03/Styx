@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { Links, CODE_TTL, MAX_CHATS_PER_KEY } from './links';
 import { Relay, server } from './relay';
 import { telegramBot, telegramNotifier, HELP } from './telegram';
+import { Watches, watchPayload } from './watches';
 import { fixture } from './fixture';
 
 const pair = nacl.sign.keyPair.fromSeed(new Uint8Array(32).fill(9));
@@ -109,6 +110,19 @@ describe('telegram bot', () => {
     const tg = fakeTelegram(), links = new Links(undefined, () => 1000), bot = telegramBot({ ...opts, links, fetch: tg.fetch });
     await bot.handle(msg(1, '/start approver'));
     expect(tg.messages()[0].body.reply_markup.inline_keyboard[0][0].url).toMatch(/&link=[A-Za-z0-9_-]{43}$/);
+  });
+  it('watches a vault from /watch or a t.me deep link, lists it, and unwatches', async () => {
+    const tg = fakeTelegram(), watches = new Watches(), bot = telegramBot({ ...opts, links: new Links(), watches, fetch: tg.fetch });
+    await bot.handle(msg(1, '/start ' + watchPayload('acme.styx-vaults.testnet')));
+    expect(tg.messages()[0].body.text).toContain('Watching acme.styx-vaults.testnet');
+    await bot.handle(msg(2, '/watch bad vault!'));
+    expect(tg.messages()[1].body.text).toContain('Send /watch followed by');
+    await bot.handle(msg(3, '/watch b.testnet'));
+    await bot.handle(msg(4, '/status'));
+    expect(tg.messages()[3].body.text).toContain('Watching spend of:\nacme.styx-vaults.testnet\nb.testnet');
+    await bot.handle(msg(5, '/unwatch'));
+    expect(tg.messages()[4].body.text).toBe('Stopped spend alerts for 2 vaults.');
+    expect(watches.list('42')).toEqual([]);
   });
   it('ignores groups and channels', async () => {
     const tg = fakeTelegram(), bot = telegramBot({ ...opts, links: new Links(), fetch: tg.fetch });

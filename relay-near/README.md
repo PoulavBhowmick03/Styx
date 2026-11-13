@@ -14,6 +14,13 @@ a request go to the chats linked to its `authorization.signer`, or to TELEGRAM_C
 linked. Links live in RELAY_LINKS_FILE (default: telegram-links.json beside RELAY_STATE_FILE).
 /status lists a chat's keys, /unlink removes them. A link only routes alerts; it authorizes nothing.
 
+Spend alerts: `/watch <vault>` (or the deep link `t.me/<bot>?start=watch-<vault with . written as -->`)
+makes the relay read that vault's spend for the UTC day every WATCH_INTERVAL seconds (default 300,
+at least 60) through NEAR_RPC_URL (default https://test.rpc.fastnear.com), with view calls only, and
+message the chat once at 80% and once at 100% of the vault daily limit. Spend is public on chain, so
+watching needs no signature. Up to 5 vaults per chat; `/unwatch [vault]` stops. Watches live in
+RELAY_WATCHES_FILE (default: telegram-watches.json beside RELAY_STATE_FILE).
+
 Run `npm test` and `npm run typecheck`. See ../docs/near/APPROVAL_PAGE.md for the wire flow.
 
 EVM requests use non-null chainId matching payment.chain_id and an EvmPayment without token.

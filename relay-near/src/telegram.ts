@@ -2,6 +2,7 @@
 // Plain text (no parse_mode), so nothing in a request can inject formatting or links. The alert
 // carries no authority: the vault checks the approver's signature itself.
 import type { Pending } from './protocol';
+import { type Watches, vaultFromPayload, isAccount } from './watches';
 
 export type Notify = (pending: Pending, requestId: string) => Promise<boolean>;
 
@@ -74,19 +75,34 @@ export const HELP = [
   'Styx sends you approval alerts: when an agent asks to pay over its limit and your NEAR key is the approver asked to sign.',
   '',
   '/start: link your NEAR wallet to this chat',
-  '/status: the keys linked to this chat',
-  '/unlink: stop all alerts to this chat',
+  '/status: the keys linked and vaults watched in this chat',
+  '/unlink: stop all approval alerts to this chat',
+  '/watch <vault>: a message when the vault passes 80% and 100% of its daily limit',
+  '/unwatch <vault>: stop those (or /unwatch for all)',
 ].join('\n');
 
-export function telegramBot(options: Api & { pageUrl: string; relayUrl: string; links: Chats; retryMs?: number }) {
+export function telegramBot(options: Api & { pageUrl: string; relayUrl: string; links: Chats; watches?: Watches; retryMs?: number }) {
   const { links } = options;
   let running = false;
   async function handle(update: Update) {
     const chat = update.message?.chat;
     // Private chats only: in a group, anyone present could follow the link and see the alerts.
     if (chat?.type !== 'private' || typeof chat.id !== 'number') return;
-    const chatId = String(chat.id), command = (update.message?.text ?? '').trim().split(/[\s@]/)[0];
-    if (command === '/start') {
+    const words = (update.message?.text ?? '').trim().split(/\s+/), chatId = String(chat.id), command = words[0].split('@')[0], arg = words.slice(1).join(' ');
+    const watches = options.watches;
+    const watch = async (vault: string) => {
+      try { watches!.watch(chatId, vault); await send(options, chatId, `Watching ${vault}. You get a message here when it passes 80% and 100% of its daily limit. Send /unwatch ${vault} to stop.`); }
+      catch (e) { await send(options, chatId, `Not watching: ${e instanceof Error ? e.message : String(e)}`); }
+    };
+    // A t.me deep link ?start=watch-<vault> watches that vault; any other payload is a plain /start.
+    if (command === '/start' && watches && vaultFromPayload(arg)) await watch(vaultFromPayload(arg)!);
+    else if (command === '/watch' && watches) {
+      if (!isAccount(arg)) await send(options, chatId, 'Send /watch followed by the vault account, for example /watch acme.styx-vaults.testnet');
+      else await watch(arg);
+    } else if (command === '/unwatch' && watches) {
+      const n = watches.unwatch(chatId, arg || undefined);
+      await send(options, chatId, n ? `Stopped spend alerts for ${n} vault${n === 1 ? '' : 's'}.` : 'This chat was not watching that.');
+    } else if (command === '/start') {
       const link = page(options.pageUrl, options.relayUrl, 'link', links.create(chatId));
       await send(options, chatId, [
         'Link your NEAR wallet to get Styx approval alerts in this chat.',
@@ -98,7 +114,8 @@ export function telegramBot(options: Api & { pageUrl: string; relayUrl: string; 
       ].join('\n'), button(link, 'Link my NEAR wallet'));
     } else if (command === '/status') {
       const keys = links.keysFor(chatId);
-      await send(options, chatId, keys.length ? `This chat gets alerts for:\n${keys.join('\n')}` : 'No key is linked to this chat. Send /start to link one.');
+      const watched = watches?.list(chatId) ?? [];
+      await send(options, chatId, (keys.length ? `This chat gets alerts for:\n${keys.join('\n')}` : 'No key is linked to this chat. Send /start to link one.') + (watched.length ? `\n\nWatching spend of:\n${watched.join('\n')}` : ''));
     } else if (command === '/unlink') {
       const n = links.unlink(chatId);
       await send(options, chatId, n ? `Unlinked ${n} key${n === 1 ? '' : 's'}. This chat gets no more Styx alerts.` : 'No key was linked to this chat.');
@@ -121,6 +138,7 @@ export function telegramBot(options: Api & { pageUrl: string; relayUrl: string; 
     handle,
     start() { if (!running) { running = true; void poll(); } },
     stop() { running = false; },
+    say: (chatId: string, text: string) => send(options, chatId, text),
     linked: (chatId: string, publicKey: string, accountId: string) =>
       send(options, chatId, `Linked. This chat now gets Styx approval alerts for ${publicKey} (account ${accountId}, as your wallet reported it).\nSend /unlink to stop them.`),
   };
