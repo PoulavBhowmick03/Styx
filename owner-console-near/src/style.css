@@ -60,6 +60,15 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 .toast a { font: 0.75rem var(--mono); }
 .toast .toast-close { position: absolute; top: 0.5rem; right: 0.5rem; min-height: 0; padding: 0.15rem 0.45rem; font-size: 0.6875rem; background: transparent; color: var(--fore-2); border-color: var(--rule-2); }
 
+/* Three steps up top, advanced forms folded */
+.steps-strip { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem; }
+.steps-strip li { display: grid; grid-template-columns: auto 1fr; column-gap: 0.75rem; align-items: center; padding: 0.8rem 1rem; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--panel); }
+.steps-strip b { grid-row: span 2; font: 1.5rem var(--serif); color: var(--ember); }
+.steps-strip small { font: 0.6875rem var(--mono); color: var(--fore-2); text-transform: uppercase; letter-spacing: 0.08em; }
+#advanced { margin: 2.5rem 0; border-top: 1px solid var(--rule); padding-top: 1rem; }
+#advanced > summary { cursor: pointer; font: 0.8125rem var(--mono); color: var(--fore-2); padding: 0.5rem 0; }
+#advanced > summary:hover, #advanced[open] > summary { color: var(--fore); }
+
 /* Names */
 .label-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .file-button { display: inline-flex; align-items: center; cursor: pointer; padding: 0.5rem 0.9rem; border: 1px solid var(--rule-2); border-radius: var(--radius); font-size: 0.875rem; color: var(--fore); }

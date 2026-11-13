@@ -60,6 +60,7 @@ try{
    assert.deepEqual(JSON.parse(readFileSync(await names.path(),'utf8')),{vault:fixture.vault,labels:{[fixture.known.agent]:'Billing bot'}});
    await page.reload();
    await page.locator('#agents article').filter({hasText:fixture.known.agent}).first().locator('.name-row strong',{hasText:'Billing bot'}).waitFor();
+   await page.locator('#advanced > summary').click();
    await page.locator('form[data-method="pause"] button').click();
    assert.match(await page.locator('#preview').textContent(),/"method": "pause"/);
    assert.match(await page.locator('#preview').textContent(),/"deposit": "0"/);

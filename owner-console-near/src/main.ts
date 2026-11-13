@@ -272,7 +272,7 @@ $('#connect').onclick=async()=>{try{if(!selector) await load();if(selector && co
 const query=new URLSearchParams(location.search);
 // ---- Join mode (?join=<vault>): an invited approver signs one message and gets a link back for the owner ----
 async function joinFlow(vault:string,network:string){
- for(const sec of document.querySelectorAll<HTMLElement>('main > section, main > nav, main > form, #status, #role, main > .kicker')) sec.hidden=true;
+ for(const sec of document.querySelectorAll<HTMLElement>('main > section, main > nav, main > form, main > details, #status, #role, main > .kicker')) sec.hidden=true;
  $('#join').hidden=false;$('#join-title').textContent=`Approve exceptions for ${vault}`;
  $('#join-lead').textContent='The owner of this vault asked you to approve payments that go over its limit. Connect your NEAR wallet and sign one message: it is not a transaction, cannot move funds, and only proves which key you will approve with. You get a link to send back to the owner.';
  const sel=await setupWalletSelector({network:network as 'testnet'|'mainnet',modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:vault})]});
@@ -442,3 +442,8 @@ if(!query.has('join')){
   toast('ok',`Approver invite from ${i.accountId}`,onChain?'Signature checked; the key is on their account. It is filled in under Set the rules.':'Signature checked, but the key is not on that account. Check with them before adding it.');
  })().catch(fail);}}catch(e){fail(e);}
 }
+
+// The per-method forms live in a closed Advanced panel; links to them (nav, #rules, #fund) open it.
+function openAdvancedFor(hash:string){if(['#rules','#fund'].includes(hash)) $<HTMLDetailsElement>('#advanced').open=true;}
+openAdvancedFor(location.hash);window.addEventListener('hashchange',()=>openAdvancedFor(location.hash));
+document.querySelectorAll<HTMLAnchorElement>('nav a').forEach(a=>a.addEventListener('click',()=>openAdvancedFor(a.getAttribute('href')??'')));
