@@ -1,14 +1,10 @@
 [project]
 name = "styx-sdk"
 version = "0.3.0"
-description = "Thin Python binding over the Styx Rust client, no protocol logic"
+description = "Thin Python binding over the Styx agent CLI (styx-near-vault), no protocol logic"
 requires-python = ">=3.11"
-# The binding shells out to `styx-cli`, so an install without it resolves fine and then
-# fails on the first call. The binary ships as its own platform wheel.
-dependencies = ["styx-cli==0.3.0"]
-
-[tool.uv.sources]
-styx-cli = { workspace = true }
+# The binding shells out to the agent CLI named by STYX_VAULT_CLI (sdk/near builds styx-near-vault).
+dependencies = []
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

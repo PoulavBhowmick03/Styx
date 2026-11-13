@@ -9,10 +9,9 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "styx-cli",
+    "styx",
     "styx-mcp-server",
     "styx-sdk",
-    "styx",
 ]
 
 [[package]]
@@ -239,53 +238,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/36/8b/e6d153808bf353e152abd2fd4d8f09670d956ac78379ac46e60d7efbf04c/cryptography-50.0.2-pp311-pypy311_pp80-macosx_11_0_arm64.whl", hash = "sha256:3dc4fd8058cea1644971207d530e1a03a184a805ffc8ebdddf0599d78a331b81", size = 3873097, upload-time = "2026-09-30T15:29:56.097Z" },
     { url = "https://files.pythonhosted.org/packages/ca/1d/1271f287ff7170ddafc2aad36260c4eec20ccd2fea70f38455e9d56d427b/cryptography-50.0.2-pp311-pypy311_pp80-win_amd64.whl", hash = "sha256:7b75de3c8b3be1cdb1052747c929440c3eea46c1bc2cb8a6e3a48388e9b7b452", size = 3805376, upload-time = "2026-09-30T15:29:58.729Z" },
 ]
-
-[[package]]
-name = "styx-cli"
-version = "0.3.0"
-source = { editable = "packaging/styx-cli" }
-
-[[package]]
-name = "styx-mcp-server"
-version = "0.3.0"
-source = { editable = "mcp-server" }
-dependencies = [
-    { name = "styx-sdk" },
-    { name = "mcp", extra = ["cli"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "styx-sdk", editable = "sdk/py" },
-    { name = "mcp", extras = ["cli"], specifier = ">=2.0.0,<3.0.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
-
-[[package]]
-name = "styx-sdk"
-version = "0.3.0"
-source = { editable = "sdk/py" }
-dependencies = [
-    { name = "styx-cli" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "styx-cli", editable = "packaging/styx-cli" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "h11"
@@ -915,6 +867,44 @@ wheels = [
 name = "styx"
 version = "0.3.0"
 source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
+[[package]]
+name = "styx-mcp-server"
+version = "0.3.0"
+source = { editable = "mcp-server" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "styx-sdk" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=2.0.0,<3.0.0" },
+    { name = "styx-sdk", editable = "sdk/py" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
+[[package]]
+name = "styx-sdk"
+version = "0.3.0"
+source = { editable = "sdk/py" }
 
 [package.dev-dependencies]
 dev = [
