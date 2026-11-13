@@ -64,6 +64,20 @@ Status: covered by unit tests and the mocked-wallet browser tests (`test/wallet-
 `test/invite-smoke.mjs`, whose stand-in wallet signs with a real throwaway key) (`test/wallet-smoke.mjs`); not yet
 run with a real Meteor wallet on testnet.
 
+## A DAO as the owner
+
+The vault checks `predecessor_account_id() == owner` (`assert_owner` in
+`contracts/near/styx-vault/src/lib.rs`) and the factory makes the caller of `create_vault` the owner,
+so a Sputnik DAO v2 that creates a vault through a proposal owns it, and only its passed proposals
+change the rules. On load the console asks the owner account for `get_policy`; when that answers with
+a policy, any connected account can propose: every preview is wrapped in one `add_proposal` to the
+DAO (kind `FunctionCall`, receiver the vault or token, the same calls as actions, the DAO's
+`proposal_bond` attached). The DAO's members vote; the vault changes only when the proposal passes.
+
+Status: from reading the contracts and a mocked-wallet browser test (`test/wallet-smoke.mjs`, a
+member's change sent as one `add_proposal`). Not run against a real Sputnik DAO on testnet; the
+`add_proposal` shape follows Sputnik DAO v2 and should be checked there before relying on it.
+
 Owner methods: configure_agent, set_recipient, set_approver, set_vault_daily_limit, pause, unpause,
 withdraw. Funding: storage_deposit for the vault (0.00125 NEAR), ft_transfer from the owner
 (1 yoctoNEAR), and mint only for the exact Styx testnet test token. Registration is read first;
