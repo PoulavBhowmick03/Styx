@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -18,6 +18,9 @@ const loadForm=$<HTMLFormElement>('#load');
 const BOT='Styx_pvt_bot';
 const readForm=(form:HTMLFormElement)=>Object.fromEntries(new FormData(form).entries()) as Record<string,string>;
 let context:{vault:string;network:string;rpc:RPC}|undefined, facts:Awaited<ReturnType<typeof overview>>|undefined;
+// When the owner is a Sputnik DAO, writes become proposals to it (see daoProposal in core.ts).
+let dao:{account:string;bond:string}|undefined;
+const canWrite=()=>!!facts && !!connected && (connected===facts.info.owner || !!dao);
 let selector:WalletSelector|undefined, connected='',rows:EventRow[]=[],busy=false;
 let known={agents:new Set<string>(),approvers:new Set<string>(),recipients:new Set<string>()};
 let plan:Batch|undefined,planContext:typeof context;
@@ -39,8 +42,8 @@ function toast(kind:'ok'|'error',title:string,detail='',href?:string){
  $('#toasts').append(node);setTimeout(()=>node.remove(),kind==='ok'?9000:20000);
 }
 function role(){
- const owner=!!facts && connected===facts.info.owner;
- $('#role').textContent=connected?`${connected} · ${owner?'Owner controls available':`Read-only: the vault owner is ${facts?.info.owner??'not yet known'}.`}`:'Read-only: connect the owner account to change rules.';
+ const owner=canWrite();
+ $('#role').textContent=connected?`${connected} · ${owner?(dao?`The owner is the DAO ${dao.account}: changes you make here are proposals its members vote on.`:'Owner controls available'):`Read-only: the vault owner is ${facts?.info.owner??'not yet known'}.`}`:'Read-only: connect the owner account to change rules.';
  document.querySelectorAll<HTMLButtonElement>('[data-write]').forEach(button=>button.disabled=!owner || busy);
  $('#disconnect').hidden=!connected;
  renderSetup();
@@ -73,7 +76,8 @@ async function walletSetup(network:string,vault:string){
 async function refresh(){
  if(!context) return;const current=context;
  const next=await overview(current.rpc,current.vault);if(context!==current) return;
- facts=next;for(const k of agentKeys(next.keys)) known.agents.add(k);render();await refreshKnown();
+ try{const policy=await current.rpc.view(next.info.owner,'get_policy');dao=isDaoPolicy(policy)?{account:next.info.owner,bond:policy.proposal_bond}:undefined;}catch{dao=undefined;}
+ facts=next;for(const k of agentKeys(next.keys)) known.agents.add(k);render();role();await refreshKnown();
 }
 function allowance(key:string){
  const entry=facts?.keys.keys.find((k:any)=>k.public_key===key);
@@ -129,7 +133,7 @@ async function refreshKnown(){
      const now=Math.floor(Date.now()/1000),ex=expiry(String(state.valid_until),now);
      const line=el('p',ex.text);line.className=`expiry ${ex.state}`;panel.append(line);
      if(ex.state!=='ok'){expiring.add(key);
-      if(connected===facts.info.owner){const b=el('button',ex.state==='expired'?'Renew for 30 days':'Extend 30 days') as HTMLButtonElement;b.type='button';b.className='secondary';b.dataset.write='';b.disabled=busy;
+      if(canWrite()){const b=el('button',ex.state==='expired'?'Renew for 30 days':'Extend 30 days') as HTMLButtonElement;b.type='button';b.className='secondary';b.dataset.write='';b.disabled=busy;
        b.onclick=()=>{try{const v=extendValues(key,state,Math.floor(Date.now()/1000));previewPlan('configure_agent',v);}catch(e){toast('error','Cannot preview',e instanceof Error?e.message:String(e));}};panel.append(b);}}
      panel.append(el('p',allowance(key)));
      const spent=await c.rpc.view(c.vault,'spent_by_agent',{agent:key,day});
@@ -186,8 +190,9 @@ function reviewLines(values:Record<string,string>,b:Batch){
  return [`Network: ${context!.network}`,`Signer: ${connected}`,`Vault: ${context!.vault}`,`Token: ${facts!.info.token}`,...units,`Attached NEAR: ${near(batchDeposit(b))}`,...calls,'',JSON.stringify(b.calls.length>1?b:b.calls[0],null,2)];
 }
 function previewBatch(plans:Plan[],values:Record<string,string>){
- if(!context || !facts || connected!==facts.info.owner) throw Error('Connect the vault owner');
+ if(!context || !facts || !canWrite()) throw Error('Connect the vault owner');
  plan=batchPlan(plans);planContext=context;
+ if(dao) plan=daoProposal(plan,dao.account,dao.bond,`Styx console: ${describeBatch(plan)} on ${context.vault}`);
  openReview(describeBatch(plan),reviewLines(values,plan),sendPlan);
 }
 function previewPlan(method:string,values:Record<string,string>){
@@ -213,7 +218,9 @@ async function sendPlan(){
   await c.rpc.assertNetwork(c.network);
   const current=await c.rpc.view(c.vault,'get_vault');
   const active=selector.store.getState().accounts.find(a=>a.active)?.accountId;
-  if(active!==current.owner || current.token!==facts?.info.token) throw Error('Owner or token changed; read and preview again');
+  // A proposal goes to the owning DAO from any member; everything else must come from the owner itself.
+  const viaDao=!!dao && selected.receiverId===current.owner && selected.calls.every(c=>c.method==='add_proposal');
+  if((!viaDao && active!==current.owner) || current.token!==facts?.info.token) throw Error('Owner or token changed; read and preview again');
   const wallet=await selector.wallet();
   if(!(await wallet.getAccounts()).some(a=>a.accountId===active)) throw Error('Selected wallet account differs');
   for(const call of selected.calls){
@@ -243,7 +250,7 @@ async function sendPlan(){
 }
 // Makes an agent key in this browser, downloads it once, and returns the public key.
 function generateAgentKey():string{
- if(!context || connected!==facts?.info.owner) throw Error('Connect the owner before generating an agent key');
+ if(!context || !canWrite()) throw Error('Connect the owner before generating an agent key');
  const pair=nacl.sign.keyPair(),pk='ed25519:'+bs58.encode(pair.publicKey);
  const keyFile={account_id:context.vault,public_key:pk,private_key:'ed25519:'+bs58.encode(pair.secretKey)};
  const url=URL.createObjectURL(new Blob([JSON.stringify(keyFile,null,2)+'\n'],{type:'application/json'}));
@@ -424,7 +431,7 @@ function presetBar(form:HTMLFormElement){
 }
 function renderSetup(){
  const section=$('#setup');
- if(!context || !facts || connected!==facts.info.owner){section.hidden=true;return;}
+ if(!context || !facts || !canWrite()){section.hidden=true;return;}
  section.hidden=false;
  const state=steps.map(s=>s.done()),count=state.filter(Boolean).length;
  const current=setupChoice??state.findIndex(d=>!d);

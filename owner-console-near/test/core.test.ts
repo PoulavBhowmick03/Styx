@@ -198,3 +198,20 @@ describe('spend alert link',()=>{
  it('encodes the vault as the relay decodes it',()=>expect(watchLink('Styx_pvt_bot','styx-demo-2917.styx-vaults.testnet')).toBe('https://t.me/Styx_pvt_bot?start=watch-styx-demo-2917--styx-vaults--testnet'));
  it('gives up when the payload would pass 64 characters',()=>expect(watchLink('b','a'.repeat(55)+'.testnet')).toBeNull());
 });
+
+import { daoProposal,isDaoPolicy,PROPOSAL_GAS } from '../src/core';
+describe('DAO-owned vaults',()=>{
+ const p=(m:string,v:Record<string,string>={})=>formPlan(m,v,LIVE_VAULT,TEST_TOKEN,'testnet');
+ it('wraps the same calls in one Sputnik add_proposal with the bond',()=>{
+  const inner=batchPlan([p('set_vault_daily_limit',{limit:'500'}),p('pause')]);
+  const b=daoProposal(inner,'acme.sputnikv2.testnet','100000000000000000000000','Styx: 2 changes');
+  expect(b.receiverId).toBe('acme.sputnikv2.testnet');expect(b.calls).toHaveLength(1);
+  const c=b.calls[0];expect(c.method).toBe('add_proposal');expect(c.deposit).toBe('100000000000000000000000');expect(c.gas).toBe(PROPOSAL_GAS);
+  const fc=(c.args as any).proposal.kind.FunctionCall;expect(fc.receiver_id).toBe(LIVE_VAULT);
+  expect(fc.actions.map((a:any)=>[a.method_name,JSON.parse(Buffer.from(a.args,'base64').toString()),a.gas])).toEqual([['set_vault_daily_limit',{limit:'500000000'},BATCH_GAS],['pause',{},BATCH_GAS]]);
+ });
+ it('recognises a Sputnik policy and nothing else',()=>{
+  expect(isDaoPolicy({proposal_bond:'100000000000000000000000',roles:[]})).toBe(true);
+  expect(isDaoPolicy(null)).toBe(false);expect(isDaoPolicy({proposal_bond:1,roles:[]})).toBe(false);expect(isDaoPolicy({owner:'x'})).toBe(false);
+ });
+});

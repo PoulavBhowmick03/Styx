@@ -37,6 +37,8 @@ async function open(accountId,url,keyOnChain=true){
    else if(p.request_type==='view_account')result={amount:'10000000000000000000000000',locked:'0',storage_usage:500,code_hash:'11111111111111111111111111111111',block_height:1,block_hash:'mock'};
    else{const args=JSON.parse(Buffer.from(p.args_base64,'base64').toString());result=structuredClone(fixture.views[p.account_id+':'+p.method_name+':'+JSON.stringify(args,Object.keys(args).sort())]);}
   }
+  // A plain account has no get_policy (it is not a DAO): the RPC answers with an error.
+  if(q.method==='query' && p.method_name==='get_policy') return route.fulfill({json:{jsonrpc:'2.0',id:q.id,error:{name:'HANDLER_ERROR',cause:{name:'NO_CONTRACT_CODE'}}}});
   assert.ok(result,'Missing canned RPC result');await route.fulfill({json:{result}});
  });
  await page.goto(url);return {page,errors};

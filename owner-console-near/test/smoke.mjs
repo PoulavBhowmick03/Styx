@@ -20,6 +20,8 @@ try{
    }
   }else if(q.method==='tx')result=fixture.transactions[p.tx_hash];
   else if(q.method==='block')result={header:fixture.blocks[p.block_id]};
+  // A plain account has no get_policy (it is not a DAO): the RPC answers with an error.
+  if(q.method==='query' && p.method_name==='get_policy') return route.fulfill({json:{jsonrpc:'2.0',id:q.id,error:{name:'HANDLER_ERROR',cause:{name:'NO_CONTRACT_CODE'}}}});
   assert.ok(result,`Missing mock ${q.method} ${JSON.stringify(p)}`);
   await route.fulfill({json:{jsonrpc:'2.0',id:q.id,result}});
  });

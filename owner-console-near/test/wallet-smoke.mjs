@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 const fixture=JSON.parse(readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
 try{
- for(const accountId of ['stranger.testnet','styx-owner-c87a.testnet']){
+ for(const accountId of ['stranger.testnet','styx-owner-c87a.testnet','member.testnet']){
+  // member.testnet: the vault's owner is treated as a Sputnik DAO and this account proposes to it.
+  const daoBond='100000000000000000000000';
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   let paused=false;
   await page.route('**/@near-wallet-selector_core.js?*',route=>route.fulfill({contentType:'application/javascript',body:`
@@ -25,6 +27,7 @@ try{
     else{
      const args=JSON.parse(Buffer.from(p.args_base64,'base64').toString());
      result=structuredClone(fixture.views[p.account_id+':'+p.method_name+':'+JSON.stringify(args,Object.keys(args).sort())]);
+     if(p.method_name==='get_policy') result=accountId==='member.testnet'?{result:[...Buffer.from(JSON.stringify({roles:[],proposal_bond:daoBond}))],logs:[],block_height:1,block_hash:'mock'}:undefined;
      if(!result && p.method_name.startsWith('get_')) result={result:[...Buffer.from('null')],logs:[],block_height:1,block_hash:'mock'}; // no entry, as the contract answers
      if(p.method_name==='get_agent'){const a=JSON.parse(Buffer.from(result.result).toString());a.valid_until='1600000000';result.result=[...Buffer.from(JSON.stringify(a))];}
      if(p.method_name==='get_vault'){
@@ -43,6 +46,18 @@ try{
    for(const button of await page.locator('[data-write]').all())assert.equal(await button.isDisabled(),true);
    await page.locator('#agents .expiry.expired').first().waitFor();
    assert.equal(await page.getByRole('button',{name:'Renew for 30 days'}).count(),0);
+  }else if(accountId==='member.testnet'){
+   // A DAO owns the vault: the same change becomes one add_proposal to the DAO, with its bond.
+   await page.getByText(/changes you make here are proposals its members vote on/).waitFor();
+   await page.locator('#advanced > summary').click();
+   await page.locator('form[data-method="pause"] button').click();
+   await page.locator('#send').click();
+   await page.waitForFunction(()=>window.__submitted);
+   const p=await page.evaluate(()=>window.__submitted);
+   assert.equal(p.signerId,'member.testnet');assert.equal(p.receiverId,'styx-owner-c87a.testnet');
+   assert.equal(p.actions.length,1);assert.equal(p.actions[0].params.methodName,'add_proposal');assert.equal(p.actions[0].params.deposit,daoBond);
+   const fc=p.actions[0].params.args.proposal.kind.FunctionCall;
+   assert.equal(fc.receiver_id,fixture.vault);assert.deepEqual(fc.actions.map(a=>a.method_name),['pause']);
   }else{
    // An expired agent: the owner renews it with the same limits in one configure_agent.
    await page.locator('#agents .expiry.expired').first().waitFor();
@@ -105,5 +120,5 @@ try{
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload; approver shown as getting Telegram alerts. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload; approver shown as getting Telegram alerts; a change by a DAO member sent as one add_proposal. No real wallet or transaction.');
 }finally{await browser.close();}

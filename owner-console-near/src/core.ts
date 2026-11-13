@@ -157,6 +157,7 @@ export function describePlan(p:Plan):string{
   case 'ft_transfer':return `Funded the vault with ${tokens(a.amount)}`;
   case 'mint':return `Minted ${tokens(a.amount)} tUSDC to the vault`;
   case 'create_vault':return `Vault created: ${a.name}`;
+  case 'add_proposal':{const n=(a as any).proposal?.kind?.FunctionCall?.actions?.length??0;return `Proposed to ${p.receiverId}: ${n} change${n===1?'':'s'}, for its members to vote on`;}
   default:return p.method;
  }
 }
@@ -318,4 +319,16 @@ export async function telegramLinked(relay:string,key:string,get:typeof fetch=fe
 export function watchLink(bot:string,vault:string):string|null{
  const payload='watch-'+account(vault).replace(/\./g,'--');
  return payload.length<=64?`https://t.me/${bot}?start=${payload}`:null;
+}
+
+// ---- A DAO as the owner. The vault checks predecessor_account_id == owner, so a Sputnik DAO that
+// created the vault (or was made owner) changes its rules through passed proposals. The console wraps
+// the same calls in one add_proposal (FunctionCall kind, Sputnik DAO v2), with the DAO's proposal bond.
+export type DaoPolicy={proposal_bond:string};
+export const isDaoPolicy=(p:any):p is DaoPolicy=>!!p && typeof p==='object' && typeof p.proposal_bond==='string' && /^[0-9]+$/.test(p.proposal_bond) && Array.isArray(p.roles);
+export const PROPOSAL_GAS='50000000000000';
+export function daoProposal(b:Batch,dao:string,bond:string,description:string):Batch{
+ const desc=description.replace(/[\u0000-\u001f]/g,' ').slice(0,500);
+ const actions=b.calls.map(c=>({method_name:c.method,args:Buffer.from(JSON.stringify(c.args)).toString('base64'),deposit:c.deposit,gas:c.gas}));
+ return {receiverId:account(dao),calls:[{receiverId:account(dao),method:'add_proposal',args:{proposal:{description:desc,kind:{FunctionCall:{receiver_id:b.receiverId,actions}}}},deposit:bond,gas:PROPOSAL_GAS}]};
 }
