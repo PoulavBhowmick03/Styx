@@ -5,13 +5,13 @@ import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 // Inside the Meteor mobile app's own browser this signs through the app natively; elsewhere it stays hidden.
 import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
-import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
+import { Buffer, pendingSchema, signatureFile, isEvmPending, declineMessage, DECLINE_RECIPIENT } from './protocol';
 import { review, rpcView, usdc, destinationDetails, PAGE_RPC } from './review';
 import { linkFlow } from './link';
 import { summary, text, showDetails, shortKey, amount, chainName } from './ui';
 import '../../site/styx.css';
 const status=document.querySelector('#status')!, details=document.querySelector('#details')!;
-const connect=document.querySelector<HTMLButtonElement>('#connect')!,sign=document.querySelector<HTMLButtonElement>('#sign')!;
+const connect=document.querySelector<HTMLButtonElement>('#connect')!,sign=document.querySelector<HTMLButtonElement>('#sign')!,decline=document.querySelector<HTMLButtonElement>('#decline')!;
 const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);status.className='error';};
 async function main(){
  const query=new URLSearchParams(location.search),id=query.get('request'),relay=new URL(query.get('relay')??import.meta.env.VITE_DEFAULT_RELAY??'');
@@ -37,12 +37,13 @@ async function main(){
  summary([['Amount',amount(usdc(p.payment.amount)),true],['To',p.payment.recipient],['On',chainName(p.chainId)],['Per-payment limit',amount(usdc(facts.agent.per_payment_limit))],['Vault',p.vault],['Approver',shortKey(p.authorization.signer)],['Expires',new Date(Number(p.authorization.authorization_expiry)*1000).toLocaleString()]]);
  showDetails([`Network: ${p.network}`,`RPC: ${PAGE_RPC[p.network]} (this page's own; the request suggested ${p.rpcUrl})`,`Vault: ${p.vault}`,...destinationDetails(p,facts),`Amount: ${usdc(p.payment.amount)}`,`Agent: ${p.payment.agent}`,`Per-payment limit: ${usdc(facts.agent.per_payment_limit)}`,`Agent daily limit: ${usdc(facts.agent.daily_limit)}`,`Vault daily limit: ${usdc(facts.vault.vault_daily_limit)}`,`Daily spending still applies; remaining balance is not checked here.`,`Approver: ${p.authorization.signer} — enabled: ${facts.approver.enabled}, version: ${facts.approver.version}`,`Authorization expires: ${new Date(Number(p.authorization.authorization_expiry)*1000).toISOString()}`,`Payment expires: ${new Date(Number(p.payment.valid_until)*1000).toISOString()}`,`Invoice reference (unverified): ${p.invoiceReference}`,`Message:\n${p.message}`].join('\n\n'));
  if(data.status==='signed'){status.textContent='Already signed. The agent can submit the payment.';status.className='done';return;}
+ if(data.status==='declined'){status.textContent='Declined. The agent has been told no; this payment will not be made.';status.className='done';return;}
  if(data.status!=='pending') throw new Error(`Request is ${data.status}`);
  const post=async(result:{accountId:string;publicKey:string;signature:string},callback:string|null)=>{
   await check();const file=signatureFile(p,result,callback);
   const r=await fetch(endpoint+'/signature',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(file)});
   if(!r.ok) throw new Error(`Relay refused signature (${r.status})`);
-  sessionStorage.removeItem('styx-near-sign');status.textContent='Signature delivered. The agent can submit the payment.';status.className='done';sign.hidden=true;
+  sessionStorage.removeItem('styx-near-sign');status.textContent='Signature delivered. The agent can submit the payment.';status.className='done';sign.hidden=true;decline.hidden=true;
  };
  const fragment=new URLSearchParams(location.hash.slice(1));
  if(fragment.has('signature')){
@@ -54,7 +55,7 @@ async function main(){
  }
  const selector=await setupWalletSelector({network:p.network,modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:p.vault})]});
  const modal=setupModal(selector,{contractId:p.vault});
- connect.hidden=false;sign.hidden=false;status.textContent=`Checked on chain through this page's own RPC: the vault, limits and approver match this request. Confirm the vault under All details.`;
+ connect.hidden=false;sign.hidden=false;decline.hidden=false;status.textContent=`Checked on chain through this page's own RPC: the vault, limits and approver match this request. Confirm the vault under All details.`;
  connect.onclick=()=>modal.show();
  sign.onclick=async()=>{sign.disabled=true;try{
   await check();const wallet=await selector.wallet();
@@ -64,5 +65,15 @@ async function main(){
   const result=await wallet.signMessage({message:p.message,nonce:Buffer.from(p.authorization.approval_nonce,'base64'),recipient:p.vault,...(callback?{callbackUrl:callback,state}:{})});
   if(result) await post(result,callback);
  }catch(e){error(e);}finally{sign.disabled=false;}};
+ // A decline is signed too, with the requested approver's key, so a stranger with the link cannot block a payment.
+ decline.onclick=async()=>{if(!confirm('Decline this payment? The agent is told no and cannot use this request again.')) return;decline.disabled=true;try{
+  const wallet=await selector.wallet();
+  const result=await wallet.signMessage({message:declineMessage(p),nonce:Buffer.from(p.authorization.approval_nonce,'base64'),recipient:DECLINE_RECIPIENT});
+  if(!result) return;
+  if(result.publicKey!==p.authorization.signer) throw new Error(`Wallet used ${result.publicKey}, but this request asks ${p.authorization.signer}.`);
+  const r=await fetch(endpoint+'/decline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schema:'styx-near-decline/1',publicKey:result.publicKey,signature:result.signature})});
+  if(!r.ok) throw new Error(`Relay refused the decline (${r.status})`);
+  status.textContent='Declined. The agent has been told no; this payment will not be made.';status.className='done';sign.hidden=true;decline.hidden=true;
+ }catch(e){error(e);}finally{decline.disabled=false;}};
 }
 main().catch(error);
