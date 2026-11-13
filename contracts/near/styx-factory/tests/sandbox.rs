@@ -6,9 +6,17 @@ use near_workspaces::types::NearToken;
 use near_workspaces::{Account, Contract};
 use serde_json::{json, Value};
 
+/// Builds the factory through contracts/near/build.sh (its build.rs builds the vault it embeds
+/// first if needed), so `cargo test` works from a clean checkout, like the vault's sandbox test.
+fn build_wasm() -> Vec<u8> {
+    let status = std::process::Command::new("../build.sh").arg("./").status().expect("run build.sh");
+    assert!(status.success(), "build.sh failed for the factory");
+    std::fs::read("target/near/styx_factory.wasm").expect("wasm")
+}
+
 async fn setup() -> anyhow::Result<(near_workspaces::Worker<near_workspaces::network::Sandbox>, Contract, Account)> {
     let worker = near_workspaces::sandbox().await?;
-    let wasm = std::fs::read("target/near/styx_factory.wasm")?;
+    let wasm = build_wasm();
     let factory = worker.dev_deploy(&wasm).await?;
     factory.call("new").transact().await?.into_result()?;
     let alice = worker.root_account()?.create_subaccount("alice").initial_balance(NearToken::from_near(20)).transact().await?.into_result()?;
