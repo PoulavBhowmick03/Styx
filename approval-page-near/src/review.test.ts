@@ -11,3 +11,11 @@ describe('chain review',()=>{
  it('rejects wallet key mismatch and reports the key',()=>{expect(()=>signatureFile(fixture(),{accountId:'owner.testnet',publicKey:'wrong-key',signature:''},null)).toThrow('wrong-key');});
  it('formats without rounding and validates schema',()=>{expect(usdc('150000001')).toBe('150.000001 USDC');expect(pendingSchema.safeParse({...fixture(),exceededRule:'dailyLimit'}).success).toBe(false);});
 });
+describe('telegram link message',()=>{
+ it('signs the code as a 32-byte nonce for a non-vault recipient',async()=>{
+  const {linkMessage,linkNonce,linkSchema,LINK_RECIPIENT}=await import('./protocol');const code='A'.repeat(42)+'w';
+  expect(linkNonce(code)).toHaveLength(32);expect(linkNonce(code).toString('base64url')).toBe(code);
+  expect(linkMessage(code)).toContain(`Code: ${code}`);expect(LINK_RECIPIENT).not.toMatch(/\./);
+  expect(linkSchema.safeParse({schema:'styx-near-telegram-link/1',code:'short',accountId:'a.testnet',publicKey:fixture().payment.agent,signature:''}).success).toBe(false);
+ });
+});

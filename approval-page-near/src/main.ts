@@ -6,12 +6,15 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
 import { review, rpcView, usdc, destinationDetails } from './review';
+import { linkFlow } from './link';
 import './style.css';
 const status=document.querySelector('#status')!, details=document.querySelector('#details')!;
 const connect=document.querySelector<HTMLButtonElement>('#connect')!,sign=document.querySelector<HTMLButtonElement>('#sign')!;
 const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);};
 async function main(){
  const query=new URLSearchParams(location.search),id=query.get('request'),relay=new URL(query.get('relay')??import.meta.env.VITE_DEFAULT_RELAY??'');
+ const code=query.get('link');
+ if(code!==null){if(!['https:','http:'].includes(relay.protocol)) throw new Error('Invalid relay');return linkFlow(code,relay,{title:document.querySelector('h1')!,status,details,connect,sign},error);}
  if(!id || !/^[A-Za-z0-9_-]{43}$/.test(id) || !['https:','http:'].includes(relay.protocol)) throw new Error('Invalid relay or request');
  const endpoint=new URL(`/requests/${id}`,relay).toString();
  const response=await fetch(endpoint);if(!response.ok) throw new Error('Cannot load request');
