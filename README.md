@@ -76,6 +76,11 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
    **Give Claude Code the tools for your own vault:** `scripts/near/mcp_config.sh` prints the
    `claude mcp add` command for your quickstart vault (or any `demo.env`), with a private invoices
    folder; then ask Claude to pay an invoice you put there.
+   **Without cloning:** `cargo install --locked --git https://github.com/PoulavBhowmick03/Styx styx-near`
+   installs the agent CLI (`styx-near-vault`), and
+   `uvx --from "git+https://github.com/PoulavBhowmick03/Styx#subdirectory=mcp-server" styx-mcp-server`
+   runs the MCP server, which finds that CLI on your PATH. The console's ready screen prints the
+   full `claude mcp add` line for your vault.
    **As the reviewer, with your own key:** `scripts/near/reviewer_quickstart.sh` makes your X25519
    key, pays 5 tUSDC from your vault, seals that payment's record to your key, and verifies it
    against the chain with your RPC. You should see checks 1 to 5 `PASS`.
