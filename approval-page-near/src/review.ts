@@ -46,7 +46,7 @@ export function destinationDetails(p:Pending,facts:Awaited<ReturnType<typeof rev
   `EVM chain id: ${p.chainId} — enabled: ${facts.evmChain.enabled}`,
   `EVM token address (current chain configuration): ${facts.evmChain.token}`,
   `EVM recipient: ${p.payment.recipient} — allowed: ${facts.recipient.allowed}`,
-  'The signed payment commits to the EVM chain and recipient. Token and gas settings come from the vault configuration at execution; they are not fields in the signed payment.',
+  'The approval commits to the EVM chain, the recipient and this token: if the owner changes the token, this approval stops matching. Gas settings come from the vault configuration when it signs.',
   'An approval authorizes MPC signing, not proof of EVM settlement. Daily counters are charged when signing; gas is paid separately within the configured caps.'
  ];
  return [`Token (confirm this is your USDC): ${facts.vault.token}`,`Recipient: ${p.payment.recipient} — allowed: ${facts.recipient.allowed}`];
