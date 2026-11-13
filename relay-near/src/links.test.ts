@@ -105,6 +105,11 @@ describe('telegram bot', () => {
     await bot.handle(msg(4, 'hello'));
     expect(tg.messages()[3].body.text).toBe(HELP);
   });
+  it('treats a t.me deep link (/start <payload>) as /start', async () => {
+    const tg = fakeTelegram(), links = new Links(undefined, () => 1000), bot = telegramBot({ ...opts, links, fetch: tg.fetch });
+    await bot.handle(msg(1, '/start approver'));
+    expect(tg.messages()[0].body.reply_markup.inline_keyboard[0][0].url).toMatch(/&link=[A-Za-z0-9_-]{43}$/);
+  });
   it('ignores groups and channels', async () => {
     const tg = fakeTelegram(), bot = telegramBot({ ...opts, links: new Links(), fetch: tg.fetch });
     await bot.handle(msg(1, '/start', 'group', -100));
