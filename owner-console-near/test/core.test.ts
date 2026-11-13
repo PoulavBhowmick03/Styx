@@ -189,3 +189,9 @@ describe('telegram link status',()=>{
  });
  it('asks for the encoded key',async()=>{let url='';await telegramLinked('https://relay.example',key,(async(u:string)=>{url=u;return {ok:true,json:async()=>({publicKey:key,linked:true})};})as never);expect(url).toBe(`https://relay.example/links/${encodeURIComponent(key)}`);});
 });
+
+import { watchLink } from '../src/core';
+describe('spend alert link',()=>{
+ it('encodes the vault as the relay decodes it',()=>expect(watchLink('Styx_pvt_bot','styx-demo-2917.styx-vaults.testnet')).toBe('https://t.me/Styx_pvt_bot?start=watch-styx-demo-2917--styx-vaults--testnet'));
+ it('gives up when the payload would pass 64 characters',()=>expect(watchLink('b','a'.repeat(55)+'.testnet')).toBeNull());
+});

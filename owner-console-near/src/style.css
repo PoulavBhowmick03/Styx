@@ -83,6 +83,9 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 .name-row form input { flex: 1; }
 .name-row form button { min-height: 0; padding: 0.35rem 0.8rem; }
 
+/* Spend alerts */
+.watch-link { grid-column: 1 / -1; justify-self: start; font: 0.8125rem var(--mono); }
+
 /* Telegram status */
 .tg-badge { font: 0.75rem var(--mono); color: var(--fore-2); margin: 0.4rem 0; }
 .tg-badge.on { color: var(--ok); }

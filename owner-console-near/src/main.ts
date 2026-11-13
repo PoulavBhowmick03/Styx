@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -15,6 +15,7 @@ const status=$('#status');
 const say=(message:string)=>{status.textContent=message;};
 const fail=(e:unknown)=>say(e instanceof Error?e.message:String(e));
 const loadForm=$<HTMLFormElement>('#load');
+const BOT='Styx_pvt_bot';
 const readForm=(form:HTMLFormElement)=>Object.fromEntries(new FormData(form).entries()) as Record<string,string>;
 let context:{vault:string;network:string;rpc:RPC}|undefined, facts:Awaited<ReturnType<typeof overview>>|undefined;
 let selector:WalletSelector|undefined, connected='',rows:EventRow[]=[],busy=false;
@@ -53,6 +54,10 @@ function render(){
   ['Owner',info.owner],['Token',info.token],['Paused',String(info.paused)],['Vault daily limit',amount(info.vault_daily_limit)],
   ["Today's vault spend",amount(spent)],['Vault token balance',amount(balance)],['UTC day',String(day)],['Network',context.network]
  ].map(([k,v])=>card(k,v)));
+ // Anyone can watch spend: it is public on chain. The bot messages at 80% and 100% of the daily limit.
+ const link=watchLink(BOT,context.vault);
+ if(link){const a=el('a','Get spend alerts on Telegram') as HTMLAnchorElement;a.href=link;a.target='_blank';a.rel='noopener noreferrer';a.className='watch-link';a.title='The Styx bot messages you when today\'s spend passes 80% and 100% of the vault daily limit.';area.append(a);}
+ else area.append(el('p',`Spend alerts: send /watch ${context.vault} to @${BOT} in Telegram.`));
  $('#storage-status').textContent=storage?'Vault is registered with this token.':'Vault is not registered. Register it before funding.';
  const register=document.querySelector<HTMLButtonElement>('form[data-method="storage_deposit"] button');if(register){register.hidden=!!storage;}
  document.querySelector<HTMLElement>('form[data-method="mint"]')!.hidden=context.network!=='testnet'||info.token!==TEST_TOKEN;
@@ -346,7 +351,6 @@ async function sendCreate(p:Plan,rpc:RPC,network:string){
 
 // ---- Guided setup: two steps, one wallet approval each, ticked off from chain state ----
 // Each step's calls go to one contract (the token, then the vault), so each step is one transaction.
-const BOT='Styx_pvt_bot';
 type Step={title:string;why:string;fields:string[];optional?:boolean;defaults:()=>Record<string,string>;plans:(v:Record<string,string>)=>Plan[];done:()=>boolean};
 const testToken=()=>context?.network==='testnet' && facts?.info.token===TEST_TOKEN;
 const agentInstalled=()=>!!facts?.keys.keys.some((k:any)=>typeof k.access_key.permission==='object' && k.access_key.permission.FunctionCall?.method_names?.includes('pay'));

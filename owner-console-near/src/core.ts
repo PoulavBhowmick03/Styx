@@ -309,3 +309,11 @@ export async function telegramLinked(relay:string,key:string,get:typeof fetch=fe
   if(!r.ok) return null;const d=await r.json();return d?.publicKey===key && typeof d.linked==='boolean'?d.linked:null;
  }catch{return null;}
 }
+
+// ---- Spend alerts: the relay's bot watches a vault from a t.me deep link (relay-near/src/watches.ts) ----
+// Start payloads allow [A-Za-z0-9_-] up to 64 characters; account ids never hold two separators in a
+// row, so '.' is written as '--'. Returns null when the vault id is too long for a payload.
+export function watchLink(bot:string,vault:string):string|null{
+ const payload='watch-'+account(vault).replace(/\./g,'--');
+ return payload.length<=64?`https://t.me/${bot}?start=${payload}`:null;
+}

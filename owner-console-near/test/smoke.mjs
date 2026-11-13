@@ -27,6 +27,7 @@ try{
  await page.locator('#overview-data').getByText('styx-owner-c87a.testnet',{exact:true}).waitFor();
  await page.locator('#payment-rows tr').waitFor();
  assert.match(await page.locator('#role').textContent(),/Read-only/);
+ assert.equal(await page.locator('#overview-data .watch-link').getAttribute('href'),'https://t.me/Styx_pvt_bot?start=watch-'+fixture.vault.replace(/\./g,'--'));
  assert.match(await page.locator('#payment-rows').textContent(),/140.000000/);
  await page.locator('#agents progress').waitFor();
  assert.match(await page.locator('#agents').textContent(),/Gas allowance/);
