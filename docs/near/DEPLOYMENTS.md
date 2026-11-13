@@ -30,6 +30,16 @@ EVM approvals to the token (audit N-02) and lets only the paying agent post a re
 No EVM request was in flight (`evm_pending` null). EVM approvals made before it no longer match.
 The v1 vault `vault.styx-owner-c87a.testnet` was not redeployed.
 
+## Vault factory (13 Nov 2026)
+
+`styx-vaults.testnet` (created from the faucet), contract `contracts/near/styx-factory` from commit
+`839c332`, 459,824 bytes, deploy and init tx
+[A6s8DQLM…](https://testnet.nearblocks.io/txns/A6s8DQLMsKhwZChAn4WLvmvo96YKRLky3JXLmcYXwc72).
+It embeds the vault code with hash `AKS7DUifGpRDMDW1F3QCDcX5qDPg3K7Xw9bx7dgk66hN`, the same code as
+vault-v2 after its upgrade. `create_vault` needs at least `min_deposit` (3.804 NEAR: the code's
+storage plus 0.5 NEAR). Vaults it creates have no access keys. The owner console's "Create a vault"
+calls it from the connected wallet.
+
 ## NEAR relay on Fly (13 Nov 2026)
 
 `https://styx-relay-near.fly.dev` (app `styx-relay-near`, region `sin`, 1 GB volume for request

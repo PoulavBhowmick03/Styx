@@ -33,6 +33,21 @@ quickstart vault (`vault.styx-qs-4e41a6.testnet`, the quickstart's own keys, a l
 random token): 130 tUSDC to vendor-b refused with `OWNER_APPROVAL_REQUIRED`, signed, settled in
 [2C7fofwa…](https://testnet.nearblocks.io/txns/2C7fofwagKgDcFBU5GiEobdTY9zpD6xFqqaMzW8T3GWZ).
 
+## A vault created through the factory, then used (13 Nov 2026)
+
+A new faucet account, `styx-user-3b3f74.testnet`, standing in for a new owner:
+
+| Step | Transaction | Result |
+| --- | --- | --- |
+| `create_vault({name: "demo"})` on `styx-vaults.testnet`, 4 NEAR attached | [ebqjJk6G…](https://testnet.nearblocks.io/txns/ebqjJk6GdJBGRNBzNEJ472QdG1TwxN5TiffCtzDnWBw) | returned `"demo.styx-vaults.testnet"`; `get_vault` owner is the caller; 0 access keys; code hash `AKS7DUif…` |
+| Owner: register with the token, mint 100 tUSDC, daily limit 500, allow vendor-a, two approvers, agent at 10 per payment | [7CFxV7Be…](https://testnet.nearblocks.io/txns/7CFxV7BeRsGGZU5kvVdVVELQpdkidat3iqejF4Xe5H53) to [J5Z3fch3…](https://testnet.nearblocks.io/txns/J5Z3fch3kyPDsFjiTEdkvAWkKD4J1brC4Bk6KcCb1PhY) | the vault's only key is the agent's, limited to the pay methods and `post_record` |
+| Agent pays 5 tUSDC; record sealed to a fresh reviewer key (`reviewer_quickstart.sh`) | [2LwVpjjx…](https://testnet.nearblocks.io/txns/2LwVpjjxJuAWrBhBzdNzhF73TY6tkEGjBEbLE6ASfhu4), record [4A37JiTx…](https://testnet.nearblocks.io/txns/4A37JiTxfnCTeCpgk4RzgtDUXaDCbhSF72FpAq7qNCTS) | settled; reviewer checks 1 to 5 PASS |
+| Agent asks 15 tUSDC through the MCP tools (`mcp_quickstart.sh`): refused, then the test approver signs through a local relay | [GWTcjDwP…](https://testnet.nearblocks.io/txns/GWTcjDwP8Fs8eXQ3k6CkqLakvqAh8vbGjn3T8b4tC3UE) | `OWNER_APPROVAL_REQUIRED`, then settled |
+
+The owner's calls here were signed from the CLI keychain. The console's "Create a vault" form was
+tested headlessly (name rules, taken names, wallet prompt); a creation signed from a browser wallet
+is not yet recorded.
+
 ## A sealed record for a reviewer (`export_record`)
 
 A 140 tUSDC exception to vendor-a settled in

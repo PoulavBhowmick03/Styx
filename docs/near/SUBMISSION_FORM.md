@@ -22,7 +22,7 @@ A recent study (https://arxiv.org/abs/2610.35835) gave AI agents wallets with sp
 
 Styx puts both on chain. The owner funds a vault contract, sets the recipients it may pay, and sets, per agent, the most that agent can pay per payment and per day. On NEAR the agent is a function-call access key on the vault account, allowed to call only the pay methods. When the agent's key tries to raise its own limit or make itself an approver, NEAR rejects the transaction before the contract runs. Going over the per-payment limit needs the approver's NEP-413 signature over that exact payment, which the vault verifies on chain. A signature for one recipient fails for another, a payment ID pays once, and no signature lifts the daily limits. Through NEAR Chain Signatures the same vault also pays USDC on other chains from an address NEAR's MPC network derives for it, under the same limits: the vault builds the transaction and the agent never holds an EVM key. One run paid on Arc and on Base with the same agent key, the invoice naming the chain.
 
-Built on NEAR: a Rust vault contract (near-sdk) paying a NEP-141 token, with a callback that rolls the counters back if the transfer fails. A Rust agent CLI the existing MCP server drives unchanged. A wallet-selector approval page and relay for NEP-413 signing. Sealed records a reviewer opens with their own key.
+Built on NEAR: a Rust vault contract paying a NEP-141 token, and a factory that creates a vault from the owner's wallet in one transaction. An agent CLI the MCP server drives. An approval page and relay for NEP-413 signing, alerting each approver in their own Telegram. Sealed records a reviewer opens with their own key.
 
 On testnet: payments inside the limits settled on NEAR, Arc and Base, exceptions settled with the approver's signature, and all six attacks signed with the agent's own key were refused: four by the vault with named errors, two by the network itself. We also ran Sonnet 5.5 and Haiku 5.5 as the agent against hostile invoices on testnet: no tokens reached the attacker's account and nothing went over the limit without a signature.
 ```
@@ -34,5 +34,5 @@ On testnet: payments inside the limits settled on NEAR, Arc and Base, exceptions
   withdraw, and NEAR enforces that at the access-key level.
 - Do not claim "secure", "audited", "solves" or prompt-injection prevention, and do not add
   disclaimers either. Say what ran.
-- The approval page has been used with a real wallet (Meteor app, `TESTNET_RUN.md`); the owner console
-  has not. Keep the console's write actions off camera until it has.
+- The approval page has been used with a real wallet (Meteor app, `TESTNET_RUN.md`). The owner console's
+  wallet writes were fixed on 13 Nov 2026 (Buffer, Connect before Read); record them only once a real-wallet run passes.

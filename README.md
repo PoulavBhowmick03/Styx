@@ -47,6 +47,10 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
 0.17 or later, [`near-cli-rs`](https://github.com/near/near-cli-rs), Python 3.11+ and
 [`uv`](https://docs.astral.sh/uv/). No keys of ours are involved.
 
+0. **In the browser, with a NEAR testnet wallet.** On [`styxco.xyz/console`](https://styxco.xyz/console/),
+   "Create a vault" signs one `create_vault` call to the factory `styx-vaults.testnet` (attach about
+   4 NEAR). It creates `<name>.styx-vaults.testnet` owned by you, with no access keys, and opens it.
+   Then fund it, allow a recipient, set an approver and add an agent key from the same page.
 1. **On a local NEAR sandbox, no accounts needed.** `cd contracts/near/styx-vault && cargo test`.
    You should see 41 unit tests and 2 sandbox tests pass. Then `cd ../../..` back to the repo root
    for the steps below. The sandbox tests deploy the vault and
@@ -135,7 +139,7 @@ phone, settled in [`Eauk4L8M…`](https://testnet.nearblocks.io/txns/Eauk4L8MRK1
 
 Live: vault `vault.styx-owner-c87a.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet`
 (EVM address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet` (our test token, not Circle's
-USDC), relay `https://styx-relay-near.fly.dev`.
+USDC), vault factory `styx-vaults.testnet`, relay `https://styx-relay-near.fly.dev`.
 
 What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault account and keeps
 143 bytes of state; the approver pays nothing. Measured per action, with who pays each, in
@@ -145,7 +149,7 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 
 | Piece | Where |
 | --- | --- |
-| Vault contract (Rust, near-sdk) and a NEP-141 test token | [`contracts/near`](contracts/near) |
+| Vault contract (Rust, near-sdk), the vault factory, and a NEP-141 test token | [`contracts/near`](contracts/near) |
 | Agent CLI (`styx-near-vault`) | [`sdk/near`](sdk/near) |
 | MCP server with the agent's payment tools, and its Python seam | [`mcp-server`](mcp-server), [`sdk/py`](sdk/py) |
 | Approval page, owner console, relay | [`approval-page-near`](approval-page-near), [`owner-console-near`](owner-console-near), [`relay-near`](relay-near) |
