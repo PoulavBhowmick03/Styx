@@ -84,8 +84,8 @@ network.
 
 ## Tests
 
-- `reviewer-near`: 30 tests (10 existing plus 20 new), `python -m unittest discover -s tests`.
-- `agent-near-ai`: 11 tests, same command.
+- `reviewer-near`: 30 tests (10 existing plus 20 new), `cd reviewer-near && uv run --extra inference python -m unittest discover -s tests`. Without the `inference` extra, the three ECDSA tests fail with "ECDSA signatures need: pip install 'styx-near-review[inference]'".
+- `agent-near-ai`: 11 tests, `cd agent-near-ai && uv run python -m unittest discover -s tests`.
 - `sdk/near`: `cargo test`, including `inference_evidence_is_included_verbatim_or_omitted`.
 - **Live-recorded fixtures** (`agent-near-ai/tests/fixtures`, from the same model on 13 Nov 2026):
   attestation report, request and response bytes, signature payload. The tests check a pass, a bad
