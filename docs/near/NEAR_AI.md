@@ -63,6 +63,22 @@ as before, then 7a payment id, 7b invoice hash, 7c a recorded model tool call pr
 signatures, 7g every signer is an attested signer in the report. Without `--attestation` the same
 record passes with `7g … NOT CHECKED`.
 
+## Re-run on the owner's vault (13 Nov 2026)
+
+On `vault.styx-owner-c87a.testnet` with a separate key: attestation passed 13 checks, 5 completions
+verified, evidence written. The invoice read "Amount: 30 USDC (30000000 base units)". The model first
+proposed `"30 USDC"` (refused: not a canonical decimal), then `"30"`, which the tools take as base
+units. The vault settled **0.00003 USDC**
+([Dh5zCAVf…](https://testnet.nearblocks.io/txns/Dh5zCAVfaZ3y3cbKFHm16MiGfk2sb2fTW7S9uaE4DH5q)) and
+the model reported "30 USDC, settled". The sealed record with its inference evidence was posted
+([8BAe54U6…](https://testnet.nearblocks.io/txns/8BAe54U6ayuq7Npzo6u2q6QiYJGHAUx2qSGHasx81GHb)) and
+the reviewer passed every check, 1 to 7g, with the attestation re-verified.
+
+So the unit mistake is reproducible with this model even when the invoice states base units, and
+none of the checks catch it: they prove which model decided and that the record is consistent, not
+that the amount matches the invoice. The amount format the tools accept is the fix point; see the
+open item in the plan.
+
 ## What each check proves, and what it does not
 
 | Check | Proves | Does not prove |
