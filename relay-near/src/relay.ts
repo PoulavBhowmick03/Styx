@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { pendingSchema, signatureSchema, signingBytes, type Pending, type Signature } from './protocol';
+import type { Notify } from './telegram';
 export class RelayError extends Error { constructor(public status:number,message:string){super(message);} }
 const fail=(status:number,message:string):never=>{throw new RelayError(status,message);};
 type Entry={pending:Pending;signature?:Signature};
@@ -46,7 +47,7 @@ export class Relay {
  sign(id:string,input:unknown){const e=this.find(id);if(this.expired(e)) fail(410,'expired');if(e.signature) fail(409,'already signed');const signature=verify(e.pending,input);const next=new Map(this.entries);next.set(id,{...e,signature});this.save(next);return {status:'signed'};}
  signature(id:string,token?:string){this.auth(token);const e=this.find(id);if(this.expired(e)) fail(410,'expired');return e.signature?{status:'signed',signature:e.signature}:{status:'pending'};}
 }
-export function server(relay:Relay, allowedOrigins:string[] = []){return createServer(async(req,res)=>{
+export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify){return createServer(async(req,res)=>{
  const origin=req.headers.origin;
  res.setHeader('Vary','Origin');
  if(origin && !allowedOrigins.includes(origin)){res.writeHead(403).end();return;}
@@ -60,7 +61,12 @@ export function server(relay:Relay, allowedOrigins:string[] = []){return createS
   if(req.method==='POST'){let data='';for await(const chunk of req){data+=chunk;if(Buffer.byteLength(data)>65536) fail(413,'body too large');}try{body=JSON.parse(data);}catch{fail(400,'invalid JSON');}}
   const match=path.match(/^\/requests\/([A-Za-z0-9_-]{43})(\/signature)?$/);
   let result:unknown;
-  if(path==='/requests' && req.method==='POST') result=relay.submit((body as {pending?:unknown})?.pending,token);
+  if(path==='/requests' && req.method==='POST'){
+   const created=relay.submit((body as {pending?:unknown})?.pending,token);
+   // A failed alert leaves the request valid; the agent reports alerted:false and can ask again.
+   const alerted=notify?await notify(relay.pending(created.requestId).pending,created.requestId):false;
+   result={...created,alerted};
+  }
   else if(match && req.method==='GET') result=match[2]?relay.signature(match[1],token):relay.pending(match[1]);
   else if(match?.[2] && req.method==='POST') result=relay.sign(match[1],body);
   else fail(404,'unknown endpoint');
