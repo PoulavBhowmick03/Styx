@@ -1,3 +1,4 @@
+import { Buffer } from './protocol';
 import { describe,it,expect } from 'vitest';
 import { fixture } from './fixture';
 import { review,usdc } from './review';
@@ -18,4 +19,8 @@ describe('telegram link message',()=>{
   expect(linkMessage(code)).toContain(`Code: ${code}`);expect(LINK_RECIPIENT).not.toMatch(/\./);
   expect(linkSchema.safeParse({schema:'styx-near-telegram-link/1',code:'short',accountId:'a.testnet',publicKey:fixture().payment.agent,signature:''}).success).toBe(false);
  });
+});
+it('keeps only accountId, publicKey and signature from the wallet result',()=>{
+ const p=fixture(),extra={accountId:'owner.testnet',publicKey:p.authorization.signer,signature:Buffer.alloc(64,1).toString('base64'),state:'x',type:'nep413'};
+ const file=signatureFile(p,extra as never,null);expect(file).not.toHaveProperty('state');expect(file).not.toHaveProperty('type');expect(file.signature).toBe(extra.signature);
 });

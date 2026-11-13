@@ -43,5 +43,6 @@ export const linkSchema=z.object({schema:z.literal('styx-near-telegram-link/1'),
 export type Link=z.infer<typeof linkSchema>;
 export function signatureFile(p:Pending,result:{accountId:string;publicKey:string;signature:string},callbackUrl:string|null):Signature {
  if(result.publicKey!==p.authorization.signer) throw new Error(`Wallet used ${result.publicKey}. Ask the owner to register this key with set_approver and create a new request.`);
- return signatureSchema.parse({schema:'styx-near-signature/1',paymentId:p.payment.payment_id,...result,nonce:p.authorization.approval_nonce,callbackUrl});
+ // Only these three fields: wallets return more (Meteor does), and the schema is strict.
+ return signatureSchema.parse({schema:'styx-near-signature/1',paymentId:p.payment.payment_id,accountId:result.accountId,publicKey:result.publicKey,signature:result.signature,nonce:p.authorization.approval_nonce,callbackUrl});
 }
