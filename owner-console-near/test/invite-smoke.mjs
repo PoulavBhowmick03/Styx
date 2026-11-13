@@ -48,6 +48,7 @@ try{
  const back=(await join.page.locator('#join-result pre').textContent()).trim();
  assert.match(back,new RegExp(`approver=${encodeURIComponent(approverPk).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}`));
  assert.equal(await join.page.locator('#create').isHidden(),true);
+ assert.equal(await join.page.locator('#join-result .setup-note a').getAttribute('href'),'https://t.me/Styx_pvt_bot?start=approver');
  assert.deepEqual(join.errors,[]);
  // 2. The owner opens the link: the signature is checked and the approver field is filled in.
  const own=await open(owner,back.replace(/^https?:\/\/[^/]+\/?/,BASE+'/'));

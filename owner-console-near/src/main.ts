@@ -362,8 +362,8 @@ const steps:Step[]=[
 ];
 function telegramNote(you=false){
  const box=document.createElement('div');box.className='setup-note';
- const link=el('a',`Open @${BOT} in Telegram`) as HTMLAnchorElement;link.href=`https://t.me/${BOT}`;link.target='_blank';link.rel='noopener noreferrer';
- box.append(el('p',you?`Get each request on your phone: send /start to @${BOT} in Telegram, open the link it replies with, and sign the link message in this wallet. Once is enough.`:`Your approver links their wallet to Telegram once: send /start to @${BOT}, open the link it replies with, and sign the link message in their NEAR wallet. After that, every request over the per-payment limit reaches their phone.`),link);
+ const link=el('a',`Open @${BOT} in Telegram (Start is sent for you)`) as HTMLAnchorElement;link.href=`https://t.me/${BOT}?start=approver`;link.target='_blank';link.rel='noopener noreferrer';
+ box.append(el('p',you?`Get each request on your phone: open @${BOT} below and tap Start, open the link it replies with, and sign the link message in this wallet. Once is enough.`:`Your approver links their wallet to Telegram once: open @${BOT} and tap Start, open the link it replies with, and sign the link message in their NEAR wallet. After that, every request over the per-payment limit reaches their phone.`),link);
  return box;
 }
 let setupChoice:number|undefined,lastAgentFile:string|undefined,invited:(Invite&{onChain:boolean})|undefined;
