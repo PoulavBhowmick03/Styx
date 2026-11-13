@@ -87,6 +87,11 @@ binary if they disagree (`mcp-server/tests/test_vault.py`,
 read from the `payment_executed` event. One run, so it shows the rule works, not that this model
 never errs: a model that gets both numbers wrong in the same way still pays the wrong amount.
 
+**Narrowed further (13 Nov 2026, `e7f569d`).** When both numbers are wrong in the same way, the
+USDC figure is the invoice's divided by a million. The tool now reads the invoice and refuses such a
+proposal, naming the amounts to use (`test_a_base_units_figure_read_as_usdc_is_refused_and_honest_amounts_pass`).
+It only applies when the invoice states the USDC figure; it was not re-run with this model.
+
 ## TLS bound to the attested gateway (13 Nov 2026)
 
 The runner now follows NEAR's TLS connection-binding flow

@@ -170,7 +170,9 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 - The agent runtime (MCP server, CLI, key) runs outside any TEE; only the model's inference is
   attested.
 - A model that gets both the USDC and the base-unit amount wrong in the same way still pays the
-  wrong amount within the limits.
+  wrong amount within the limits, unless the invoice states the USDC figure: then the MCP tools refuse
+  a proposal whose USDC amount is that figure divided by a million (unit-tested; not re-run with a
+  live model).
 - The owner console's pause and withdraw have not been used with a real wallet yet. Creating a vault,
   funding it, setting limits, a recipient, an approver and an agent have, and so has the approval page
   (`docs/near/TESTNET_RUN.md`).
