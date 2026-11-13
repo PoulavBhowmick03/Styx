@@ -8,10 +8,11 @@ import '@near-wallet-selector/modal-ui/styles.css';
 import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
 import { review, rpcView, usdc, destinationDetails } from './review';
 import { linkFlow } from './link';
+import { summary, text, showDetails, shortKey, amount, chainName } from './ui';
 import './style.css';
 const status=document.querySelector('#status')!, details=document.querySelector('#details')!;
 const connect=document.querySelector<HTMLButtonElement>('#connect')!,sign=document.querySelector<HTMLButtonElement>('#sign')!;
-const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);};
+const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);status.classList.add('error');};
 async function main(){
  const query=new URLSearchParams(location.search),id=query.get('request'),relay=new URL(query.get('relay')??import.meta.env.VITE_DEFAULT_RELAY??'');
  const code=query.get('link');
@@ -31,7 +32,10 @@ async function main(){
   return facts;
  }catch(e){sign.hidden=true;throw e;}};
  const facts=await check();
- details.textContent=[`Network: ${p.network}`,`RPC (supplied by agent): ${p.rpcUrl}`,`Vault: ${p.vault}`,...destinationDetails(p,facts),`Amount: ${usdc(p.payment.amount)}`,`Agent: ${p.payment.agent}`,`Per-payment limit: ${usdc(facts.agent.per_payment_limit)}`,`Agent daily limit: ${usdc(facts.agent.daily_limit)}`,`Vault daily limit: ${usdc(facts.vault.vault_daily_limit)}`,`Daily spending still applies; remaining balance is not checked here.`,`Approver: ${p.authorization.signer} — enabled: ${facts.approver.enabled}, version: ${facts.approver.version}`,`Authorization expires: ${new Date(Number(p.authorization.authorization_expiry)*1000).toISOString()}`,`Payment expires: ${new Date(Number(p.payment.valid_until)*1000).toISOString()}`,`Invoice reference (unverified): ${p.invoiceReference}`,`Message:\n${p.message}`].join('\n\n');
+ text('lead','An agent asks to pay over its per-payment limit. Check the payment, then sign it in your wallet.');
+ summary([['Amount',amount(usdc(p.payment.amount)),true],['To',p.payment.recipient],['On',chainName(p.chainId)],['Per-payment limit',amount(usdc(facts.agent.per_payment_limit))],['Vault',p.vault],['Approver',shortKey(p.authorization.signer)],['Expires',new Date(Number(p.authorization.authorization_expiry)*1000).toLocaleString()]]);
+ showDetails([`Network: ${p.network}`,`RPC (supplied by agent): ${p.rpcUrl}`,`Vault: ${p.vault}`,...destinationDetails(p,facts),`Amount: ${usdc(p.payment.amount)}`,`Agent: ${p.payment.agent}`,`Per-payment limit: ${usdc(facts.agent.per_payment_limit)}`,`Agent daily limit: ${usdc(facts.agent.daily_limit)}`,`Vault daily limit: ${usdc(facts.vault.vault_daily_limit)}`,`Daily spending still applies; remaining balance is not checked here.`,`Approver: ${p.authorization.signer} — enabled: ${facts.approver.enabled}, version: ${facts.approver.version}`,`Authorization expires: ${new Date(Number(p.authorization.authorization_expiry)*1000).toISOString()}`,`Payment expires: ${new Date(Number(p.payment.valid_until)*1000).toISOString()}`,`Invoice reference (unverified): ${p.invoiceReference}`,`Message:\n${p.message}`].join('\n\n'));
+ if(data.status==='signed'){status.textContent='Already signed. The agent can submit the payment.';return;}
  if(data.status!=='pending') throw new Error(`Request is ${data.status}`);
  const post=async(result:{accountId:string;publicKey:string;signature:string},callback:string|null)=>{
   await check();const file=signatureFile(p,result,callback);
@@ -49,7 +53,7 @@ async function main(){
  }
  const selector=await setupWalletSelector({network:p.network,modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:p.vault})]});
  const modal=setupModal(selector,{contractId:p.vault});
- connect.hidden=false;sign.hidden=false;status.textContent='Chain checks passed. Confirm the vault, token and RPC before signing.';
+ connect.hidden=false;sign.hidden=false;status.textContent='Checked on chain: the vault, limits and approver match this request. Confirm the vault and RPC under All details.';
  connect.onclick=()=>modal.show();
  sign.onclick=async()=>{sign.disabled=true;try{
   await check();const wallet=await selector.wallet();

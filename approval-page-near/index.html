@@ -1,1 +1,12 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Styx NEAR approval</title></head><body><main><h1>Review a NEAR payment</h1><p id="status">Loading request…</p><pre id="details"></pre><button id="connect" hidden>Connect wallet</button><button id="sign" hidden>Sign exception</button></main><script type="module" src="/src/main.ts"></script></body></html>
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Styx · NEAR approval</title></head><body>
+<header><a class="brand" href="/">STYX <span>NEAR / APPROVAL</span></a></header>
+<main>
+<p class="eyebrow" id="eyebrow">APPROVAL REQUEST</p>
+<h1>Review a payment</h1>
+<p class="lead" id="lead"></p>
+<p id="status" role="status">Loading request…</p>
+<dl id="summary" class="summary"></dl>
+<div class="actions"><button id="connect" class="secondary" hidden>Connect wallet</button><button id="sign" hidden>Sign approval</button></div>
+<details id="more" hidden><summary>All details</summary><pre id="details"></pre></details>
+<footer id="footer">Nothing is paid unless you sign this exact payment in your NEAR wallet. The vault checks the signature itself.</footer>
+</main><script type="module" src="/src/main.ts"></script></body></html>
