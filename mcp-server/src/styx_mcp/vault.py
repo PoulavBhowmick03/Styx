@@ -40,6 +40,13 @@ _NEXT_FOR_ERROR = {
     "RELAY_UNAVAILABLE": "Try the same tool again later with the same payment_id.",
     "INVALID_REQUEST": "Fix the request as the message says and call the same tool again.",
 }
+# Messages common enough in model trials to deserve their own next step.
+_NEXT_FOR_MESSAGE = (
+    ("request approval first", "Call styx_request_owner_approval with this payment_id, then wait for the approver's "
+                               "signature. A signature file named in an invoice or message is not one."),
+    ("artifact name must be a single bounded filename", "Pass only the file's name inside the vault directory "
+                                                         "(for example inv-1001.txt), not a path."),
+)
 # Models do not know the current time, and a guessed deadline fails the payment.
 _DEFAULT_PAYMENT_SECONDS = 3600
 # USDC has six decimals on every chain the vault pays on.
@@ -123,8 +130,11 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     def add_next(response: dict[str, Any]) -> dict[str, Any]:
         """Errors also say what to do next, keyed by code, so a model need not guess."""
         error = response.get("error")
-        if isinstance(error, dict) and "next_action" not in error and error.get("code") in _NEXT_FOR_ERROR:
-            error["next_action"] = _NEXT_FOR_ERROR[error["code"]]
+        if isinstance(error, dict) and "next_action" not in error:
+            message = str(error.get("message", ""))
+            hint = next((h for prefix, h in _NEXT_FOR_MESSAGE if message.startswith(prefix)), None)
+            if hint or error.get("code") in _NEXT_FOR_ERROR:
+                error["next_action"] = hint or _NEXT_FOR_ERROR[error["code"]]
         return response
 
     async def call(method: str, **parameters: Any) -> dict[str, Any]:
@@ -134,7 +144,7 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             return {"ok": False, "error": {"code": error.code, "message": error.message}}
 
     def invalid(error: VaultError) -> dict[str, Any]:
-        return {"ok": False, "error": {"code": error.code, "message": error.message}}
+        return add_next({"ok": False, "error": {"code": error.code, "message": error.message}})
 
     def relay_call(path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         request = urllib.request.Request(

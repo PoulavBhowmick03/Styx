@@ -159,6 +159,7 @@ def test_tools_expose_exactly_the_agent_surface_and_pass_structured_errors(tmp_p
             "invoice_reference": "x", "valid_until": 1,
         }))
         assert escape["error"]["code"] == "INVALID_REQUEST"
+        assert escape["error"]["next_action"].startswith("Pass only the file's name")
 
     run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(binary)}, body)
 
