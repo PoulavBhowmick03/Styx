@@ -60,6 +60,17 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 .toast a { font: 0.75rem var(--mono); }
 .toast .toast-close { position: absolute; top: 0.5rem; right: 0.5rem; min-height: 0; padding: 0.15rem 0.45rem; font-size: 0.6875rem; background: transparent; color: var(--fore-2); border-color: var(--rule-2); }
 
+/* Names */
+.label-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.file-button { display: inline-flex; align-items: center; cursor: pointer; padding: 0.5rem 0.9rem; border: 1px solid var(--rule-2); border-radius: var(--radius); font-size: 0.875rem; color: var(--fore); }
+.name-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem; }
+.name-row strong { font-family: var(--serif); font-weight: 400; font-size: 1.15rem; }
+.name-row strong.unnamed { color: var(--fore-2); font-style: italic; }
+.name-row button.link { min-height: 0; padding: 0; background: none; border: 0; color: var(--ember); font: 0.75rem var(--mono); text-decoration: underline; }
+.name-row form { display: flex; gap: 0.5rem; width: 100%; }
+.name-row form input { flex: 1; }
+.name-row form button { min-height: 0; padding: 0.35rem 0.8rem; }
+
 /* Agent expiry */
 .expiry { font: 0.75rem var(--mono); margin: 0.5rem 0; }
 .expiry.ok { color: var(--ok); }

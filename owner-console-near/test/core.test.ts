@@ -147,3 +147,15 @@ describe('agent expiry',()=>{
   expect(agentKeys({keys:[{public_key:'ed25519:a',access_key:{permission:{FunctionCall:{method_names:['pay','post_record']}}}},{public_key:'ed25519:b',access_key:{permission:'FullAccess'}},{public_key:'ed25519:c',access_key:{permission:{FunctionCall:{method_names:['other']}}}}]})).toEqual(['ed25519:a']);
  });
 });
+
+import { parseLabels,labelsFile,cleanLabel,named,short } from '../src/core';
+describe('key labels',()=>{
+ const vault=LIVE_VAULT,agent=live.known.agent;
+ it('round-trips a labels file for the same vault',()=>{const l={[agent]:'Billing bot','vendor-a.styx-owner-c87a.testnet':'Vendor A'};expect(parseLabels(labelsFile(vault,l),vault)).toEqual(l);});
+ it('refuses another vault and junk, drops bad entries',()=>{
+  expect(()=>parseLabels(labelsFile('other.testnet',{}),vault)).toThrow(/not/);expect(()=>parseLabels('nope',vault)).toThrow();
+  expect(parseLabels(JSON.stringify({labels:{'ed25519:bad':'x',[agent]:'  ok\u0007  ','UPPER':'y',[LIVE_VAULT]:''}}),vault)).toEqual({[agent]:'ok'});
+ });
+ it('cleans and caps names',()=>{expect(cleanLabel('a'.repeat(60))).toHaveLength(40);expect(()=>cleanLabel('  ')).toThrow();});
+ it('shows the name with a short key',()=>{expect(named(agent,{[agent]:'CFO'})).toBe(`CFO (${short(agent)})`);expect(named(agent,{})).toBe(agent);});
+});

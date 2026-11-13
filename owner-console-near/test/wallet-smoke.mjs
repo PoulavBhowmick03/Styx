@@ -50,6 +50,16 @@ try{
    assert.equal(renew.args.per_payment_limit,'100000000');assert.equal(renew.args.daily_limit,'1000000000');
    assert.ok(Number(renew.args.valid_until)>Date.now()/1000+29*86400);
    await page.locator('#cancel').click();
+   // Names: kept in this browser per vault, exported as a file, never sent anywhere.
+   const agentPanel=page.locator('#agents article').filter({hasText:fixture.known.agent}).first();
+   await agentPanel.getByRole('button',{name:'Name it'}).click();
+   await agentPanel.locator('.name-row input').fill('Billing bot');
+   await agentPanel.getByRole('button',{name:'Save'}).click();
+   await agentPanel.locator('.name-row strong',{hasText:'Billing bot'}).waitFor();
+   const [names]=await Promise.all([page.waitForEvent('download'),page.locator('#labels-export').click()]);
+   assert.deepEqual(JSON.parse(readFileSync(await names.path(),'utf8')),{vault:fixture.vault,labels:{[fixture.known.agent]:'Billing bot'}});
+   await page.reload();
+   await page.locator('#agents article').filter({hasText:fixture.known.agent}).first().locator('.name-row strong',{hasText:'Billing bot'}).waitFor();
    await page.locator('form[data-method="pause"] button').click();
    assert.match(await page.locator('#preview').textContent(),/"method": "pause"/);
    assert.match(await page.locator('#preview').textContent(),/"deposit": "0"/);
@@ -91,5 +101,5 @@ try{
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload. No real wallet or transaction.');
 }finally{await browser.close();}

@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, type Invite, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -80,6 +80,21 @@ function allowance(key:string){
 }
 function near(value:string){const n=BigInt(value);return `${n/10n**24n}.${(n%10n**24n).toString().padStart(24,'0').replace(/0+$/,'')||'0'}`;}
 const expiring=new Set<string>();let expiryWarned='';
+// ---- Names for keys and accounts, per vault, in this browser only ----
+let names:Labels={};
+const labelStore=()=>context?`styx-labels:${context.network}:${context.vault}`:'';
+function loadLabels(){names={};try{const raw=localStorage.getItem(labelStore());if(raw) names=parseLabels(raw,context!.vault);}catch{/* storage blocked or damaged: start empty */}}
+function saveLabels(){try{localStorage.setItem(labelStore(),labelsFile(context!.vault,names));}catch{toast('error','Names not saved','This browser blocks storage here. Export them to keep them.');}}
+function setLabel(key:string,name:string){names[key]=cleanLabel(name);saveLabels();}
+function nameRow(key:string){
+ const row=document.createElement('div');row.className='name-row';
+ const show=()=>{const b=el('button',names[key]?'Rename':'Name it') as HTMLButtonElement;b.type='button';b.className='link';b.onclick=edit;
+  row.replaceChildren(el('strong',names[key]??'Unnamed'),b);row.firstElementChild!.classList.toggle('unnamed',!names[key]);};
+ const edit=()=>{const f=document.createElement('form');const i=document.createElement('input');i.value=names[key]??'';i.maxLength=40;i.placeholder='e.g. Billing bot, CFO, Acme';i.setAttribute('aria-label','Name');
+  const ok=el('button','Save') as HTMLButtonElement;f.append(i,ok);f.onsubmit=e=>{e.preventDefault();try{setLabel(key,i.value);show();renderPayments();}catch(err){toast('error','Cannot save the name',err instanceof Error?err.message:String(err));}};
+  row.replaceChildren(f);i.focus();};
+ show();return row;
+}
 async function refreshKnown(){
  if(!context || !facts) return;
  const c=context,day=facts.day;expiring.clear();
@@ -87,7 +102,7 @@ async function refreshKnown(){
   const container=$('#'+kind);container.replaceChildren(el('h3',kind[0].toUpperCase()+kind.slice(1)));
   for(const key of keys){
    const field=kind==='agents'?'agent':kind==='approvers'?'approver':'recipient';
-   const panel=el('article','');panel.className='panel';panel.append(el('code',key));container.append(panel);
+   const panel=el('article','');panel.className='panel';panel.append(nameRow(key),el('code',key));container.append(panel);
    try{
     const state=await c.rpc.view(c.vault,'get_'+field,{[field]:key});
     if(context!==c) return;
@@ -115,7 +130,7 @@ function renderPayments(){
  const c=context!;
  for(const row of rows.filter(r=>r.event==='payment_executed')){
   const d=row.data,tr=document.createElement('tr');
-  const cells:[string,string][]=[['Time (UTC)',row.time],['Agent',d.agent],['Recipient',d.recipient],['Amount',amount(d.amount)],['Exception / signer',d.exception?`Yes / ${d.signer}`:'No']];
+  const cells:[string,string][]=[['Time (UTC)',row.time],['Agent',named(d.agent,names)],['Recipient',named(d.recipient,names)],['Amount',amount(d.amount)],['Exception / signer',d.exception?`Yes / ${named(d.signer,names)}`:'No']];
   for(const [label,value] of cells){const td=el('td',String(value));td.dataset.label=label;tr.append(td);}
   const link=el('a',row.tx.slice(0,10)+'…') as HTMLAnchorElement;link.href=`https://${c.network==='testnet'?'testnet.':''}nearblocks.io/txns/${encodeURIComponent(row.tx)}`;link.target='_blank';link.rel='noopener noreferrer';
   const td=el('td','');td.dataset.label='Transaction';td.append(link);tr.append(td);tbody.append(tr);
@@ -215,7 +230,7 @@ function generateAgentKey():string{
  const pair=nacl.sign.keyPair(),pk='ed25519:'+bs58.encode(pair.publicKey);
  const keyFile={account_id:context.vault,public_key:pk,private_key:'ed25519:'+bs58.encode(pair.secretKey)};
  const url=URL.createObjectURL(new Blob([JSON.stringify(keyFile,null,2)+'\n'],{type:'application/json'}));
- const link=document.createElement('a');link.href=url;lastAgentFile=`styx-agent-${context.vault}-${crypto.randomUUID()}.json`;link.download=lastAgentFile;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);pair.secretKey.fill(0);
+ const link=document.createElement('a');link.href=url;lastAgentFile=`styx-agent-${context.vault}-${crypto.randomUUID()}.json`;link.download=lastAgentFile;if(!names[pk]){names[pk]=`Agent ${new Date().toISOString().slice(0,10)}`;saveLabels();}link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);pair.secretKey.fill(0);
  return pk;
 }
 $('#generate').onclick=()=>{
@@ -231,12 +246,16 @@ $('#lookup').onsubmit=async e=>{e.preventDefault();try{
  if(v.kind==='agent')known.agents.add(publicKey(v.key));else if(v.kind==='approver')known.approvers.add(publicKey(v.key));else known.recipients.add(account(v.key));await refreshKnown();renderSetup();
 }catch(e){fail(e);}};
 $('#history').onclick=()=>loadHistory().catch(fail);
+$('#labels-export').onclick=()=>{if(!context){toast('error','Read a vault first');return;}download(`styx-names-${context.vault}.json`,labelsFile(context.vault,names));};
+$<HTMLInputElement>('#labels-import').onchange=async e=>{const input=e.target as HTMLInputElement,file=input.files?.[0];input.value='';if(!file) return;
+ try{if(!context) throw Error('Read a vault first');const add=parseLabels(await file.text(),context.vault);names={...names,...add};saveLabels();await refreshKnown();renderPayments();toast('ok',`Imported ${Object.keys(add).length} names`);}
+ catch(err){toast('error','Cannot import names',err instanceof Error?err.message:String(err));}};
 $('#disconnect').onclick=async()=>{try{await (await selector?.wallet())?.signOut();connected='';clearPlan();role();}catch(e){fail(e);}};
 async function load(){
  if(busy) return;clearPlan();facts=undefined;connected='';selector=undefined;unsubscribe?.();role();
  try{
   const values=readForm(loadForm);if(!['testnet','mainnet'].includes(values.network)) throw Error('Unsupported network');
-  context={vault:account(values.vault),network:values.network,rpc:new RPC(values.rpc)};
+  context={vault:account(values.vault),network:values.network,rpc:new RPC(values.rpc)};loadLabels();
   known={agents:new Set(),approvers:new Set(),recipients:new Set()};rows=[];
   say('Reading finalized vault state…');await context.rpc.assertNetwork(context.network);await refresh();
   await walletSetup(context.network,context.vault);say('Vault state read from the chain.');
@@ -419,7 +438,7 @@ if(!query.has('join')){
   if(!(await inviteValid(i))){toast('error','Invite link did not check out','The signature does not match the key and vault. Ask the approver for a new link.');return;}
   const rpc=new RPC((loadForm.elements.namedItem('rpc') as HTMLInputElement).value);
   const onChain=await rpc.call('query',{request_type:'view_access_key',finality:'final',account_id:i.accountId,public_key:i.publicKey}).then(()=>true,()=>false);
-  invited={...i,onChain};setupChoice=1;renderSetup();
+  invited={...i,onChain};setupChoice=1;if(context && context.vault===i.vault && !names[i.publicKey]){names[i.publicKey]=i.accountId;saveLabels();}renderSetup();
   toast('ok',`Approver invite from ${i.accountId}`,onChain?'Signature checked; the key is on their account. It is filled in under Set the rules.':'Signature checked, but the key is not on that account. Check with them before adding it.');
  })().catch(fail);}}catch(e){fail(e);}
 }

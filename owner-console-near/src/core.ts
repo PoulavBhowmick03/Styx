@@ -268,3 +268,18 @@ export function extendValues(agent:string,state:{per_payment_limit:string;daily_
 export function agentKeys(keys:{keys:{public_key:string;access_key:{permission:any}}[]}):string[]{
  return keys.keys.filter(k=>typeof k.access_key.permission==='object' && k.access_key.permission.FunctionCall?.method_names?.includes('pay')).map(k=>k.public_key);
 }
+
+// ---- Names for keys and accounts: kept in this browser (or a shared file), never on chain ----
+export type Labels=Record<string,string>;
+const labelKey=(k:string)=>{if(k.startsWith('ed25519:')) return publicKey(k);return account(k);};
+export function cleanLabel(name:string):string{const n=name.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,40);if(!n) throw Error('Name cannot be empty');return n;}
+// Accepts a labels file: {"vault":"…","labels":{"ed25519:…":"CFO", "vendor.testnet":"Acme"}}. Bad entries are dropped.
+export function parseLabels(text:string,vault:string):Labels{
+ let d:any;try{d=JSON.parse(text);}catch{throw Error('Not a labels file (invalid JSON)');}
+ if(!d || typeof d!=='object' || typeof d.labels!=='object' || Array.isArray(d.labels)) throw Error('Not a labels file');
+ if(d.vault!==undefined && d.vault!==vault) throw Error(`These labels are for ${String(d.vault)}, not ${vault}`);
+ const out:Labels={};for(const [k,v] of Object.entries(d.labels)){try{if(typeof v==='string') out[labelKey(k)]=cleanLabel(v);}catch{/* skip */}}return out;
+}
+export const labelsFile=(vault:string,labels:Labels)=>JSON.stringify({vault:account(vault),labels},null,2)+'\n';
+export const short=(k:string)=>k.startsWith('ed25519:')?`${k.slice(0,14)}…${k.slice(-4)}`:k;
+export const named=(k:string,labels:Labels)=>labels[k]?`${labels[k]} (${short(k)})`:k;
