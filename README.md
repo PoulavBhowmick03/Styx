@@ -47,6 +47,13 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
 3. **Through the MCP server an agent uses.** `scripts/near/mcp_e2e.py` drives the repo's MCP tools
    over the NEAR CLI and the relay; `scripts/near/model_trial.py` puts a real model in the agent's
    seat. See [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md) for what Sonnet and Haiku did.
+4. **With the agent's model in a NEAR AI Cloud TEE.** Set `NEARAI_API_KEY` (a funded NEAR AI Cloud key;
+   HACKATHON.md Q-000 explains the free credits), run step 2 so you have a vault and a `demo.env`, then
+   `cd agent-near-ai && STYX_NEAR_DEMO_ENV=<that demo.env> uv run styx-near-ai-agent <invoice file>`.
+   You should see `attestation verified: 14 checks` (Intel TDX and NVIDIA evidence, and the TLS
+   connection bound to the attested gateway), then the payment settle, and an
+   `inference-<id>.json` evidence file in the vault's state directory. Without a funded key the run
+   stops at the first completion and pays nothing. Details: [`docs/near/NEAR_AI.md`](docs/near/NEAR_AI.md).
 
 Styx started at ETHGlobal Mumbai (5 to 7 Nov 2026) on Arc; the NEAR build began on 12 Nov 2026. The
 sections below the NEAR one describe the Arc build.

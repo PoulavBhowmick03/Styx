@@ -14,12 +14,14 @@
 
 ## Steps
 
-- [ ] Verifier: accept the TLS-bound report-data layout; check the gateway fingerprint against the
+- [x] Verifier: accept the TLS-bound report-data layout; check the gateway fingerprint against the
       peer SPKI observed on the connection; unit tests with a live-recorded fixture
-- [ ] Runner: one TLS connection for the report and every completion and signature request; read the
+- [x] Runner: one TLS connection for the report and every completion and signature request; read the
       peer certificate from it; re-run the binding on reconnect; record it in the evidence
-- [ ] Reviewer: report the TLS binding from the evidence and check it against the saved report
-- [ ] Live run on the owner's vault, payment amount confirmed on chain
-- [ ] Stub MCP server and runner tests use `amount_usdc` plus `amount`
-- [ ] README "Try it": the NEAR AI TEE agent
-- [ ] Docs: NEAR_AI.md
+- [x] Reviewer: report the TLS binding from the evidence and check it against the saved report
+- [x] Live run on the owner's vault, payment amount confirmed on chain
+- [x] Stub MCP server and runner tests use `amount_usdc` plus `amount`
+- [x] README "Try it": the NEAR AI TEE agent
+- [x] Docs: NEAR_AI.md
+
+Done 13 Nov 2026: see "TLS bound to the attested gateway" in NEAR_AI.md.

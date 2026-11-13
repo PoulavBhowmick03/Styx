@@ -87,6 +87,31 @@ binary if they disagree (`mcp-server/tests/test_vault.py`,
 read from the `payment_executed` event. One run, so it shows the rule works, not that this model
 never errs: a model that gets both numbers wrong in the same way still pays the wrong amount.
 
+## TLS bound to the attested gateway (13 Nov 2026)
+
+The runner now follows NEAR's TLS connection-binding flow
+(docs.near.ai, "TLS Connection Binding"). It opens one TLS connection to `cloud-api.near.ai`, reads
+the gateway's certificate from it, and on that same connection asks for the attestation report with
+`include_tls_fingerprint=true` and **no API key**. With TLS binding the quote's report data is
+`SHA-256(signer || SPKI fingerprint) || nonce`; the runner requires that, and requires the quote-bound
+fingerprint to equal the SHA-256 of the SPKI it saw. The completions and signature requests then
+go over the same connection. If the server closes it, the runner reconnects only to the same
+attested key, and the evidence records that (`same_connection: false`, `reconnects_to_same_key`).
+
+Live run on the owner's vault: invoice INV-7002, 12.5 USDC. Attestation passed 14 checks, including
+"the TLS certificate on this connection is the one the quote binds" (peer SPKI `73862c25…a5ad`); 4
+completions verified; the model sent `amount_usdc "12.5"` and `amount "12500000"`; the vault paid
+**12.5 USDC** ([HGQYqBHf…](https://testnet.nearblocks.io/txns/HGQYqBHfx2wCXAq34uwtpyYurgf2uLaY89ouV6HyCm9h)). The sealed record
+([Hn3mCqAN…](https://testnet.nearblocks.io/txns/Hn3mCqANqA29ii4NigjXpGfPD7MVfpi5XWE7CXHiZ93o)) passed the reviewer, now including
+`7h TLS connection bound to the attested gateway: PASS`. The reviewer can check that the recorded
+certificate is the one the saved quote binds; it cannot re-observe the live connection.
+
+**What this proves now:** the HTTPS connection that carried the invoice text terminated inside the
+attested gateway TEE, not at a proxy in front of it. **Still not proven:** the hop from the gateway
+to the model endpoint (NEAR's page says the binding does not extend there; the model's own quote
+also binds a TLS fingerprint, which we check but cannot match to a connection we do not see); and
+anything about the machine running the agent runtime.
+
 ## What each check proves, and what it does not
 
 | Check | Proves | Does not prove |
@@ -98,8 +123,7 @@ never errs: a model that gets both numbers wrong in the same way still pays the 
 | Invoice hash, payment id, a tool call matching the payment (reviewer) | The evidence is about this invoice and payment, and the model's recorded proposal matches what the vault settled | That the model saw only that invoice. The tool-call list is the runner's record |
 | `--attestation` re-verification | The report on file is the one hashed in the evidence, and it verifies now | Freshness: the nonce was ours at run time, and no maximum evidence age is enforced |
 
-Not verified, so not claimed: that the TLS connection ended inside the TEE (we did not request
-`include_tls_fingerprint`), so we do not claim invoice text stayed private from NEAR AI's gateway;
+Not verified, so not claimed (before 13 Nov's TLS binding, see above): that the TLS connection ended inside the TEE;
 anything about the agent's NEAR key or the machine running the MCP server and the runner; the
 evidence file itself is written by the runner and included verbatim by the CLI, so a reviewer
 trusts it only through the checks above. Payment amounts and recipients are public on chain. Only
@@ -108,8 +132,8 @@ network.
 
 ## Tests
 
-- `reviewer-near`: 30 tests (10 existing plus 20 new), `cd reviewer-near && uv run --extra inference python -m unittest discover -s tests`. Without the `inference` extra, the three ECDSA tests fail with "ECDSA signatures need: pip install 'styx-near-review[inference]'".
-- `agent-near-ai`: 11 tests, `cd agent-near-ai && uv run python -m unittest discover -s tests`.
+- `reviewer-near`: 34 tests (30 plus 4 for check 7h), `cd reviewer-near && uv run --extra inference python -m unittest discover -s tests`. Without the `inference` extra, the three ECDSA tests fail with "ECDSA signatures need: pip install 'styx-near-review[inference]'".
+- `agent-near-ai`: 17 tests (11 original, 6 for the TLS binding), `cd agent-near-ai && uv run python -m unittest discover -s tests`.
 - `sdk/near`: `cargo test`, including `inference_evidence_is_included_verbatim_or_omitted`.
 - **Live-recorded fixtures** (`agent-near-ai/tests/fixtures`, from the same model on 13 Nov 2026):
   attestation report, request and response bytes, signature payload. The tests check a pass, a bad
