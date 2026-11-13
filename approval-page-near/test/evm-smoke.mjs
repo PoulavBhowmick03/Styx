@@ -10,7 +10,8 @@ try{
   // This request is historical and consumed. The frozen clock tests its UI shape only.
   await page.clock.install({time:new Date((Number(live.pending.authorization.authorization_expiry)-60)*1000)});
   await page.route('https://relay.example/**',r=>r.fulfill({json:{pending:live.pending,status:'pending'}}));
-  await page.route(live.pending.rpcUrl,async route=>{
+  // The page reads through its own testnet RPC (review.ts PAGE_RPC), not the request's.
+  await page.route('https://test.rpc.fastnear.com/',async route=>{
    const q=route.request().postDataJSON(),method=q.params.method_name;methods.push(method);
    const captured=live.views[method];assert.ok(captured,`Unexpected view: ${method}`);
    assert.deepEqual(JSON.parse(Buffer.from(q.params.args_base64,'base64').toString()),captured.args);

@@ -24,3 +24,11 @@ it('keeps only accountId, publicKey and signature from the wallet result',()=>{
  const p=fixture(),extra={accountId:'owner.testnet',publicKey:p.authorization.signer,signature:Buffer.alloc(64,1).toString('base64'),state:'x',type:'nep413'};
  const file=signatureFile(p,extra as never,null);expect(file).not.toHaveProperty('state');expect(file).not.toHaveProperty('type');expect(file.signature).toBe(extra.signature);
 });
+describe('page RPC',()=>{
+ it('reads through its own RPC, not the one the request names',async()=>{
+  const {rpcView,PAGE_RPC}=await import('./review');const p={...fixture(),rpcUrl:'https://hostile.example/rpc'};const urls:string[]=[];
+  const real=globalThis.fetch;globalThis.fetch=(async(url:string)=>{urls.push(url);return new Response(JSON.stringify({result:{result:Array.from(Buffer.from('{}')),block_hash:'h'}}));}) as any;
+  try{await rpcView(p)('get_vault',{});}finally{globalThis.fetch=real;}
+  expect(urls).toEqual([PAGE_RPC.testnet]);
+ });
+});

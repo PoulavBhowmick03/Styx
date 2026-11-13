@@ -1,9 +1,12 @@
 import { Buffer, evmAddress, isEvmPending, type Pending } from './protocol';
 export type View=(method:string,args:Record<string,unknown>)=>Promise<any>;
-export function rpcView(p:Pending):View {
+// The page reads the vault through its own RPC, never the one named in the request: the request
+// comes from the agent, and the review must not depend on anything the agent chose.
+export const PAGE_RPC:Record<Pending['network'],string>={testnet:'https://test.rpc.fastnear.com',mainnet:'https://rpc.mainnet.near.org'};
+export function rpcView(p:Pending,rpc=PAGE_RPC[p.network]):View {
  let block:string|undefined;
  return async(method,args)=>{
-  const response=await fetch(p.rpcUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:method,method:'query',params:{request_type:'call_function',...(block?{block_id:block}:{finality:'final'}),account_id:p.vault,method_name:method,args_base64:Buffer.from(JSON.stringify(args)).toString('base64')}}),signal:AbortSignal.timeout(15000)});
+  const response=await fetch(rpc,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:method,method:'query',params:{request_type:'call_function',...(block?{block_id:block}:{finality:'final'}),account_id:p.vault,method_name:method,args_base64:Buffer.from(JSON.stringify(args)).toString('base64')}}),signal:AbortSignal.timeout(15000)});
   if(!response.ok) throw new Error('RPC unavailable');
   const data=await response.json();if(data.error || !data.result?.result) throw new Error(`RPC failed: ${method}`);
   block??=data.result.block_hash;

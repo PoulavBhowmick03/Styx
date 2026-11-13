@@ -6,7 +6,7 @@ import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
-import { review, rpcView, usdc, destinationDetails } from './review';
+import { review, rpcView, usdc, destinationDetails, PAGE_RPC } from './review';
 import { linkFlow } from './link';
 import { summary, text, showDetails, shortKey, amount, chainName } from './ui';
 import '../../site/styx.css';
@@ -35,7 +35,7 @@ async function main(){
  const facts=await check();
  text('lead','An agent asks to pay over its per-payment limit. Check the payment, then sign it in your wallet.');
  summary([['Amount',amount(usdc(p.payment.amount)),true],['To',p.payment.recipient],['On',chainName(p.chainId)],['Per-payment limit',amount(usdc(facts.agent.per_payment_limit))],['Vault',p.vault],['Approver',shortKey(p.authorization.signer)],['Expires',new Date(Number(p.authorization.authorization_expiry)*1000).toLocaleString()]]);
- showDetails([`Network: ${p.network}`,`RPC (supplied by agent): ${p.rpcUrl}`,`Vault: ${p.vault}`,...destinationDetails(p,facts),`Amount: ${usdc(p.payment.amount)}`,`Agent: ${p.payment.agent}`,`Per-payment limit: ${usdc(facts.agent.per_payment_limit)}`,`Agent daily limit: ${usdc(facts.agent.daily_limit)}`,`Vault daily limit: ${usdc(facts.vault.vault_daily_limit)}`,`Daily spending still applies; remaining balance is not checked here.`,`Approver: ${p.authorization.signer} — enabled: ${facts.approver.enabled}, version: ${facts.approver.version}`,`Authorization expires: ${new Date(Number(p.authorization.authorization_expiry)*1000).toISOString()}`,`Payment expires: ${new Date(Number(p.payment.valid_until)*1000).toISOString()}`,`Invoice reference (unverified): ${p.invoiceReference}`,`Message:\n${p.message}`].join('\n\n'));
+ showDetails([`Network: ${p.network}`,`RPC: ${PAGE_RPC[p.network]} (this page's own; the request suggested ${p.rpcUrl})`,`Vault: ${p.vault}`,...destinationDetails(p,facts),`Amount: ${usdc(p.payment.amount)}`,`Agent: ${p.payment.agent}`,`Per-payment limit: ${usdc(facts.agent.per_payment_limit)}`,`Agent daily limit: ${usdc(facts.agent.daily_limit)}`,`Vault daily limit: ${usdc(facts.vault.vault_daily_limit)}`,`Daily spending still applies; remaining balance is not checked here.`,`Approver: ${p.authorization.signer} — enabled: ${facts.approver.enabled}, version: ${facts.approver.version}`,`Authorization expires: ${new Date(Number(p.authorization.authorization_expiry)*1000).toISOString()}`,`Payment expires: ${new Date(Number(p.payment.valid_until)*1000).toISOString()}`,`Invoice reference (unverified): ${p.invoiceReference}`,`Message:\n${p.message}`].join('\n\n'));
  if(data.status==='signed'){status.textContent='Already signed. The agent can submit the payment.';status.className='done';return;}
  if(data.status!=='pending') throw new Error(`Request is ${data.status}`);
  const post=async(result:{accountId:string;publicKey:string;signature:string},callback:string|null)=>{
@@ -54,7 +54,7 @@ async function main(){
  }
  const selector=await setupWalletSelector({network:p.network,modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:p.vault})]});
  const modal=setupModal(selector,{contractId:p.vault});
- connect.hidden=false;sign.hidden=false;status.textContent='Checked on chain: the vault, limits and approver match this request. Confirm the vault and RPC under All details.';
+ connect.hidden=false;sign.hidden=false;status.textContent=`Checked on chain through this page's own RPC: the vault, limits and approver match this request. Confirm the vault under All details.`;
  connect.onclick=()=>modal.show();
  sign.onclick=async()=>{sign.disabled=true;try{
   await check();const wallet=await selector.wallet();
