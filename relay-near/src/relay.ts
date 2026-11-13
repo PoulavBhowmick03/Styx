@@ -65,6 +65,9 @@ export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify
   let body:unknown;
   if(req.method==='POST'){let data='';for await(const chunk of req){data+=chunk;if(Buffer.byteLength(data)>65536) fail(413,'body too large');}try{body=JSON.parse(data);}catch{fail(400,'invalid JSON');}}
   const match=path.match(/^\/requests\/([A-Za-z0-9_-]{43})(\/signature)?$/);
+  const linkPath=path.match(/^\/links\/(.+)$/);
+  let linkStatus:string|undefined;
+  if(linkPath){const k=decodeURIComponent(linkPath[1]);let ok=false;try{ok=k.startsWith('ed25519:') && bs58.decode(k.slice(8)).length===32;}catch{/* not base58 */}if(!ok) fail(400,'expected an ed25519 public key');linkStatus=k;}
   let result:unknown;
   if(path==='/requests' && req.method==='POST'){
    const created=relay.submit((body as {pending?:unknown})?.pending,token);
@@ -78,6 +81,8 @@ export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify
    await telegram.linked(chatId,publicKey,accountId);
    result={linked:true,publicKey};
   }
+  // Public: whether a key gets Telegram alerts, so the owner's console can say so. No chat ids or counts.
+  else if(linkStatus && req.method==='GET' && telegram) result={publicKey:linkStatus,linked:telegram.links.chats(linkStatus).length>0};
   else if(match && req.method==='GET') result=match[2]?relay.signature(match[1],token):relay.pending(match[1]);
   else if(match?.[2] && req.method==='POST') result=relay.sign(match[1],body);
   else fail(404,'unknown endpoint');

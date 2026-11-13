@@ -166,9 +166,26 @@ it('links over HTTP from an allowed origin and confirms in the chat', async () =
   } finally { await new Promise<void>(r => app.close(() => r())); }
 });
 
+it('says over HTTP whether a key gets Telegram alerts, and nothing more', async () => {
+  const tg = fakeTelegram(), links = new Links(undefined, () => 1000), bot = telegramBot({ ...opts, links, fetch: tg.fetch });
+  const app = server(new Relay('token'), ['https://page.example'], undefined, { links, linked: bot.linked });
+  await new Promise<void>(r => app.listen(0, '127.0.0.1', r));
+  try {
+    const base = `http://127.0.0.1:${(app.address() as any).port}/links/`;
+    const get = (key: string) => fetch(base + encodeURIComponent(key), { headers: { Origin: 'https://page.example' } });
+    expect(await (await get(pk())).json()).toEqual({ publicKey: pk(), linked: false });
+    links.link(signLink(links.create('42')));
+    const r = await get(pk());
+    expect(r.headers.get('access-control-allow-origin')).toBe('https://page.example');
+    expect(await r.json()).toEqual({ publicKey: pk(), linked: true });
+    expect((await get('ed25519:nope')).status).toBe(400);
+    expect((await fetch(base + encodeURIComponent(pk()), { headers: { Origin: 'https://evil.example' } })).status).toBe(403);
+  } finally { await new Promise<void>(r => app.close(() => r())); }
+});
+
 it('has no link endpoint when Telegram is off', async () => {
   const app = server(new Relay('token'));
   await new Promise<void>(r => app.listen(0, '127.0.0.1', r));
-  try { expect((await fetch(`http://127.0.0.1:${(app.address() as any).port}/links`, { method: 'POST', body: '{}' })).status).toBe(404); }
+  try { const base=`http://127.0.0.1:${(app.address() as any).port}/links`; expect((await fetch(base, { method: 'POST', body: '{}' })).status).toBe(404); expect((await fetch(base+'/'+encodeURIComponent(pk()))).status).toBe(404); }
   finally { await new Promise<void>(r => app.close(() => r())); }
 });
