@@ -85,8 +85,9 @@ Signing and contract integration still need Poulav's review before being trusted
 
 ## Trust and limits
 
-The supplied RPC can fabricate view results. The page shows the RPC, vault and token so the
-approver can check them independently. Network is the requested wallet network, not independently
+Since 13 November the page reads through its own RPC per network, not the RPC named in the request
+(which the agent supplies); it shows both. That RPC is still trusted: the page is not a light client.
+The page shows the vault and token so the approver can check them independently. Network is the requested wallet network, not independently
 attested by RPC. Six-decimal formatting does not establish that a token is genuine USDC.
 Invoice text is unverified and rendered as text. Current daily spend, used nonces/payment IDs,
 funding and successful settlement are not checked here. Native NEAR transfers are enforced by the
