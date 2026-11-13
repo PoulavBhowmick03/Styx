@@ -145,11 +145,14 @@ part A from step A3 on.
 
 ## On a phone with the Meteor app
 
-The page reaches Meteor in one of two ways: through the wallet's injected bridge (the Meteor
-extension, or Meteor's in-app browser if the app provides one), or by opening Meteor's web wallet
-(`wallet.meteorwallet.app`) in a popup. No documented link opens a page inside the Meteor app, so
-try, in order, and note which one worked:
+No documented link opens a page inside the Meteor app, so Telegram cannot launch the app straight to
+the request. The pages include both Meteor modules: the web and extension one, and the in-app one
+(`@near-wallet-selector/meteor-wallet-app`), which signs through the Meteor app natively when the page
+is opened inside the app's own browser. So on a phone:
 
-1. Tap **Review and sign with Meteor** in the Telegram alert.
-2. If the wallet does not appear, long-press the link in the alert and open it in the phone browser.
-3. If the Meteor app has a built-in browser, paste the link there.
+1. In the Telegram alert, copy the link.
+2. Open it inside the **Meteor app's browser**; connect, choose Meteor, and approve in the app.
+3. If that is not available, tapping the button opens the page in Telegram or the phone browser,
+   which falls back to Meteor's web wallet (`wallet.meteorwallet.app`) in a popup.
+
+Note which path worked and paste it to Claude.

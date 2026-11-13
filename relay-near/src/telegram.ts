@@ -27,7 +27,7 @@ export function alertText(p: Pending, link: string): string {
     `Approver key asked to sign: ${p.authorization.signer}`,
     '',
     `Review and sign with Meteor Wallet: ${link}`,
-    'If the wallet does not open from Telegram, long-press the link and open it in your phone browser.',
+    'On a phone, copy this link and open it in the Meteor app\'s browser: the app then signs it directly.',
     'Nothing is paid unless you sign this exact payment in your NEAR wallet.',
   ].join('\n');
 }

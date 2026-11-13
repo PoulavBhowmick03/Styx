@@ -1,6 +1,8 @@
 import { setupWalletSelector } from '@near-wallet-selector/core';
 import { setupModal } from '@near-wallet-selector/modal-ui';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
+// Inside the Meteor mobile app's own browser this signs through the app natively; elsewhere it stays hidden.
+import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
 import { review, rpcView, usdc, destinationDetails } from './review';
@@ -41,7 +43,7 @@ async function main(){
   if(isEvmPending(p) && saved.evmToken!==facts.evmChain.token) throw new Error('EVM token configuration changed. Reload and review the destination again.');
   await post({accountId:fragment.get('accountId')??'',publicKey:fragment.get('publicKey')??'',signature:fragment.get('signature')??''},saved.callback);return;
  }
- const selector=await setupWalletSelector({network:p.network,modules:[setupMeteorWallet()]});
+ const selector=await setupWalletSelector({network:p.network,modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:p.vault})]});
  const modal=setupModal(selector,{contractId:p.vault});
  connect.hidden=false;sign.hidden=false;status.textContent='Chain checks passed. Confirm the vault, token and RPC before signing.';
  connect.onclick=()=>modal.show();

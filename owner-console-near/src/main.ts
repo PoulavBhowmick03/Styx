@@ -1,6 +1,8 @@
 import { setupWalletSelector, type WalletSelector } from '@near-wallet-selector/core';
 import { setupModal } from '@near-wallet-selector/modal-ui';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
+// Inside the Meteor mobile app's own browser this signs through the app natively; elsewhere it stays hidden.
+import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
@@ -40,7 +42,7 @@ function render(){
 }
 async function walletSetup(network:string,vault:string){
  unsubscribe?.();
- selector=await setupWalletSelector({network:network as 'testnet'|'mainnet',modules:[setupMeteorWallet()]});
+ selector=await setupWalletSelector({network:network as 'testnet'|'mainnet',modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:vault})]});
  const update=()=>{const accounts=selector!.store.getState().accounts;connected=accounts.find(a=>a.active)?.accountId??'';clearPlan();role();};
  update();const subscription=selector.store.observable.subscribe(update);unsubscribe=()=>subscription.unsubscribe();
  $('#connect').onclick=()=>setupModal(selector!,{contractId:vault}).show();
