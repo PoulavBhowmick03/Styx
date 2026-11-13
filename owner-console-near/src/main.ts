@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -86,6 +86,17 @@ const labelStore=()=>context?`styx-labels:${context.network}:${context.vault}`:'
 function loadLabels(){names={};try{const raw=localStorage.getItem(labelStore());if(raw) names=parseLabels(raw,context!.vault);}catch{/* storage blocked or damaged: start empty */}}
 function saveLabels(){try{localStorage.setItem(labelStore(),labelsFile(context!.vault,names));}catch{toast('error','Names not saved','This browser blocks storage here. Export them to keep them.');}}
 function setLabel(key:string,name:string){names[key]=cleanLabel(name);saveLabels();}
+// Whether the relay will reach this approver on Telegram; filled in when the relay answers.
+const RELAY=import.meta.env.VITE_RELAY_URL??DEFAULT_RELAY;
+function telegramBadge(key:string){
+ const b=el('p','Telegram alerts: checking…');b.className='tg-badge';
+ telegramLinked(RELAY,key).then(linked=>{
+  if(linked===true){b.textContent='Telegram alerts: on';b.classList.add('on');}
+  else if(linked===false){b.textContent='Telegram alerts: off. Requests will not reach this approver\'s phone until they link Telegram (Copy an invite link under Set the rules).';b.classList.add('off');}
+  else b.textContent='Telegram alerts: unknown (relay unavailable)';
+ });
+ return b;
+}
 function nameRow(key:string){
  const row=document.createElement('div');row.className='name-row';
  const show=()=>{const b=el('button',names[key]?'Rename':'Name it') as HTMLButtonElement;b.type='button';b.className='link';b.onclick=edit;
@@ -107,6 +118,7 @@ async function refreshKnown(){
     const state=await c.rpc.view(c.vault,'get_'+field,{[field]:key});
     if(context!==c) return;
     if(!state){panel.append(el('p','No current entry'));continue;}
+    if(kind==='approvers') panel.append(telegramBadge(key));
     panel.append(el('pre',JSON.stringify(state,null,2)));
     if(kind==='agents'){
      const now=Math.floor(Date.now()/1000),ex=expiry(String(state.valid_until),now);

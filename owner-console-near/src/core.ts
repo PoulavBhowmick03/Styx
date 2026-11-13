@@ -300,3 +300,12 @@ export function parseRecipients(text:string):{account:string;name?:string}[]{
  }
  return out;
 }
+
+// ---- Does an approver get Telegram alerts? The relay answers GET /links/<key> with {linked}. ----
+export const DEFAULT_RELAY='https://styx-relay-near.fly.dev';
+export async function telegramLinked(relay:string,key:string,get:typeof fetch=fetch):Promise<boolean|null>{
+ try{
+  const r=await get(new URL(`/links/${encodeURIComponent(publicKey(key))}`,relay).toString(),{signal:AbortSignal.timeout(8000)});
+  if(!r.ok) return null;const d=await r.json();return d?.publicKey===key && typeof d.linked==='boolean'?d.linked:null;
+ }catch{return null;}
+}

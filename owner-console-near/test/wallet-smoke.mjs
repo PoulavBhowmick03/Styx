@@ -15,6 +15,7 @@ try{
      wallet:async()=>({id:'meteor-wallet',getAccounts:async()=>accounts,signAndSendTransaction:async params=>{window.__submitted=params;return {transaction:{hash:'mock-owner-change'}};}})};
    }` }));
   await page.route('https://api-testnet.nearblocks.io/**',route=>route.fulfill({status:403}));
+  await page.route('https://styx-relay-near.fly.dev/links/**',route=>route.fulfill({json:{publicKey:decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop()),linked:true}}));
   await page.route(fixture.rpc,async route=>{
    const q=route.request().postDataJSON(),p=q.params;let result;
    if(q.method==='status')result=fixture.status;
@@ -94,6 +95,7 @@ try{
    await page.locator('#lookup input').fill(fixture.known.approver);
    await page.locator('#lookup button').click();
    await page.locator('#setup-form').getByText('This vault is ready').waitFor();
+   await page.locator('#approvers .tg-badge.on').first().waitFor();
    const ready=await page.locator('#setup-form').textContent();
    assert.match(ready,/Hand the agent its key/);assert.doesNotMatch(ready,/private_key/);
    const [file]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Download agent settings'}).click()]);
@@ -103,5 +105,5 @@ try{
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload; approver shown as getting Telegram alerts. No real wallet or transaction.');
 }finally{await browser.close();}

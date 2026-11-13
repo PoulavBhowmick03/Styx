@@ -83,6 +83,11 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 .name-row form input { flex: 1; }
 .name-row form button { min-height: 0; padding: 0.35rem 0.8rem; }
 
+/* Telegram status */
+.tg-badge { font: 0.75rem var(--mono); color: var(--fore-2); margin: 0.4rem 0; }
+.tg-badge.on { color: var(--ok); }
+.tg-badge.off { color: var(--ember); }
+
 /* Agent expiry */
 .expiry { font: 0.75rem var(--mono); margin: 0.5rem 0; }
 .expiry.ok { color: var(--ok); }

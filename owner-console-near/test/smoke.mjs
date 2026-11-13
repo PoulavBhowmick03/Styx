@@ -7,6 +7,7 @@ try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  let indexerDown=false;
  await page.route('https://api-testnet.nearblocks.io/**',route=>route.fulfill(indexerDown?{status:403}:{json:{txns:Object.keys(fixture.transactions).map(hash=>({transaction_hash:hash,signer_account_id:fixture.vault}))}}));
+ await page.route('https://styx-relay-near.fly.dev/**',route=>route.fulfill({status:503}));
  await page.route(fixture.rpc,async route=>{
   const q=route.request().postDataJSON(),p=q.params;let result;
   if(q.method==='status')result=fixture.status;

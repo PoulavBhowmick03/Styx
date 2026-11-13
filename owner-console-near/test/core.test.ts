@@ -173,3 +173,19 @@ describe('recipient lists',()=>{
   expect(b.calls.reduce((s,c)=>s+BigInt(c.gas),0n)<=300_000_000_000_000n).toBe(true);
  });
 });
+
+import { telegramLinked } from '../src/core';
+describe('telegram link status',()=>{
+ const key=live.known.approver;
+ const reply=(status:number,body:unknown)=>(async()=>({ok:status<300,json:async()=>body}))as never;
+ it('reads linked and not linked',async()=>{
+  expect(await telegramLinked('https://relay.example',key,reply(200,{publicKey:key,linked:true}))).toBe(true);
+  expect(await telegramLinked('https://relay.example',key,reply(200,{publicKey:key,linked:false}))).toBe(false);
+ });
+ it('says unknown when the relay is down, answers for another key, or is malformed',async()=>{
+  expect(await telegramLinked('https://relay.example',key,reply(404,{}))).toBeNull();
+  expect(await telegramLinked('https://relay.example',key,reply(200,{publicKey:'ed25519:x',linked:true}))).toBeNull();
+  expect(await telegramLinked('https://relay.example',key,(async()=>{throw Error('down');})as never)).toBeNull();
+ });
+ it('asks for the encoded key',async()=>{let url='';await telegramLinked('https://relay.example',key,(async(u:string)=>{url=u;return {ok:true,json:async()=>({publicKey:key,linked:true})};})as never);expect(url).toBe(`https://relay.example/links/${encodeURIComponent(key)}`);});
+});
