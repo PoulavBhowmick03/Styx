@@ -175,8 +175,8 @@ $('#lookup').onsubmit=async e=>{e.preventDefault();try{
 }catch(e){fail(e);}};
 $('#history').onclick=()=>loadHistory().catch(fail);
 $('#disconnect').onclick=async()=>{try{await (await selector?.wallet())?.signOut();connected='';clearPlan();role();}catch(e){fail(e);}};
-loadForm.onsubmit=async e=>{
- e.preventDefault();if(busy) return;clearPlan();facts=undefined;connected='';selector=undefined;unsubscribe?.();role();
+async function load(){
+ if(busy) return;clearPlan();facts=undefined;connected='';selector=undefined;unsubscribe?.();role();
  try{
   const values=readForm(loadForm);if(!['testnet','mainnet'].includes(values.network)) throw Error('Unsupported network');
   context={vault:account(values.vault),network:values.network,rpc:new RPC(values.rpc)};
@@ -188,7 +188,11 @@ loadForm.onsubmit=async e=>{
   if(hashes){const clean=new URL(location.href);clean.searchParams.delete('transactionHashes');window.history.replaceState(null,'',clean);for(const hash of hashes.split(',')) await context.rpc.transaction(hash,facts!.info.owner);await refresh();say('Wallet return: transaction finalized and state read back.');}
   await loadHistory();
  }catch(e){facts=undefined;role();fail(e);}
-};
+}
+loadForm.onsubmit=e=>{e.preventDefault();void load();};
+// Before a vault is read there is no wallet selector yet: Connect reads the vault in the form first,
+// then opens the wallet list, instead of doing nothing.
+$('#connect').onclick=async()=>{try{if(!selector) await load();if(selector && context) setupModal(selector,{contractId:context.vault}).show();}catch(e){fail(e);}};
 const query=new URLSearchParams(location.search);
 for(const key of ['vault','rpc','network']){const v=query.get(key);if(v)(loadForm.elements.namedItem(key) as HTMLInputElement).value=v;}
 // A wallet redirect or an explicit vault link reads state on arrival; opening the page alone is read-only too.
