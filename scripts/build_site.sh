@@ -4,6 +4,7 @@
 # With the settings scripts/near/try_setup.sh writes (VITE_TRY_VAULT, VITE_TRY_RECIPIENT and
 # VITE_TRY_AGENT_KEY, a key published on purpose) in the environment, it also builds /try/.
 # Usage: scripts/build_site.sh   then deploy dist/styx-site to the Vercel project that serves styxco.xyz.
+# Vercel also runs it on every push to the connected repo (vercel.json at the repo root).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist/styx-site"
@@ -13,6 +14,11 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 (cd "$ROOT/owner-console-near" && npm ci --silent && npx vite build --base /console/ --outDir "$OUT/console" --emptyOutDir)
 if [ -n "${VITE_TRY_VAULT:-}" ] && [ -n "${VITE_TRY_RECIPIENT:-}" ] && [ -n "${VITE_TRY_AGENT_KEY:-}" ]; then
   (cd "$ROOT/try-page-near" && npm ci --silent && npx vite build --base /try/ --outDir "$OUT/try" --emptyOutDir)
+elif [ -n "${VERCEL:-}" ]; then
+  # On Vercel a build without /try/ would replace production with a site missing that page; fail instead,
+  # which leaves the current deployment up. Set VITE_TRY_VAULT, VITE_TRY_RECIPIENT and VITE_TRY_AGENT_KEY
+  # in the project's environment variables.
+  echo "Missing VITE_TRY_* settings in the Vercel project: refusing to deploy a site without /try/." >&2; exit 1
 else
   echo "Skipping /try/: load the settings from scripts/near/try_setup.sh to build it."
 fi

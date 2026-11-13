@@ -1,3 +1,29 @@
 {
-  "git": { "deploymentEnabled": false }
+  "buildCommand": "bash scripts/build_site.sh",
+  "installCommand": "echo 'scripts/build_site.sh installs each page'",
+  "outputDirectory": "dist/styx-site",
+  "framework": null,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'none'"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ]
 }
