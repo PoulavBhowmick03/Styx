@@ -332,3 +332,8 @@ export function daoProposal(b:Batch,dao:string,bond:string,description:string):B
  const actions=b.calls.map(c=>({method_name:c.method,args:Buffer.from(JSON.stringify(c.args)).toString('base64'),deposit:c.deposit,gas:c.gas}));
  return {receiverId:account(dao),calls:[{receiverId:account(dao),method:'add_proposal',args:{proposal:{description:desc,kind:{FunctionCall:{receiver_id:b.receiverId,actions}}}},deposit:bond,gas:PROPOSAL_GAS}]};
 }
+
+// ---- Freeze an agent: the same policy with enabled false. configure_agent then removes its access key. ----
+export function freezeValues(agent:string,state:{per_payment_limit:string;daily_limit:string;valid_until:string|number}):Record<string,string>{
+ return {agent:publicKey(agent),per_payment_limit:amount(state.per_payment_limit),daily_limit:amount(state.daily_limit),valid_until:String(state.valid_until),enabled:'false'};
+}

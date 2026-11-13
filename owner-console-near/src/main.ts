@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -43,6 +43,7 @@ function toast(kind:'ok'|'error',title:string,detail='',href?:string){
 }
 function role(){
  const owner=canWrite();
+ void maybeFreeze();
  $('#role').textContent=connected?`${connected} · ${owner?(dao?`The owner is the DAO ${dao.account}: changes you make here are proposals its members vote on.`:'Owner controls available'):`Read-only: the vault owner is ${facts?.info.owner??'not yet known'}.`}`:'Read-only: connect the owner account to change rules.';
  document.querySelectorAll<HTMLButtonElement>('[data-write]').forEach(button=>button.disabled=!owner || busy);
  $('#disconnect').hidden=!connected;
@@ -89,6 +90,20 @@ function allowance(key:string){
 }
 function near(value:string){const n=BigInt(value);return `${n/10n**24n}.${(n%10n**24n).toString().padStart(24,'0').replace(/0+$/,'')||'0'}`;}
 const expiring=new Set<string>();let expiryWarned='';
+// ---- ?freeze=<agent key>, from a Telegram alert: once the owner is connected, open the disable review ----
+let freezeAsked:string|undefined=(()=>{try{const k=new URLSearchParams(location.search).get('freeze');return k?publicKey(k):undefined;}catch{return undefined;}})();
+async function maybeFreeze(){
+ if(!freezeAsked || !context || !facts) return;
+ if(!canWrite()){say(`To freeze agent ${freezeAsked}, connect the vault owner's wallet. You will review the change before signing.`);return;}
+ const key=freezeAsked;freezeAsked=undefined;
+ try{
+  const state=await context.rpc.view(context.vault,'get_agent',{agent:key});
+  if(!state){toast('error','No such agent',`${key} has no policy on ${context.vault}.`);return;}
+  if(!state.enabled){toast('ok','Agent already frozen',`${key} is disabled on ${context.vault}.`);return;}
+  previewPlan('configure_agent',freezeValues(key,state));
+  toast('ok','Review the freeze','Signing removes this agent\'s key from the vault: it can make no payment until you re-enable it.');
+ }catch(e){fail(e);}
+}
 // ---- Names for keys and accounts, per vault, in this browser only ----
 let names:Labels={};
 const labelStore=()=>context?`styx-labels:${context.network}:${context.vault}`:'';

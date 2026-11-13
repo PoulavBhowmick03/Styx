@@ -117,8 +117,17 @@ try{
    assert.equal(file.suggestedFilename(),`styx-agent-${fixture.vault}.env`);
    const env=readFileSync(await file.path(),'utf8');
    assert.match(env,new RegExp(`^STYX_NEAR_APPROVER=${fixture.known.approver}$`,'m'));assert.doesNotMatch(env,/private/);
+   // A Telegram alert's Freeze link: the disable review opens by itself; signing sends configure_agent with enabled false.
+   await page.goto((process.env.CONSOLE_URL??'http://127.0.0.1:5174')+'/?vault='+fixture.vault+'&network=testnet&freeze='+encodeURIComponent(fixture.known.agent));
+   await page.locator('#review[open]').waitFor();
+   await page.evaluate(()=>{window.__submitted=undefined;});
+   await page.locator('#send').click();
+   await page.waitForFunction(()=>window.__submitted);
+   const frozen=(await page.evaluate(()=>window.__submitted)).actions[0].params;
+   assert.equal(frozen.methodName,'configure_agent');
+   assert.deepEqual({agent:frozen.args.agent,enabled:frozen.args.enabled,per_payment_limit:frozen.args.per_payment_limit},{agent:fixture.known.agent,enabled:false,per_payment_limit:'100000000'});
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload; approver shown as getting Telegram alerts; a change by a DAO member sent as one add_proposal. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload; approver shown as getting Telegram alerts; a change by a DAO member sent as one add_proposal; an alert Freeze link opens the disable review and signs it. No real wallet or transaction.');
 }finally{await browser.close();}

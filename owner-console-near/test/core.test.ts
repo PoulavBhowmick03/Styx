@@ -215,3 +215,12 @@ describe('DAO-owned vaults',()=>{
   expect(isDaoPolicy(null)).toBe(false);expect(isDaoPolicy({proposal_bond:1,roles:[]})).toBe(false);expect(isDaoPolicy({owner:'x'})).toBe(false);
  });
 });
+
+import { freezeValues } from '../src/core';
+describe('freezing an agent',()=>{
+ it('keeps the policy and turns it off, which configure_agent turns into a disable',()=>{
+  const v=freezeValues(live.known.agent,{per_payment_limit:'100000000',daily_limit:'1000000000',valid_until:'1795105186'});
+  expect(formPlan('configure_agent',v,LIVE_VAULT,TEST_TOKEN,'testnet').args).toEqual({agent:live.known.agent,per_payment_limit:'100000000',daily_limit:'1000000000',valid_until:'1795105186',enabled:false});
+  expect(describePlan(formPlan('configure_agent',v,LIVE_VAULT,TEST_TOKEN,'testnet'))).toBe('Agent disabled');
+ });
+});
