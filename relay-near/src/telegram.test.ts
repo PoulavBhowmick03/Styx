@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertText, telegramNotifier, usdc } from './telegram';
+import { alertText, telegramNotifier, usdc, freezeLink } from './telegram';
 
 const pending = {
   schema: 'styx-near-pending/1', network: 'testnet', rpcUrl: 'https://rpc', vault: 'vault-v2.owner.testnet', token: 'usdc.owner.testnet',
@@ -32,5 +32,23 @@ describe('telegram alert', () => {
     expect(JSON.stringify(calls[0].body.reply_markup)).toContain('https://page.example/?relay=https%3A%2F%2Frelay.example&request=abc');
     const broken = telegramNotifier({ botToken: 'T', chatId: '42', pageUrl: 'https://p', relayUrl: 'https://r', fetch: (async () => { throw new Error('down'); }) as never });
     expect(await broken(pending, 'abc')).toBe(false);
+  });
+});
+
+describe('freeze link', () => {
+  it('opens the console on this vault with the agent to disable', () => {
+    const u = new URL(freezeLink('https://styxco.xyz/console/?x=1', pending));
+    expect(u.origin + u.pathname).toBe('https://styxco.xyz/console/');
+    expect(Object.fromEntries(u.searchParams)).toEqual({ vault: 'vault-v2.owner.testnet', network: 'testnet', freeze: 'ed25519:A' });
+  });
+  it('adds a second button and a line to the alert when a console URL is set', async () => {
+    const calls: { body: any }[] = [];
+    const fake = (async (_u: string, init: { body: string }) => { calls.push({ body: JSON.parse(init.body) }); return { json: async () => ({ ok: true }) }; }) as never;
+    await telegramNotifier({ botToken: 'T', chatId: '42', pageUrl: 'https://page.example', relayUrl: 'https://relay.example', consoleUrl: 'https://styxco.xyz/console/', fetch: fake })(pending, 'abc');
+    const rows = calls[0].body.reply_markup.inline_keyboard;
+    expect(rows).toHaveLength(2);
+    expect(rows[1][0].text).toBe('Freeze this agent (owner)');
+    expect(rows[1][0].url).toContain('freeze=ed25519%3AA');
+    expect(calls[0].body.text).toContain('Not expected? The vault owner can freeze this agent');
   });
 });

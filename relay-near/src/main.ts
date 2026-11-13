@@ -12,7 +12,9 @@ const links=tg?new Links(t.RELAY_LINKS_FILE??(t.RELAY_STATE_FILE?join(dirname(t.
 // Spend alerts read the chain through NEAR_RPC_URL (view calls only) every WATCH_INTERVAL seconds.
 const watches=tg?new Watches(t.RELAY_WATCHES_FILE??(t.RELAY_STATE_FILE?join(dirname(t.RELAY_STATE_FILE),'telegram-watches.json'):undefined)):undefined;
 const bot=tg&&links?telegramBot({...tg,links,watches}):undefined;
-const notify=tg?telegramNotifier({...tg,chatId:t.TELEGRAM_CHAT_ID,chats:k=>links!.chats(k)}):undefined;
+// Alerts also link to the owner console to freeze the agent: CONSOLE_URL, or /console/ beside the approval page.
+const consoleUrl=tg?(t.CONSOLE_URL??new URL('../console/',tg.pageUrl.replace(/\/?$/,'/')).toString()):undefined;
+const notify=tg?telegramNotifier({...tg,consoleUrl,chatId:t.TELEGRAM_CHAT_ID,chats:k=>links!.chats(k)}):undefined;
 server(new Relay(t.RELAY_TOKEN??'',t.RELAY_STATE_FILE),origins,notify,links&&bot?{links,linked:bot.linked}:undefined)
  .listen(Number(t.PORT??8788),t.HOST??'127.0.0.1',()=>{console.log('NEAR relay listening'+(bot?', Telegram alerts and wallet linking on':''));bot?.start();
   if(bot&&watches){const view=rpcView(t.NEAR_RPC_URL??'https://test.rpc.fastnear.com');const every=Math.max(60,Number(t.WATCH_INTERVAL??300))*1000;

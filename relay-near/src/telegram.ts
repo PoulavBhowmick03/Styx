@@ -53,14 +53,26 @@ const send = (api: Api, chatId: string, text: string, extra: Record<string, unkn
 
 // Alerts go to the chats linked to the approver key the request asks to sign. With none linked,
 // they go to the optional fallback chat (TELEGRAM_CHAT_ID), so a single-owner setup keeps working.
+// The owner console link that opens the review to disable this agent (owner signs; the bot cannot).
+export function freezeLink(consoleUrl: string, p: Pending): string {
+  const u = new URL(consoleUrl);
+  u.search = ''; u.hash = '';
+  u.searchParams.set('vault', p.vault); u.searchParams.set('network', p.network); u.searchParams.set('freeze', p.payment.agent);
+  return u.toString();
+}
+
 export function telegramNotifier(options: Api & {
-  chatId?: string; chats?: (publicKey: string) => string[]; pageUrl: string; relayUrl: string;
+  chatId?: string; chats?: (publicKey: string) => string[]; pageUrl: string; relayUrl: string; consoleUrl?: string;
 }): Notify {
   return async (pending, requestId) => {
     const link = page(options.pageUrl, options.relayUrl, 'request', requestId);
     const linked = options.chats?.(pending.authorization.signer) ?? [];
     const to = linked.length ? linked : options.chatId ? [options.chatId] : [];
-    const sent = await Promise.all(to.map(chat => send(options, chat, alertText(pending, link), button(link, 'Review and sign with Meteor'))));
+    const freeze = options.consoleUrl ? freezeLink(options.consoleUrl, pending) : undefined;
+    const text = alertText(pending, link) + (freeze ? `\n\nNot expected? The vault owner can freeze this agent: ${freeze}` : '');
+    const markup = button(link, 'Review and sign with Meteor') as { reply_markup?: { inline_keyboard: { text: string; url: string }[][] } };
+    if (freeze?.startsWith('https://') && markup.reply_markup) markup.reply_markup.inline_keyboard.push([{ text: 'Freeze this agent (owner)', url: freeze }]);
+    const sent = await Promise.all(to.map(chat => send(options, chat, text, markup)));
     return sent.some(Boolean);
   };
 }
