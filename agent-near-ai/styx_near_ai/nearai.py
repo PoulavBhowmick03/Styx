@@ -61,6 +61,7 @@ class TLSBoundSession:
         self.host, self.port, self.timeout = parts.hostname, parts.port or 443, timeout
         self.conn, self.peer_spki_sha256, self.pinned = None, None, None
         self.requests, self.reconnects = 0, 0
+        self.binding = None  # the evidence's tls_binding dict, kept current as requests go out
 
     def connect(self):
         self.conn = http.client.HTTPSConnection(self.host, self.port, timeout=self.timeout,
@@ -83,11 +84,16 @@ class TLSBoundSession:
                 if self.conn is not None or attempt:
                     self.reconnects += 1
                 self.connect()
+                if self.binding is not None and self.reconnects:
+                    # Still the attested key (connect() refuses any other), but no longer one connection.
+                    self.binding.update(same_connection=False, reconnects_to_same_key=self.reconnects)
             try:
                 self.conn.request(method, path, body=body, headers=headers)
                 reply = self.conn.getresponse()
                 content = reply.read()
                 self.requests += 1
+                if self.binding is not None:
+                    self.binding['requests'] = self.requests
                 return reply.status, content
             except (http.client.RemoteDisconnected, ConnectionError, BrokenPipeError, socket.timeout) as error:
                 self.conn.close()
@@ -150,7 +156,9 @@ class NearAI:
         tls = None
         if bound:
             self.http.pin(peer)
-            tls = {'peer_spki_sha256': peer, 'host': self.http.host, 'same_connection': True}
+            tls = {'peer_spki_sha256': peer, 'host': self.http.host, 'same_connection': True,
+                   'requests': self.http.requests, 'reconnects_to_same_key': 0}
+            self.http.binding = tls
         return Preflight(nonce, reply.request.url, reply.content, signers, checks, rejected, tls)
 
     def complete(self, body, preflight):

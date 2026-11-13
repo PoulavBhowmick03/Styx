@@ -262,3 +262,25 @@ class TLSBindingTests(unittest.TestCase):
         from styx_near_ai.runner import Evidence
         doc = Evidence(tempfile.mkdtemp(), MODEL, pre, b'invoice').document('0x' + 'ab' * 32)
         self.assertEqual(doc['attestation']['tls_binding']['peer_spki_sha256'], TLS['peer_spki_sha256'])
+
+
+class TLSBindingAccountingTests(unittest.TestCase):
+    def test_a_reconnect_is_recorded_not_hidden(self):
+        session = nearai.TLSBoundSession('https://cloud-api.near.ai')
+        session.binding = {'same_connection': True}
+        session.pinned = 'aa' * 32
+        calls = {'n': 0}
+
+        def fake_connect():
+            calls['n'] += 1
+            session.conn = mock.Mock(sock=object())
+            session.conn.request.side_effect = None if calls['n'] > 1 else None
+            session.conn.getresponse.return_value = mock.Mock(status=200, read=mock.Mock(return_value=b'{}'))
+            return 'aa' * 32
+
+        session.connect = fake_connect
+        session.conn = mock.Mock(sock=None)  # the server closed the first connection
+        status, _ = session._send('GET', '/x', None, {})
+        self.assertEqual(status, 200)
+        self.assertFalse(session.binding['same_connection'])
+        self.assertEqual(session.binding['reconnects_to_same_key'], 1)
