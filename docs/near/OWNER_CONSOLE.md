@@ -31,6 +31,30 @@ without an indexer. During live fixture capture, the mainnet endpoint returned a
 for this testnet account; the testnet endpoint returned HTTP 403, then HTTP 410. The console uses
 the network-specific endpoint and does not treat mainnet's empty list as testnet history.
 
+## Guided setup: two approvals after creating the vault
+
+A new vault is set up in two steps, each one wallet approval, because each step's calls go to one
+contract and NEAR runs a transaction's actions in order, failing them together:
+
+1. **Register and fund** (token contract): `storage_deposit` if not yet registered, then `mint`
+   (testnet test token) or `ft_transfer`.
+2. **Set the rules** (vault): any of `set_vault_daily_limit`, `set_recipient`, `set_approver`,
+   `configure_agent`, from the fields filled in. Each call gets 30 Tgas; on testnet these calls burned
+   1.5 to 3.2 Tgas each. Presets (Cautious, Personal agent, Team) fill the limits.
+
+The review lists every call. Before Preview vault and before every send, the console checks the
+signer's spendable NEAR (balance minus storage) covers the attached deposit plus 0.05 NEAR for gas.
+The approver step and the ready screen explain linking Telegram through @Styx_pvt_bot.
+
+When every rule is set, the ready screen offers **Download agent settings**: an env file for
+`scripts/near/mcp_config.sh` with the vault, approver key, and the paths where the agent key file and
+state folder will live. It holds no key material. If the key was generated in the same visit, the
+screen also shows the commands that move both downloads into `$HOME/.styx-near-agent/<vault>/`
+(owner-only permissions) and print the `claude mcp add` line.
+
+Status: covered by unit tests and the mocked-wallet browser test (`test/wallet-smoke.mjs`); not yet
+run with a real Meteor wallet on testnet.
+
 Owner methods: configure_agent, set_recipient, set_approver, set_vault_daily_limit, pause, unpause,
 withdraw. Funding: storage_deposit for the vault (0.00125 NEAR), ft_transfer from the owner
 (1 yoctoNEAR), and mint only for the exact Styx testnet test token. Registration is read first;
