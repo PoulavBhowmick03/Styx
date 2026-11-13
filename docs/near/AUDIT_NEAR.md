@@ -28,7 +28,8 @@ The reproduction file is committed as `f7f11a7`.
 | N-11 | A single pending slot serializes all EVM chains | info | Design limit; source and existing single-request test |
 | N-12 | No contract-controlled upgrade/migration procedure | low | Design limit; source review only |
 
-None of these findings is fixed by this review. Severity reflects the stated preconditions;
+The review itself changed no contract logic; N-02 and part of N-04 were fixed afterwards, as the table
+and their sections say, and the rest are open. Severity reflects the stated preconditions;
 particularly, N-01 is **not a demonstrated bypass** and does not assume compromise of the MPC
 key. N-02/N-03 require an owner configuration/recovery action while an authorization or request
 is outstanding. N-05 requires failed installation of a key the owner chose; it does not promote

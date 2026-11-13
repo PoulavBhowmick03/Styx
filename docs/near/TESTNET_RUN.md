@@ -204,6 +204,3 @@ Two page bugs showed up only with the real wallet and were fixed before the run 
 Selector needs a global `Buffer` for its nonce check (`3647b46`), and Meteor returns extra fields
 that the strict signature schema refused (`84fab3f`). The linked chat is also the relay's fallback
 chat, so this run does not by itself show per-key routing; `relay-near/src/links.test.ts` does.
-
-## Not yet run
-

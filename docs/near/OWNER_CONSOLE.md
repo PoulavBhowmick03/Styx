@@ -39,7 +39,7 @@ the register action is hidden when already registered and rechecked before signi
 Generate & download creates an ed25519 key in the browser and downloads NEAR key-file JSON once.
 Only the public key is retained in the configure_agent form. No private key is sent to RPC,
 logged or saved in browser storage. Save the download outside this repo. Configure its policy
-and sign to install it as a function-call key restricted to pay/pay_with_exception/post_record.
+and sign to install it as a function-call key restricted to pay, pay_with_exception, pay_evm, pay_evm_with_exception and post_record.
 
 On load and before a write, the page checks RPC status.chain_id against the selected wallet network. It also rechecks the current owner, wallet account and token. It passes the
 previewed receiver, method, JSON, gas and deposit to the wallet. After a known transaction hash
@@ -83,11 +83,12 @@ Verified locally on 12 November 2026:
 - TypeScript and static builds pass. Existing wallet dependencies emit browser-externalization,
   eval and large-chunk warnings during the build.
 
-Not tested: real wallet connection/signing or MyNearWallet redirects; actual configure/fund/
+Not tested on 12 November (since then a real wallet has created, funded and configured a vault from the
+console, see `TESTNET_RUN.md`): real wallet connection/signing or MyNearWallet redirects; actual configure/fund/
 withdraw/mint transactions; real browser key-download handling; a live successful indexer history
 request; complete key enumeration; a mainnet vault; Vercel deployment; load, concurrent owner
 changes or exhaustive malformed RPC responses. The supplied RPC is trusted; its reported chain_id is checked, not independently attested. Poulav must review signing code before it is trusted.
 
-Optional new-vault deployment is not implemented. No wasm is bundled or fetched, no deploy_code
-call exists and VITE_VAULT_WASM_URL is unused. This console manages existing vaults. No contract
+The console deploys no wasm itself: since 13 November "Create a vault" calls the factory
+`styx-vaults.testnet`, which deploys the vault code. No contract
 changes, Chain Signatures, Intents or TEE attestation were added. It makes no private-payment claim.
