@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, type Invite, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, type Invite, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -68,7 +68,7 @@ async function walletSetup(network:string,vault:string){
 async function refresh(){
  if(!context) return;const current=context;
  const next=await overview(current.rpc,current.vault);if(context!==current) return;
- facts=next;render();await refreshKnown();
+ facts=next;for(const k of agentKeys(next.keys)) known.agents.add(k);render();await refreshKnown();
 }
 function allowance(key:string){
  const entry=facts?.keys.keys.find((k:any)=>k.public_key===key);
@@ -79,9 +79,10 @@ function allowance(key:string){
  return call?`Gas allowance: ${call.allowance===null?'unlimited':`${call.allowance} yoctoNEAR (${near(call.allowance)} NEAR)`}; receiver: ${call.receiver_id}; methods: ${call.method_names.join(', ')||'all methods'}`:'Access-key permission unavailable';
 }
 function near(value:string){const n=BigInt(value);return `${n/10n**24n}.${(n%10n**24n).toString().padStart(24,'0').replace(/0+$/,'')||'0'}`;}
+const expiring=new Set<string>();let expiryWarned='';
 async function refreshKnown(){
  if(!context || !facts) return;
- const c=context,day=facts.day;
+ const c=context,day=facts.day;expiring.clear();
  for(const [kind,keys] of Object.entries(known)){
   const container=$('#'+kind);container.replaceChildren(el('h3',kind[0].toUpperCase()+kind.slice(1)));
   for(const key of keys){
@@ -93,6 +94,11 @@ async function refreshKnown(){
     if(!state){panel.append(el('p','No current entry'));continue;}
     panel.append(el('pre',JSON.stringify(state,null,2)));
     if(kind==='agents'){
+     const now=Math.floor(Date.now()/1000),ex=expiry(String(state.valid_until),now);
+     const line=el('p',ex.text);line.className=`expiry ${ex.state}`;panel.append(line);
+     if(ex.state!=='ok'){expiring.add(key);
+      if(connected===facts.info.owner){const b=el('button',ex.state==='expired'?'Renew for 30 days':'Extend 30 days') as HTMLButtonElement;b.type='button';b.className='secondary';b.dataset.write='';b.disabled=busy;
+       b.onclick=()=>{try{const v=extendValues(key,state,Math.floor(Date.now()/1000));previewPlan('configure_agent',v);}catch(e){toast('error','Cannot preview',e instanceof Error?e.message:String(e));}};panel.append(b);}}
      panel.append(el('p',allowance(key)));
      const spent=await c.rpc.view(c.vault,'spent_by_agent',{agent:key,day});
      panel.append(el('p',`${amount(spent)} / ${amount(state.daily_limit)} tokens spent today`));
@@ -101,6 +107,8 @@ async function refreshKnown(){
    }catch(e){panel.append(el('p',`Current state unavailable: ${e instanceof Error?e.message:'RPC failure'}`));}
   }
  }
+ // Warn once per vault per page visit when an agent is expired or close to it.
+ if(expiring.size && expiryWarned!==c.vault){expiryWarned=c.vault;toast('error',`${expiring.size} agent polic${expiring.size>1?'ies':'y'} expired or expiring`,'The vault refuses an expired agent\'s payments. Extend it under Agents & access.');}
 }
 function renderPayments(){
  const tbody=$('#payment-rows');tbody.replaceChildren();

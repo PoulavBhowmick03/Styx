@@ -24,6 +24,7 @@ try{
     else{
      const args=JSON.parse(Buffer.from(p.args_base64,'base64').toString());
      result=structuredClone(fixture.views[p.account_id+':'+p.method_name+':'+JSON.stringify(args,Object.keys(args).sort())]);
+     if(p.method_name==='get_agent'){const a=JSON.parse(Buffer.from(result.result).toString());a.valid_until='1600000000';result.result=[...Buffer.from(JSON.stringify(a))];}
      if(p.method_name==='get_vault'){
       const info=JSON.parse(Buffer.from(result.result).toString());info.paused=paused;result.result=[...Buffer.from(JSON.stringify(info))];
      }
@@ -38,7 +39,17 @@ try{
   if(accountId==='stranger.testnet'){
    assert.match(await page.locator('#role').textContent(),/Read-only/);
    for(const button of await page.locator('[data-write]').all())assert.equal(await button.isDisabled(),true);
+   await page.locator('#agents .expiry.expired').first().waitFor();
+   assert.equal(await page.getByRole('button',{name:'Renew for 30 days'}).count(),0);
   }else{
+   // An expired agent: the owner renews it with the same limits in one configure_agent.
+   await page.locator('#agents .expiry.expired').first().waitFor();
+   await page.getByRole('button',{name:'Renew for 30 days'}).first().click();
+   const renew=JSON.parse((await page.locator('#preview').textContent()).slice((await page.locator('#preview').textContent()).indexOf('{')));
+   assert.equal(renew.method,'configure_agent');assert.equal(renew.args.agent,fixture.known.agent);
+   assert.equal(renew.args.per_payment_limit,'100000000');assert.equal(renew.args.daily_limit,'1000000000');
+   assert.ok(Number(renew.args.valid_until)>Date.now()/1000+29*86400);
+   await page.locator('#cancel').click();
    await page.locator('form[data-method="pause"] button').click();
    assert.match(await page.locator('#preview').textContent(),/"method": "pause"/);
    assert.match(await page.locator('#preview').textContent(),/"deposit": "0"/);
@@ -80,5 +91,5 @@ try{
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction, presets and agent hand-off shown. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits. No real wallet or transaction.');
 }finally{await browser.close();}

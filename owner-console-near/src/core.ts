@@ -250,3 +250,21 @@ export async function inviteValid(i:Invite):Promise<boolean>{
   return sig.length===64 && nacl.sign.detached.verify(digest,new Uint8Array(sig),bs58.decode(i.publicKey.slice(8)));
  }catch{return false;}
 }
+
+// ---- Agent policy expiry: the vault refuses payments with PolicyExpired once valid_until passes ----
+export const EXPIRY_SOON_SECONDS=48*3600;
+export function expiry(validUntil:string,now:number):{state:'ok'|'soon'|'expired';text:string}{
+ const left=Number(BigInt(validUntil))-now;
+ const span=(s:number)=>s>=86400?`${Math.floor(s/86400)} day${s>=2*86400?'s':''}`:s>=3600?`${Math.floor(s/3600)} h`:`${Math.max(1,Math.floor(s/60))} min`;
+ if(left<0) return {state:'expired',text:`Expired ${span(-left)} ago: the vault refuses this agent's payments (PolicyExpired).`};
+ if(left<EXPIRY_SOON_SECONDS) return {state:'soon',text:`Expires in ${span(left)}. After that the vault refuses its payments.`};
+ return {state:'ok',text:`Active for ${span(left)} more.`};
+}
+// Same limits, new expiry. configure_agent replaces the whole policy, so every field is carried over.
+export function extendValues(agent:string,state:{per_payment_limit:string;daily_limit:string;enabled:boolean},now:number,days=30):Record<string,string>{
+ return {agent:publicKey(agent),per_payment_limit:amount(state.per_payment_limit),daily_limit:amount(state.daily_limit),valid_until:String(now+days*86400),enabled:String(state.enabled)};
+}
+// Agents are the vault's function-call keys allowed to call pay; they are on chain even when no indexer is.
+export function agentKeys(keys:{keys:{public_key:string;access_key:{permission:any}}[]}):string[]{
+ return keys.keys.filter(k=>typeof k.access_key.permission==='object' && k.access_key.permission.FunctionCall?.method_names?.includes('pay')).map(k=>k.public_key);
+}

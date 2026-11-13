@@ -129,3 +129,21 @@ describe('approver invites',()=>{
   expect(inviteMessage(vault)).toContain(vault);
  });
 });
+
+import { expiry,extendValues,agentKeys } from '../src/core';
+describe('agent expiry',()=>{
+ const now=1_800_000_000;
+ it('reads ok, soon and expired',()=>{
+  expect(expiry(String(now+10*86400),now)).toMatchObject({state:'ok',text:'Active for 10 days more.'});
+  expect(expiry(String(now+5*3600),now)).toMatchObject({state:'soon',text:/^Expires in 5 h/});
+  expect(expiry(String(now-2*86400),now)).toMatchObject({state:'expired',text:/^Expired 2 days ago/});
+ });
+ it('extends with the same limits, so configure_agent changes only the expiry',()=>{
+  const v=extendValues(live.known.agent,{per_payment_limit:'100000000',daily_limit:'1000000000',enabled:true},now);
+  const p=formPlan('configure_agent',v,LIVE_VAULT,TEST_TOKEN,'testnet');
+  expect(p.args).toEqual({agent:live.known.agent,per_payment_limit:'100000000',daily_limit:'1000000000',valid_until:String(now+30*86400),enabled:true});
+ });
+ it('finds agents among the access keys',()=>{
+  expect(agentKeys({keys:[{public_key:'ed25519:a',access_key:{permission:{FunctionCall:{method_names:['pay','post_record']}}}},{public_key:'ed25519:b',access_key:{permission:'FullAccess'}},{public_key:'ed25519:c',access_key:{permission:{FunctionCall:{method_names:['other']}}}}]})).toEqual(['ed25519:a']);
+ });
+});

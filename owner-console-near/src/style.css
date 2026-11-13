@@ -60,6 +60,12 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 .toast a { font: 0.75rem var(--mono); }
 .toast .toast-close { position: absolute; top: 0.5rem; right: 0.5rem; min-height: 0; padding: 0.15rem 0.45rem; font-size: 0.6875rem; background: transparent; color: var(--fore-2); border-color: var(--rule-2); }
 
+/* Agent expiry */
+.expiry { font: 0.75rem var(--mono); margin: 0.5rem 0; }
+.expiry.ok { color: var(--ok); }
+.expiry.soon { color: var(--ember); }
+.expiry.expired { color: var(--ember); font-weight: 600; }
+
 /* Guided setup */
 #setup .section-heading h2 { margin: 0; }
 .setup-steps { list-style: none; margin: 1rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.5rem; }
