@@ -85,6 +85,9 @@ def usdc_to_base_units(amount_usdc: str) -> int:
     whole, _, fraction = text.partition(".")
     return int(whole) * 10**_USDC_DECIMALS + int(fraction.ljust(_USDC_DECIMALS, "0") or 0)
 _RELAY_TIMEOUT_SECONDS = 15
+# styx_check_owner_approval can wait for the approver instead of returning 'pending' at once.
+_MAX_WAIT_SECONDS = 600
+_POLL_SECONDS = 4.0
 _MAX_RELAY_RESPONSE_BYTES = 64 * 1024
 
 
@@ -311,7 +314,9 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             if settings.relay_url:
                 response["result"].update(await asyncio.to_thread(send_to_relay, pending, stem))
                 response["result"]["next_action"] = (
-                    "Call styx_check_owner_approval with this payment_id until status is signed. Do not propose again."
+                    "Tell your user in one line that the approver was asked, then call styx_check_owner_approval with "
+                    "this payment_id and wait_seconds 300: it returns as soon as the approver signs. When it says "
+                    "signed, submit right away. Do not propose again."
                     if response["result"].get("owner_alerted") else
                     "The request is waiting, but the approver was not alerted (they may not have linked their Telegram, "
                     "or the relay is down). Tell your user an approval is needed, then call styx_check_owner_approval "
@@ -354,13 +359,20 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
 
     if settings.relay_url:
         @server.tool()
-        async def styx_check_owner_approval(payment_id: str) -> dict[str, Any]:
+        async def styx_check_owner_approval(payment_id: str, wait_seconds: int = 0) -> dict[str, Any]:
             """Check whether the approver has signed. When signed, pass signature_name to styx_submit_payment.
 
-            Pending means wait. Asking again does not make approval arrive sooner.
+            With wait_seconds (up to 600), keep checking and return as soon as the approver signs, the request
+            expires or fails, or the wait ends with status pending. Asking again does not make approval sooner.
             """
+            deadline = time.monotonic() + max(0, min(int(wait_seconds), _MAX_WAIT_SECONDS))
             try:
-                return await asyncio.to_thread(fetch_signature, payment_id)
+                while True:
+                    response = await asyncio.to_thread(fetch_signature, payment_id)
+                    pending = response.get("ok") and response["result"].get("status") == "pending"
+                    if not pending or time.monotonic() + _POLL_SECONDS > deadline:
+                        return response
+                    await asyncio.sleep(_POLL_SECONDS)
             except VaultError as error:
                 return invalid(error)
 

@@ -320,3 +320,54 @@ def test_seam_finds_the_near_cli_on_path(tmp_path, monkeypatch):
     from styx import VaultError
     with pytest.raises(VaultError):
         VaultSeam()
+
+
+def test_check_owner_approval_waits_for_the_signature(tmp_path):
+    """With wait_seconds the tool keeps asking the relay and returns once the approver has signed."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    asks = {"n": 0}
+
+    class Relay(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 (http.server API)
+            asks["n"] += 1
+            signed = asks["n"] >= 3
+            body = {"status": "signed", "signature": {"signature": "c2ln"}} if signed else {"status": "pending"}
+            data = json.dumps(body).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    relay = ThreadingHTTPServer(("127.0.0.1", 0), Relay)
+    threading.Thread(target=relay.serve_forever, daemon=True).start()
+    try:
+        vault_dir = private_dir(tmp_path / "vault")
+        payment_id = "0x" + "ab" * 32
+        (vault_dir / f"relay-{payment_id[2:14]}.txt").write_text("r" * 43)
+        env = {"STYX_VAULT_DIR": str(vault_dir), "STYX_VAULT_CLI": str(scripted_binary(tmp_path, {})),
+               "STYX_VAULT_RELAY_URL": f"http://127.0.0.1:{relay.server_address[1]}", "STYX_VAULT_RELAY_TOKEN": "t"}
+
+        async def body(session):
+            started = time.monotonic()
+            reply = result(await session.call_tool("styx_check_owner_approval",
+                                                   {"payment_id": payment_id, "wait_seconds": 60}))
+            return reply, time.monotonic() - started
+
+        reply, took = run_session(env, body)
+        assert reply["ok"] and reply["result"]["status"] == "signed"
+        assert reply["result"]["signature_name"] == f"signature-{payment_id[2:14]}.json"
+        assert asks["n"] == 3 and took < 30
+        assert json.loads((vault_dir / reply["result"]["signature_name"]).read_text()) == {"signature": "c2ln"}
+
+        async def once(session):
+            return result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id}))
+
+        asks["n"] = -10  # pending for a while: without a wait the tool answers at once
+        assert run_session(env, once)["result"]["status"] == "pending"
+    finally:
+        relay.shutdown()
