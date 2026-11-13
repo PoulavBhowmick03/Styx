@@ -198,9 +198,6 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
   live model).
 - A vault made by the factory has no access key of its own, so nobody can replace its code, and the
   NEAR it holds for storage and gas cannot be taken out again: `withdraw` moves tokens only.
-- The owner console's pause and withdraw have not been used with a real wallet yet. Creating a vault,
-  funding it, setting limits, a recipient, an approver and an agent have, and so has the approval page
-  (`docs/near/TESTNET_RUN.md`).
 
 ## License
 

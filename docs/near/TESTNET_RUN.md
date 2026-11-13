@@ -62,6 +62,12 @@ vault" form. `create_vault({name: "testme123"})`
 | Alert | hosted relay, no fallback chat | | `telegram alert sent`: reached the approver's chat only through the key linked with `/start` |
 | Approver signs on the phone | `poulav.testnet`, Meteor app | [8yZgpTSz…](https://testnet.nearblocks.io/txns/8yZgpTSzHfbhrQFvMTpdUqaPTLWoEygg983WaK9XYFJw) | `pay_with_exception`, 15 tUSDC to vendor-a, exception true, signer `ed25519:mA3qig…` |
 
+Then the owner, from the redesigned console (review dialog, toasts): pause
+[GKKM86pc…](https://testnet.nearblocks.io/txns/GKKM86pcm635JnoeevSkcTGg2ymq93YRnfPGNR4qCB1j), unpause
+[3GTz7D7E…](https://testnet.nearblocks.io/txns/3GTz7D7E2tjw5yBPNinh3mGmC8zZTkCrzjmfbEtzqFKZ), and a
+withdrawal of 1 tUSDC to vendor-a (the vault's balance read 2, then 1; the indexer had not listed the
+transaction when this was written). `get_vault` reads `paused: false` afterwards.
+
 Three console bugs showed up only with the real wallet and were fixed during the run: Connect did
 nothing before Read vault (`d173b4e`), the wallet code needed a global `Buffer` (`a406668`), and
 "Fund from owner wallet" let the wallet fail when the owner held no tokens (`f076725`).

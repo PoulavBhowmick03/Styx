@@ -36,4 +36,4 @@ On testnet: payments inside the limits settled on NEAR, Arc and Base, exceptions
   disclaimers either. Say what ran.
 - Real wallets ran the whole flow on 13 Nov 2026 (`TESTNET_RUN.md`): vault created and configured from
   the console in Meteor, agent payments, the alert in the approver's own Telegram, approval signed on a phone.
-  Pause and withdraw from the console have not been used with a real wallet.
+  Pause, unpause and withdraw from the console too.

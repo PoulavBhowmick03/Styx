@@ -28,7 +28,7 @@ multichain segment (2 USDC on Arc, 10 USDC on Base): an underfunded transfer rev
 3. The approval page is live at `https://styxco.xyz/approval/` (no local server). In the recording terminal
    `export RELAY=https://styx-relay-near.fly.dev RELAY_TOKEN_FILE=~/.styx-near/relay-token-fly`.
 4. Balances: the vault's Arc and Base address funded for the multichain segment. On 13 Nov 2026 it held
-   22.49 USDC on Arc before the upgrade run (about 13.5 after) and 1.5 USDC on Base, short of the 10 the segment pays there.
+   about 13.5 USDC on Arc and 21.5 USDC on Base, enough for the segment (2 on Arc, 10 on Base).
 5. Nothing from `~/.styx-near`, `~/.near-credentials` or `.env` on screen.
 
 Do not say "secure", "audited" or "solves". A2, A3 and A6 are in `TESTNET_RUN.md` if asked.
