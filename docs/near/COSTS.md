@@ -29,9 +29,10 @@ bytes per entry, including NEAR's 40-byte per-key overhead:
 | Consumed payment | every payment | 143 | 0.00143 |
 | Consumed approval nonce | every exception | 110 | 0.00110 |
 | Record slot | every sealed record | 148 | 0.00148 |
+| Payer (vault-v2 since `f0582f1`) | every payment | 149 | 0.00149 |
 | Daily spend counters | per agent per UTC day, and per vault per day | 102 and 65 | 0.00102 and 0.00065 |
 
-So an exception with a record locks about 0.004 NEAR, from the vault account's balance. There is no
+So an exception with a record locks about 0.004 NEAR (0.0055 on vault-v2 with the payer entry), from the vault account's balance. There is no
 cleanup method yet: storage grows with payment count (roadmap: prune entries past `valid_until`).
 
 The contract code is 328,194 bytes (`styx_vault.wasm`), which locks about 3.28 NEAR on the vault

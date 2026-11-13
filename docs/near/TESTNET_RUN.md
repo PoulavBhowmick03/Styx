@@ -65,6 +65,14 @@ chains. Per-payment limit 5 USDC.
 | 3 USDC on Base Sepolia (84532), within limits | [5QGj41SK…](https://testnet.nearblocks.io/txns/5QGj41SKFbbAJzdrpcJnnsf3AdrDmwQ22ZjHkq2KU7kk) | [`0x974f30f7…644a`](https://sepolia.basescan.org/tx/0x974f30f7e3c9d1c6f42dd85fbd374f04810175cf76440360cfec1793e5e1644a), block 57967391 | status 1, from the vault's address |
 | 7 USDC on Base, over the limit: refused alone, then the approver's signature | [9HWhbfja…](https://testnet.nearblocks.io/txns/9HWhbfjaGGDQ2V6y6M7Dy39KKvuNDobbf6VyQNrQsZWs) | [`0xf844657a…e5ba`](https://sepolia.basescan.org/tx/0xf844657a9eda4f45f4afd408eafc8d5d05241b693127e094c120edbee2e3e5ba), block 57967519 | status 1, from the vault's address |
 
+After the vault-v2 upgrade (13 Nov 2026, audit N-02 and N-04 fixes), on Arc with the same agent key:
+
+| Payment | NEAR transaction | Arc transaction | Result |
+| --- | --- | --- | --- |
+| 2 USDC, within limits | [FEVSMgwn…](https://testnet.nearblocks.io/txns/FEVSMgwnPZspEQhqScdbZar3nXtVPn9VMr4jb5T6GhJi) | [`0xed3cb0fb…839e`](https://testnet.arcscan.app/tx/0xed3cb0fbe9608189caace33d76f3fb37c03832a43cb266b56fbf0100b14b839e), block 72197819 | status 1, from the vault's address |
+| 7 USDC over the 5 limit: refused unsigned (`OWNER_APPROVAL_REQUIRED`), then signed against the token-bound hash | [DzuNqaDb…](https://testnet.nearblocks.io/txns/DzuNqaDbyAhbfaeGSApcMjg8MyU2JQoz4vkkMs4z9yqT) (`evm_payment_signed` now names `token` `0x3600…0000`) | [`0x7232faef…c08f`](https://testnet.arcscan.app/tx/0x7232faef0aa7b220c9bab088507fce0629f2a57e616a9f40ecca5382117dc08f), block 72197828 | status 1 |
+| Its sealed record, posted by the paying agent | [79Cd5fzx…](https://testnet.nearblocks.io/txns/79Cd5fzxqehVP9DMHhPvCMUSCDZ7BUhjvTAu1nbdowYL) | | `record_sealed` |
+
 Attacks in the same run, with the agent's key, each refused:
 
 | Attack | Refused by | NEAR transaction |

@@ -21,11 +21,20 @@ Deployed 12 Nov 2026 from `contracts/near/build.sh` output (non-reproducible bui
 | Allowed EVM vendors | `0xf4D88218d13333247BF7616AFFb45F24a21E07cc`, `0x14E823AE14720657A7B90429797A5Ea4636e1291` (addresses only; nobody holds their keys) |
 | Agent | the same function-call key, here allowed `pay`, `pay_with_exception`, `pay_evm`, `pay_evm_with_exception`, `post_record` |
 
+### vault-v2 upgrade (13 Nov 2026)
+
+Redeployed in place (no state migration: the root state layout is unchanged) from commit `f0582f1`,
+`contracts/near/build.sh` output, 330,426 bytes: deploy tx
+[8QmtVfwZ…](https://testnet.nearblocks.io/txns/8QmtVfwZ3iynEbhr3fhVTFEcahWmBA62phWBaW3gdbVp). It binds
+EVM approvals to the token (audit N-02) and lets only the paying agent post a record (N-04, partly).
+No EVM request was in flight (`evm_pending` null). EVM approvals made before it no longer match.
+The v1 vault `vault.styx-owner-c87a.testnet` was not redeployed.
+
 ## NEAR relay on Fly (13 Nov 2026)
 
 `https://styx-relay-near.fly.dev` (app `styx-relay-near`, region `sin`, 1 GB volume for request
 state). Secrets set with `flyctl secrets import`, never in the repo: `RELAY_TOKEN` (kept locally in
-`~/.styx-near/relay-token-fly`), `TELEGRAM_BOT_TOKEN` (bot `@Styx_pvt_bot`), `TELEGRAM_CHAT_ID` (fallback chat for unlinked keys),
+`~/.styx-near/relay-token-fly`), `TELEGRAM_BOT_TOKEN` (bot `@Styx_pvt_bot`),
 `RELAY_PUBLIC_URL`, `APPROVAL_PAGE_URL` (`http://localhost:5173` until the approval page is deployed;
 then set it to the page's https URL and add that origin to `ALLOWED_ORIGINS` in `fly.toml`).
 `/health` answers `{"ok":true}`; requests from `wallet_test.sh` reach it. The earlier, pre-NEAR relay app on Fly
@@ -43,5 +52,6 @@ the approval page at `/approval/` and the owner console at `/console/`. The rela
 The relay (commit `b8ea16f`, deployed to Fly the same day) polls `@Styx_pvt_bot`. An approver sends
 `/start` in a private chat, opens the one-time link (`styxco.xyz/approval/?link=<code>`, page commit
 `c31356b`), and signs a NEP-413 link message in Meteor. The relay then sends the alerts for that key
-to that chat; `TELEGRAM_CHAT_ID` only gets alerts for keys nobody has linked. Links are stored in
+to that chat. There is no fallback chat: `TELEGRAM_CHAT_ID` was removed from Fly the same day, so an
+approver who has not linked gets no alert (the agent sees `alerted: false` and still has the link). Links are stored in
 `/data/relay/telegram-links.json` on the Fly volume. `/status` and `/unlink` in the bot.

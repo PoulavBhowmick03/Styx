@@ -16,9 +16,9 @@ The reproduction file is committed as `f7f11a7`.
 | ID | Title | Severity | Status / evidence |
 | --- | --- | --- | --- |
 | N-01 | Failed MPC delivery may expose a usable signature while releasing its reservation | high | Conditional concern; source reasoning, not reproduced |
-| N-02 | EVM token is neither committed by approval nor frozen for callback assembly | medium | Bug; two mock-VM reproductions pass |
+| N-02 | EVM token is neither committed by approval nor frozen for callback assembly | medium | **Fixed** in `3003a00`, deployed to vault-v2 13 Nov 2026; the reproductions are now regression tests |
 | N-03 | Late callbacks undo nonce recovery, clear newer locks and overwrite signed outputs | medium | Bug; two mock-VM reproductions pass |
-| N-04 | Any enabled agent can claim another payment's record, including before rollback | medium | Bug; mock-VM reproduction passes |
+| N-04 | Any enabled agent can claim another payment's record, including before rollback | medium | **Partly fixed** in `f0582f1` (only the payer posts; rollback frees the slot), deployed to vault-v2; settlement is still not required before posting |
 | N-05 | Failed access-key installation leaves an enabled policy and can retain full access | medium | Bug; Wasm sandbox reproduction passes |
 | N-06 | Malformed successful signer response bypasses cleanup and strands state | medium | Bug; Wasm sandbox reproduction passes |
 | N-07 | Callback events combine old policy version with new policy limits | low | Evidence bug; mock-VM reproduction passes |
@@ -94,6 +94,13 @@ Retain the complete authorized transfer/preimage, including token, for callback 
 verify the callback uses the exact requested digest. Changing configuration must not silently
 reinterpret an outstanding authorization. The existing gas-field snapshot is useful but incomplete.
 
+**Fixed (13 Nov 2026, `3003a00`).** `hash_evm_payment` now hashes under `styx-evm-payment-v2` and
+appends the chain's token, so `evm_payment_hash` changes with the token and an older approval fails
+with `PaymentHashMismatch`. The token is captured in `transfer_fields` with the gas caps when signing
+is requested, and `on_evm_signed` builds the transaction from that, never from current state. Tests:
+`vm_token_change_during_mpc_keeps_the_signed_token`, `vm_evm_approval_is_refused_after_a_token_change`,
+`vm_evm_approval_pays_when_the_token_is_unchanged`. Live on vault-v2: see `TESTNET_RUN.md`.
+
 ### N-03 — Nonce recovery does not invalidate old callbacks
 
 **Where:** `contracts/near/styx-vault/src/lib.rs:361`–`:367`, `:516`, `:541`–`:542`,
@@ -143,6 +150,13 @@ post rejected. Native mock VM only; the real token transfer is represented by ca
 payer and a confirmed settled status to claim the record. Define retry cleanup/replacement rules
 so a failed attempt cannot permanently occupy a later successful attempt's record slot. EVM
 signing success must not be labelled destination-chain settlement without evidence.
+
+**Partly fixed (13 Nov 2026, `f0582f1`).** The vault writes the payer under a raw `payer:` storage
+prefix when it consumes a payment and removes it, with the record slot, on rollback; `post_record`
+refuses any other agent with `NotPayer`. Test: `vm_only_the_paying_agent_posts_the_record_and_rollback_frees_it`.
+Not done: requiring confirmed settlement before a record (a NEAR record can still be posted while
+the transfer is in flight; if it then fails, the slot is freed). Payments consumed before the
+upgrade have no payer entry and can no longer get a record.
 
 ### N-05 — Access-key and policy state diverge after promise failure
 
