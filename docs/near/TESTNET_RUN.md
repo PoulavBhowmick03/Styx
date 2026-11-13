@@ -45,6 +45,13 @@ reviewer's key gave back the invoice, its salted hash matched the payment's evid
 and the payment id and hash matched the event. This was a hand check; the reviewer tool in
 `reviewer-near/` (Codex task 2) is meant to make it repeatable.
 
+A stranger can repeat this with their own key: on 13 Nov 2026 `scripts/near/reviewer_quickstart.sh`
+made a fresh reviewer key, paid 5 tUSDC from a quickstart vault
+([GQiZs8NF…](https://testnet.nearblocks.io/txns/GQiZs8NFsCnGW38Y1kuEeB7CBKPwjzT9evA1kz66PAbJ)),
+posted the record sealed to that key
+([Cd1W3faX…](https://testnet.nearblocks.io/txns/Cd1W3faXAJAFTyK7uXKXLWNgzWLTEHqJ1nwmSzQ4SaaL)), and
+`styx-near-review verify` passed checks 1 to 5 (6 not applicable to a routine payment).
+
 ## One key, two chains: Arc and Base Sepolia (`scripts/near/demo_multichain.sh`)
 
 13 Nov 2026, vault-v2. The owner enabled Base Sepolia once (`set_evm_chain` `Bfkd4wzL…`, two

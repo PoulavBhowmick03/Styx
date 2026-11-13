@@ -64,6 +64,9 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
    22+ for the relay. `scripts/near/model_trial.py` then puts a real model in the agent's seat (it
    needs an authenticated `claude` CLI); see [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md)
    for what Sonnet and Haiku did.
+   **As the reviewer, with your own key:** `scripts/near/reviewer_quickstart.sh` makes your X25519
+   key, pays 5 tUSDC from your vault, seals that payment's record to your key, and verifies it
+   against the chain with your RPC. You should see checks 1 to 5 `PASS`.
 4. **With the agent's model in a NEAR AI Cloud TEE.** Set `NEARAI_API_KEY` (a funded NEAR AI Cloud
    key; [HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-000 explains the free credits), run step 2 so you have a vault and a
    `demo.env`, run `uv sync --all-packages` at the repo root (the runner starts the MCP server from
