@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -285,6 +285,13 @@ $('#lookup').onsubmit=async e=>{e.preventDefault();try{
  if(v.kind==='agent')known.agents.add(publicKey(v.key));else if(v.kind==='approver')known.approvers.add(publicKey(v.key));else known.recipients.add(account(v.key));await refreshKnown();renderSetup();
 }catch(e){fail(e);}};
 $('#history').onclick=()=>loadHistory().catch(fail);
+// The payments in the indexed window, with this browser's names beside the keys.
+$('#payments-csv').onclick=()=>{
+ if(!context){toast('error','Read a vault first');return;}
+ const n=rows.filter(r=>r.event==='payment_executed').length;
+ download(`styx-payments-${context.vault}-${new Date().toISOString().slice(0,10)}.csv`,paymentsCsv(rows,names));
+ toast('ok',`Exported ${n} payment${n===1?'':'s'}`,'From the indexed window shown on this page; older payments may be missing.');
+};
 $('#labels-export').onclick=()=>{if(!context){toast('error','Read a vault first');return;}download(`styx-names-${context.vault}.json`,labelsFile(context.vault,names));};
 $<HTMLInputElement>('#labels-import').onchange=async e=>{const input=e.target as HTMLInputElement,file=input.files?.[0];input.value='';if(!file) return;
  try{if(!context) throw Error('Read a vault first');const add=parseLabels(await file.text(),context.vault);names={...names,...add};saveLabels();await refreshKnown();renderPayments();toast('ok',`Imported ${Object.keys(add).length} names`);}

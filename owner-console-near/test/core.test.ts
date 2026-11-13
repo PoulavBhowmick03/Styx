@@ -224,3 +224,17 @@ describe('freezing an agent',()=>{
   expect(describePlan(formPlan('configure_agent',v,LIVE_VAULT,TEST_TOKEN,'testnet'))).toBe('Agent disabled');
  });
 });
+
+import { paymentsCsv } from '../src/core';
+describe('payments CSV',()=>{
+ const row=(data:Record<string,any>)=>({event:'payment_executed',data:{agent:'ed25519:A',recipient:'vendor-a.testnet',amount:'5000000',exception:false,payment_id:'0x1',...data},tx:'TX1',time:'2026-11-14T10:00:00.000Z'});
+ it('writes a header and one line per payment, with names',()=>{
+  const csv=paymentsCsv([row({}),{event:'agent_configured',data:{},tx:'X',time:''}],{'ed25519:A':'Billing bot','vendor-a.testnet':'Vendor A'});
+  expect(csv.split('\r\n')).toEqual(['time_utc,agent,agent_name,recipient,recipient_name,amount,exception,signer,signer_name,payment_id,transaction','2026-11-14T10:00:00.000Z,ed25519:A,Billing bot,vendor-a.testnet,Vendor A,5.000000,no,,,0x1,TX1','']);
+ });
+ it('quotes commas and quotes, and defuses formulas',()=>{
+  const csv=paymentsCsv([row({exception:true,signer:'ed25519:S'})],{'ed25519:A':'=HYPERLINK("x")','ed25519:S':'Ann, CFO'});
+  const line=csv.split('\r\n')[1];
+  expect(line).toContain(`"'=HYPERLINK(""x"")"`);expect(line).toContain('"Ann, CFO"');expect(line).toContain(',yes,ed25519:S,');
+ });
+});

@@ -28,6 +28,10 @@ try{
  await page.goto((process.env.CONSOLE_URL??'http://127.0.0.1:5174')+'/?vault='+fixture.vault);
  await page.locator('#overview-data').getByText('styx-owner-c87a.testnet',{exact:true}).waitFor();
  await page.locator('#payment-rows tr').waitFor();
+ const [csvFile]=await Promise.all([page.waitForEvent('download'),page.locator('#payments-csv').click()]);
+ const csv=readFileSync(await csvFile.path(),'utf8').split('\r\n');
+ assert.equal(csv[0],'time_utc,agent,agent_name,recipient,recipient_name,amount,exception,signer,signer_name,payment_id,transaction');
+ assert.match(csv[1],/,140\.000000,yes,ed25519:/);
  assert.match(await page.locator('#role').textContent(),/Read-only/);
  assert.equal(await page.locator('#overview-data .watch-link').getAttribute('href'),'https://t.me/Styx_pvt_bot?start=watch-'+fixture.vault.replace(/\./g,'--'));
  assert.match(await page.locator('#payment-rows').textContent(),/140.000000/);

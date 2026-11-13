@@ -337,3 +337,13 @@ export function daoProposal(b:Batch,dao:string,bond:string,description:string):B
 export function freezeValues(agent:string,state:{per_payment_limit:string;daily_limit:string;valid_until:string|number}):Record<string,string>{
  return {agent:publicKey(agent),per_payment_limit:amount(state.per_payment_limit),daily_limit:amount(state.daily_limit),valid_until:String(state.valid_until),enabled:'false'};
 }
+
+// ---- Payments as CSV, with local names beside the keys ----
+// Quoted per RFC 4180. A cell that a spreadsheet would run as a formula (= + - @, tab, CR) gets a
+// leading apostrophe, so a name or recipient cannot execute in the owner's spreadsheet.
+const csvCell=(v:unknown)=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s)) s="'"+s;return /[",\n\r]/.test(s)||s!==s.trim()?`"${s.replace(/"/g,'""')}"`:s;};
+export function paymentsCsv(rows:EventRow[],names:Labels):string{
+ const head=['time_utc','agent','agent_name','recipient','recipient_name','amount','exception','signer','signer_name','payment_id','transaction'];
+ const lines=rows.filter(r=>r.event==='payment_executed').map(r=>{const d=r.data;return [r.time,d.agent,names[d.agent]??'',d.recipient,names[d.recipient]??'',amount(String(d.amount)),d.exception?'yes':'no',d.signer??'',d.signer?names[d.signer]??'':'',d.payment_id??'',r.tx];});
+ return [head,...lines].map(l=>l.map(csvCell).join(',')).join('\r\n')+'\r\n';
+}
