@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { createServer } from 'node:http';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { pendingSchema, signatureSchema, signingBytes, type Pending, type Signature } from './protocol';
+import { pendingSchema, signatureSchema, signingBytes, declineSchema, declineSigningBytes, type Pending, type Signature } from './protocol';
 import type { Notify } from './telegram';
 import type { Links } from './links';
 export class RelayError extends Error { constructor(public status:number,message:string){super(message);} }
@@ -13,7 +13,7 @@ export const fail=(status:number,message:string):never=>{throw new RelayError(st
 export function nep413Valid(payload:Uint8Array,signature:string,publicKey:string):boolean {
  return nacl.sign.detached.verify(createHash('sha256').update(payload).digest(),Buffer.from(signature,'base64'),bs58.decode(publicKey.slice(8)));
 }
-type Entry={pending:Pending;signature?:Signature};
+type Entry={pending:Pending;signature?:Signature;declined?:true};
 export function verify(p:Pending,input:unknown):Signature {
  const parsed=signatureSchema.safeParse(input);
  if(!parsed.success) return fail(400,'invalid signature file');
@@ -31,7 +31,7 @@ export class Relay {
    for(const [id,e] of rows){
     if(!/^[A-Za-z0-9_-]{43}$/.test(id)) throw new Error('invalid saved id');
     const pending=pendingSchema.parse(e.pending);
-    this.entries.set(id,{pending,...(e.signature?{signature:verify(pending,e.signature)}:{})});
+    this.entries.set(id,{pending,...(e.signature?{signature:verify(pending,e.signature)}:{}),...(e.declined===true?{declined:true as const}:{})});
    }
   } catch(e) { if((e as NodeJS.ErrnoException).code!=='ENOENT') throw e; } }
  }
@@ -47,9 +47,17 @@ export class Relay {
  }
  private find(id:string){const e=this.entries.get(id);return e??fail(404,'unknown request');}
  private expired(e:Entry){return BigInt(e.pending.authorization.authorization_expiry)<=BigInt(this.now());}
- pending(id:string){const e=this.find(id);return {pending:e.pending,status:this.expired(e)?'expired':e.signature?'signed':'pending'};}
- sign(id:string,input:unknown){const e=this.find(id);if(this.expired(e)) fail(410,'expired');if(e.signature) fail(409,'already signed');const signature=verify(e.pending,input);const next=new Map(this.entries);next.set(id,{...e,signature});this.save(next);return {status:'signed'};}
- signature(id:string,token?:string){this.auth(token);const e=this.find(id);if(this.expired(e)) fail(410,'expired');return e.signature?{status:'signed',signature:e.signature}:{status:'pending'};}
+ pending(id:string){const e=this.find(id);return {pending:e.pending,status:this.expired(e)?'expired':e.signature?'signed':e.declined?'declined':'pending'};}
+ sign(id:string,input:unknown){const e=this.find(id);if(this.expired(e)) fail(410,'expired');if(e.signature) fail(409,'already signed');if(e.declined) fail(409,'already declined');const signature=verify(e.pending,input);const next=new Map(this.entries);next.set(id,{...e,signature});this.save(next);return {status:'signed'};}
+ signature(id:string,token?:string){this.auth(token);const e=this.find(id);if(this.expired(e)) fail(410,'expired');return e.signature?{status:'signed',signature:e.signature}:e.declined?{status:'declined'}:{status:'pending'};}
+ // Public like sign: only the request's own approver key can produce a valid decline signature.
+ decline(id:string,input:unknown){
+  const e=this.find(id);if(this.expired(e)) fail(410,'expired');if(e.signature) fail(409,'already signed');if(e.declined) return {status:'declined'};
+  const parsed=declineSchema.safeParse(input);if(!parsed.success) return fail(400,'invalid decline');
+  if(parsed.data.publicKey!==e.pending.authorization.signer) return fail(403,'decline must come from the requested approver');
+  if(!nep413Valid(declineSigningBytes(e.pending),parsed.data.signature,parsed.data.publicKey)) return fail(403,'invalid NEP-413 signature');
+  const next=new Map(this.entries);next.set(id,{...e,declined:true});this.save(next);return {status:'declined'};
+ }
 }
 export type Telegram={links:Links;linked:(chatId:string,publicKey:string,accountId:string)=>Promise<unknown>};
 export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify, telegram?:Telegram){return createServer(async(req,res)=>{
@@ -64,7 +72,7 @@ export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify
   const token=req.headers.authorization?.replace(/^Bearer /,'');
   let body:unknown;
   if(req.method==='POST'){let data='';for await(const chunk of req){data+=chunk;if(Buffer.byteLength(data)>65536) fail(413,'body too large');}try{body=JSON.parse(data);}catch{fail(400,'invalid JSON');}}
-  const match=path.match(/^\/requests\/([A-Za-z0-9_-]{43})(\/signature)?$/);
+  const match=path.match(/^\/requests\/([A-Za-z0-9_-]{43})(\/signature)?$/),declinePath=path.match(/^\/requests\/([A-Za-z0-9_-]{43})\/decline$/);
   const linkPath=path.match(/^\/links\/(.+)$/);
   let linkStatus:string|undefined;
   if(linkPath){const k=decodeURIComponent(linkPath[1]);let ok=false;try{ok=k.startsWith('ed25519:') && bs58.decode(k.slice(8)).length===32;}catch{/* not base58 */}if(!ok) fail(400,'expected an ed25519 public key');linkStatus=k;}
@@ -83,6 +91,7 @@ export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify
   }
   // Public: whether a key gets Telegram alerts, so the owner's console can say so. No chat ids or counts.
   else if(linkStatus && req.method==='GET' && telegram) result={publicKey:linkStatus,linked:telegram.links.chats(linkStatus).length>0};
+  else if(declinePath && req.method==='POST') result=relay.decline(declinePath[1],body);
   else if(match && req.method==='GET') result=match[2]?relay.signature(match[1],token):relay.pending(match[1]);
   else if(match?.[2] && req.method==='POST') result=relay.sign(match[1],body);
   else fail(404,'unknown endpoint');

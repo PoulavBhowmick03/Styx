@@ -32,3 +32,37 @@ it('allows configured browser origins, rejects others, and exposes health',async
  const preflight=await fetch(url,{method:'OPTIONS',headers:{Origin:'https://approval.example'}});expect(preflight.status).toBe(204);
  }finally{await new Promise<void>(r=>app.close(()=>r()));}
 });
+
+// A decline: the approver signs declineMessage with the request's nonce and the styx-decline recipient.
+function decline(p=pending(),key=pair){
+ const str=(s:string)=>{const b=Buffer.from(s),size=Buffer.alloc(4);size.writeUInt32LE(b.length);return Buffer.concat([size,b]);};
+ const tag=Buffer.alloc(4);tag.writeUInt32LE(2147484061);
+ const message=`Styx: decline payment ${p.payment.payment_id} of ${p.payment.amount} base units to ${p.payment.recipient} from ${p.vault}.`;
+ const payload=Buffer.concat([tag,str(message),Buffer.from(p.authorization.approval_nonce,'base64'),str('styx-decline'),Buffer.from([0])]);
+ return {schema:'styx-near-decline/1',publicKey:'ed25519:'+bs58.encode(key.publicKey),signature:Buffer.from(nacl.sign.detached(createHash('sha256').update(payload).digest(),key.secretKey)).toString('base64')};
+}
+it('records a decline signed by the requested approver, tells the agent, and refuses a later signature',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'styx-near-'));try{
+  const file=join(dir,'requests.json'),r=new Relay('token',file,()=>1000),{requestId}=r.submit(pending(),'token');
+  expect(r.decline(requestId,decline())).toEqual({status:'declined'});
+  expect(r.signature(requestId,'token')).toEqual({status:'declined'});
+  expect(r.pending(requestId).status).toBe('declined');
+  expect(()=>r.sign(requestId,signature())).toThrow('already declined');
+  expect(new Relay('token',file,()=>1000).signature(requestId,'token')).toEqual({status:'declined'});
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+it('refuses a decline from another key, a forged one, or after signing',()=>{
+ const r=new Relay('token',undefined,()=>1000),{requestId}=r.submit(pending(),'token');
+ expect(()=>r.decline(requestId,decline(pending(),nacl.sign.keyPair()))).toThrow('requested approver');
+ expect(()=>r.decline(requestId,{...decline(),signature:Buffer.alloc(64,1).toString('base64')})).toThrow('invalid NEP');
+ const changed=pending();changed.payment.amount='999999999';
+ expect(()=>r.decline(requestId,decline(changed))).toThrow('invalid NEP');
+ r.sign(requestId,signature());
+ expect(()=>r.decline(requestId,decline())).toThrow('already signed');
+});
+it('serves POST /requests/<id>/decline',async()=>{
+ const r=new Relay('token',undefined,()=>1000),app=server(r);await new Promise<void>(res=>app.listen(0,'127.0.0.1',res));
+ try{const {requestId}=r.submit(pending(),'token');const url=`http://127.0.0.1:${(app.address() as any).port}/requests/${requestId}/decline`;
+  const ok=await fetch(url,{method:'POST',body:JSON.stringify(decline())});expect(ok.status).toBe(200);expect(await ok.json()).toEqual({status:'declined'});
+ }finally{await new Promise<void>(res=>app.close(()=>res()));}
+});

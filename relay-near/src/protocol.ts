@@ -34,6 +34,12 @@ export function signingBytes(p:Pending, callbackUrl:string|null):Uint8Array {
 // Linking a Telegram chat to an approver key. The relay sends the chat a one-time code (32 random
 // bytes, base64url); the wallet signs linkMessage(code) with the code as NEP-413 nonce. This is not a
 // vault message: the recipient is LINK_RECIPIENT, so it can never pass as a payment approval.
+// Declining a request. The approver signs declineMessage(p) with the request's approval nonce; the
+// recipient is DECLINE_RECIPIENT, never a vault, so a decline can never pass as a payment approval.
+export const DECLINE_RECIPIENT='styx-decline';
+export function declineMessage(p:Pending):string { return `Styx: decline payment ${p.payment.payment_id} of ${p.payment.amount} base units to ${p.payment.recipient} from ${p.vault}.`; }
+export function declineSigningBytes(p:Pending):Uint8Array { return nep413Bytes(declineMessage(p),Buffer.from(p.authorization.approval_nonce,'base64'),DECLINE_RECIPIENT,null); }
+export const declineSchema=z.object({schema:z.literal('styx-near-decline/1'),publicKey:key,signature:bytes(64)}).strict();
 export const LINK_RECIPIENT='styx-telegram-link';
 export const linkCode=z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 export function linkMessage(code:string):string { return `Styx: send approval alerts for this key to the Telegram chat that asked for this link.\nCode: ${code}`; }
