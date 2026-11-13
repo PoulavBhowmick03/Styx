@@ -9,7 +9,9 @@ its own cap.**
 Built for the NEAR Hackathon (tracks: AI Security & Defense, Agent Economy, Autonomous Business).
 Styx began at ETHGlobal Mumbai (5 to 7 Nov 2026) on another chain. That code was removed from this
 repository's tree on 13 Nov 2026 and is only in its git history; everything in the tree is the NEAR
-build, started on 12 Nov 2026 ([HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-002).
+build, started on 12 Nov 2026 ([HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-002). Everything done
+during the hackathon, against the last pre-hackathon commit:
+[`a0e4fb2...main`](https://github.com/PoulavBhowmick03/Styx/compare/a0e4fb2...main) (Q-003).
 
 ## The problem
 
@@ -17,8 +19,8 @@ In [a recent study](https://arxiv.org/abs/2610.35835), AI agents with wallets of
 spending cap, for example by reading the emailed approval code meant for the owner. The limit and
 the approval both sat where the agent could reach them.
 
-Styx puts both on chain. The owner funds a vault and sets, per agent, who it may pay and the most it
-can pay per payment and per day.
+Styx puts both on chain. The owner funds a vault, sets which recipients it may pay (vault-wide), and
+sets, per agent, the most that agent can pay per payment and per day.
 
 - **The agent is a NEAR function-call access key on the vault account**, allowed to call only
   `pay`, `pay_with_exception`, `pay_evm`, `pay_evm_with_exception` and `post_record`. NEAR itself
@@ -46,7 +48,8 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
 [`uv`](https://docs.astral.sh/uv/). No keys of ours are involved.
 
 1. **On a local NEAR sandbox, no accounts needed.** `cd contracts/near/styx-vault && cargo test`.
-   You should see 41 unit tests and 2 sandbox tests pass. The sandbox tests deploy the vault and
+   You should see 41 unit tests and 2 sandbox tests pass. Then `cd ../../..` back to the repo root
+   for the steps below. The sandbox tests deploy the vault and
    token, pay through a real function-call key, settle an exception with a NEP-413 signature, roll
    back a failed transfer, and check that attacks A1 to A6 are refused by name.
 2. **On NEAR testnet, with your own faucet account.** `scripts/near/quickstart.sh` creates a testnet
@@ -54,12 +57,18 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
    payment, 1000 per day), then runs the agent. You should see a 25 tUSDC payment settle, 140 tUSDC
    refused with `OWNER_APPROVAL_REQUIRED`, 140 settle with the approver's signature, and six lines
    `PASS A1` to `PASS A6`. Keys go to `~/.near-credentials` and `~/.styx-near-quickstart/`.
-3. **Through the MCP server an agent uses.** `scripts/near/mcp_e2e.py` drives the MCP tools over the
-   NEAR CLI and the relay; `scripts/near/model_trial.py` puts a real model in the agent's seat. See
-   [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md) for what Sonnet and Haiku did.
+3. **Through the MCP server an agent uses.** After step 2, `scripts/near/mcp_quickstart.sh`. It
+   installs the Python workspace (`uv sync --all-packages`), starts a local relay on a random token,
+   and drives the five MCP tools against your quickstart vault: 130 tUSDC to vendor-b is refused with
+   `OWNER_APPROVAL_REQUIRED`, your test approver signs through the relay, and it settles. Needs Node
+   22+ for the relay. `scripts/near/model_trial.py` then puts a real model in the agent's seat (it
+   needs an authenticated `claude` CLI); see [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md)
+   for what Sonnet and Haiku did.
 4. **With the agent's model in a NEAR AI Cloud TEE.** Set `NEARAI_API_KEY` (a funded NEAR AI Cloud
    key; [HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-000 explains the free credits), run step 2 so you have a vault and a
-   `demo.env`, then `cd agent-near-ai && STYX_NEAR_DEMO_ENV=<that demo.env> uv run styx-near-ai-agent <invoice file>`.
+   `demo.env`, run `uv sync --all-packages` at the repo root (the runner starts the MCP server from
+   the root `.venv`), then
+   `cd agent-near-ai && STYX_NEAR_DEMO_ENV=~/.styx-near-quickstart/<account>/demo.env uv run styx-near-ai-agent <invoice file>`.
    You should see `attestation verified: 14 checks`, then the payment settle, and an
    `inference-<id>.json` evidence file. Details: [`docs/near/NEAR_AI.md`](docs/near/NEAR_AI.md).
 5. **The full demo, against the live deployment.** `scripts/near/demo_full.sh` (needs the authors'

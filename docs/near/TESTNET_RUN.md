@@ -28,6 +28,11 @@ the approval page and a wallet), fetched back through `styx_check_owner_approval
 The receipt carries the `ft_transfer` and `payment_executed` events, and vendor-b's balance read
 130 tUSDC afterwards.
 
+On 13 Nov 2026 `scripts/near/mcp_quickstart.sh` ran the same flow in one command against a
+quickstart vault (`vault.styx-qs-4e41a6.testnet`, the quickstart's own keys, a local relay on a
+random token): 130 tUSDC to vendor-b refused with `OWNER_APPROVAL_REQUIRED`, signed, settled in
+[2C7fofwa…](https://testnet.nearblocks.io/txns/2C7fofwagKgDcFBU5GiEobdTY9zpD6xFqqaMzW8T3GWZ).
+
 ## A sealed record for a reviewer (`export_record`)
 
 A 140 tUSDC exception to vendor-a settled in
@@ -155,4 +160,3 @@ chat, so this run does not by itself show per-key routing; `relay-near/src/links
 ## Not yet run
 
 - The owner console with a real wallet.
-- Hostile-invoice model trials on NEAR.
