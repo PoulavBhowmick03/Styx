@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -46,4 +46,16 @@ describe('creating a vault',()=>{
  for(const bad of ['a','Acme','acme.pay','-acme','acme-','ac--me','acme pay','x'.repeat(33)]) it(`refuses vault name ${JSON.stringify(bad)}`,()=>expect(()=>vaultName(bad)).toThrow('Vault name'));
  it('refuses a deposit under the minimum, bad NEAR amounts and unknown networks',()=>{expect(()=>createPlan('acme',TEST_TOKEN,'3.5','testnet',min)).toThrow('at least 3.8042');for(const d of ['-1','4,5','1e3','']) expect(()=>nearToYocto(d)).toThrow();expect(()=>createPlan('acme',TEST_TOKEN,'4','mainnet',min)).toThrow('No vault factory');});
  it('reads the created vault, or null for a refunded failure',()=>{const b64=(v:unknown)=>Buffer.from(JSON.stringify(v)).toString('base64');expect(createdVault({status:{SuccessValue:b64('acme.styx-vaults.testnet')}})).toBe('acme.styx-vaults.testnet');expect(createdVault({status:{SuccessValue:b64(null)}})).toBeNull();expect(()=>createdVault({status:{Failure:{}}})).toThrow();});
+});
+describe('describing what a transaction did',()=>{
+ it('names each owner action in words',()=>{
+  expect(describePlan(plan('mint',{amount:'100'}))).toBe('Minted 100 tUSDC to the vault');
+  expect(describePlan(plan('set_vault_daily_limit',{limit:'500'}))).toBe('Vault daily limit set to 500');
+  expect(describePlan(plan('set_approver',{approver:live.known.approver,enabled:'true'}))).toMatch(/^Approver set: ed25519:/);
+  expect(describePlan(plan('set_recipient',{recipient:live.known.recipient,allowed:'false'}))).toBe(`Recipient blocked: ${live.known.recipient}`);
+  expect(describePlan(plan('configure_agent',{agent:live.known.agent,per_payment_limit:'10',daily_limit:'100',valid_until:'1794614400',enabled:'true'}))).toBe('Agent configured: 10 per payment, 100 a day');
+  expect(describePlan(plan('withdraw',{to:live.known.recipient,amount:'1.5'}))).toBe(`Withdrew 1.5 to ${live.known.recipient}`);
+  expect(describePlan(plan('pause'))).toBe('Vault paused');
+  expect(describePlan(createPlan('acme',TEST_TOKEN,'4','testnet','3804260000000000000000000'))).toBe('Vault created: acme');
+ });
 });

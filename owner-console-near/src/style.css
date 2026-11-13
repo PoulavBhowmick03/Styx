@@ -41,3 +41,42 @@ footer { font-size: 0.8125rem; color: var(--fore-2); padding: 2rem 0 0; border-t
 #create code { font-size: 0.8125rem; }
 #create-confirm button { margin: 0.5rem 0.5rem 0 0; }
 .open-kicker { display: block; margin: 1.5rem 0 0.75rem; }
+
+/* Review dialog: opens where the user pressed Preview; the page behind is dimmed. */
+dialog#review { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 1.5rem; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--panel); color: var(--fore); overflow: auto; }
+dialog#review::backdrop { background: rgba(5, 4, 4, 0.72); backdrop-filter: blur(2px); }
+dialog#review h2 { font-size: clamp(1.6rem, 4vw, 2.1rem); margin: 0.25rem 0 0.5rem; }
+dialog#review .kicker { display: block; }
+dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; background: var(--ground); border: 1px solid var(--rule); border-radius: var(--radius); }
+.dialog-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+.dialog-actions button { flex: 1 1 10rem; }
+
+/* Toasts: what the transaction did, bottom right (full width on a phone). */
+#toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 50; display: flex; flex-direction: column; gap: 0.5rem; width: min(24rem, calc(100vw - 2rem)); }
+.toast { display: grid; gap: 0.2rem; padding: 0.85rem 2.75rem 0.85rem 1rem; position: relative; background: var(--panel-2); border: 1px solid var(--rule-2); border-left: 4px solid var(--ok); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); animation: rise 0.3s var(--ease) both; overflow-wrap: anywhere; }
+.toast.error { border-left-color: var(--ember); }
+.toast strong { font-weight: 600; }
+.toast span { color: var(--fore-2); font-size: 0.875rem; }
+.toast a { font: 0.75rem var(--mono); }
+.toast .toast-close { position: absolute; top: 0.5rem; right: 0.5rem; min-height: 0; padding: 0.15rem 0.45rem; font-size: 0.6875rem; background: transparent; color: var(--fore-2); border-color: var(--rule-2); }
+
+/* Guided setup */
+#setup .section-heading h2 { margin: 0; }
+.setup-steps { list-style: none; margin: 1rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.5rem; }
+.setup-steps .step-link { width: 100%; min-height: 0; padding: 0.6rem 0.75rem; text-align: left; font: 0.75rem var(--mono); letter-spacing: 0.02em; background: transparent; color: var(--fore-2); border: 1px solid var(--rule-2); }
+.setup-steps li.done .step-link { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.setup-steps li.current .step-link { color: var(--fore); border-color: var(--ember); background: var(--panel-2); }
+.setup-form h3 { font-family: var(--serif); font-weight: 400; font-size: 1.75rem; margin: 0.25rem 0 0.5rem; }
+.setup-form > p:first-child { font: 0.75rem var(--mono); color: var(--ember); margin: 0; }
+.setup-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+
+/* Payments on a phone: each row becomes a card with its labels. */
+@media (max-width: 40rem) {
+  .table-wrap { border: 0; overflow: visible; }
+  .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
+  .table-wrap thead { display: none; }
+  .table-wrap tr { margin: 0 0 0.75rem; padding: 0.75rem 1rem; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); }
+  .table-wrap td { max-width: none; padding: 0.3rem 0; border: 0; }
+  .table-wrap td::before { content: attr(data-label); display: block; font: 0.625rem var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--fore-2); }
+  .setup-steps { grid-template-columns: 1fr; }
+}

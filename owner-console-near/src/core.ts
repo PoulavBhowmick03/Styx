@@ -138,3 +138,23 @@ export function createdVault(tx:any):string|null{
  const value=tx?.status?.SuccessValue;if(typeof value!=='string') throw Error('Transaction did not succeed');
  return JSON.parse(Buffer.from(value,'base64').toString()||'null');
 }
+
+// ---- What a transaction did, in words, for toasts and the review title ----
+const tokens=(v:unknown)=>{const s=String(v??'0');return amount(s).replace(/\.?0+$/,'');};
+export function describePlan(p:Plan):string{
+ const a=p.args as Record<string,unknown>;
+ switch(p.method){
+  case 'configure_agent':return a.enabled?`Agent configured: ${tokens(a.per_payment_limit)} per payment, ${tokens(a.daily_limit)} a day`:'Agent disabled';
+  case 'set_recipient':return `${a.allowed?'Recipient allowed':'Recipient blocked'}: ${a.recipient}`;
+  case 'set_approver':return `${a.enabled?'Approver set':'Approver disabled'}: ${String(a.approver).slice(0,18)}…`;
+  case 'set_vault_daily_limit':return `Vault daily limit set to ${tokens(a.limit)}`;
+  case 'pause':return 'Vault paused';
+  case 'unpause':return 'Vault unpaused';
+  case 'withdraw':return `Withdrew ${tokens(a.amount)} to ${a.to}`;
+  case 'storage_deposit':return 'Vault registered with the token';
+  case 'ft_transfer':return `Funded the vault with ${tokens(a.amount)}`;
+  case 'mint':return `Minted ${tokens(a.amount)} tUSDC to the vault`;
+  case 'create_vault':return `Vault created: ${a.name}`;
+  default:return p.method;
+ }
+}
