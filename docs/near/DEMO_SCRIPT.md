@@ -22,9 +22,10 @@ multichain segment (2 USDC on Arc, 10 USDC on Base): an underfunded transfer rev
 
 1. Real-wallet test passed once (`docs/near/WALLET_TEST.md`). If it has not, use the test signer for
    the 0:55 segment and leave the page out.
-2. Telegram: send `/start` to `@erebus_pvt_bot` from the phone, and confirm `wallet_test.sh request`
-   prints `telegram alert sent`.
-3. Terminals: approval page (`cd approval-page-near && npm run dev`), and in the recording terminal
+2. Telegram: send `/start` to `@Styx_pvt_bot` from the phone, open the link it returns and sign the
+   link message in Meteor (the bot confirms "Linked"), then confirm `wallet_test.sh request` prints
+   `telegram alert sent`.
+3. The approval page is live at `https://styxco.xyz/approval/` (no local server). In the recording terminal
    `export RELAY=https://styx-relay-near.fly.dev RELAY_TOKEN_FILE=~/.styx-near/relay-token-fly`.
 4. Balances: the vault's Arc and Base address funded for the multichain segment.
 5. Nothing from `~/.styx-near`, `~/.near-credentials` or `.env` on screen.

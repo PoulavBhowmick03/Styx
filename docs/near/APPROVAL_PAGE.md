@@ -79,7 +79,8 @@ Initial NEAR-only validation on 12 November 2026 (EVM extension results below):
 
 Not tested in that initial run: a real wallet signature or redirect round trip, live NEAR RPC, deployed contract
 integration, CLI signature consumption, testnet settlement, Vercel deployment, proxy deployment,
-multi-process access, crash/power-loss recovery, load or abuse resistance. No Telegram alerts.
+multi-process access, crash/power-loss recovery, load or abuse resistance. No Telegram alerts at the time;
+per-approver Telegram links came later (link mode, `?link=<code>`; see `relay-near/README.md`).
 Signing and contract integration still need Poulav's review before being trusted, as PLAN.md requires.
 
 ## Trust and limits

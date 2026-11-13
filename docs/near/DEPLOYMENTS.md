@@ -25,7 +25,7 @@ Deployed 12 Nov 2026 from `contracts/near/build.sh` output (non-reproducible bui
 
 `https://styx-relay-near.fly.dev` (app `styx-relay-near`, region `sin`, 1 GB volume for request
 state). Secrets set with `flyctl secrets import`, never in the repo: `RELAY_TOKEN` (kept locally in
-`~/.styx-near/relay-token-fly`), `TELEGRAM_BOT_TOKEN` (bot `@erebus_pvt_bot`), `TELEGRAM_CHAT_ID`,
+`~/.styx-near/relay-token-fly`), `TELEGRAM_BOT_TOKEN` (bot `@Styx_pvt_bot`), `TELEGRAM_CHAT_ID` (fallback chat for unlinked keys),
 `RELAY_PUBLIC_URL`, `APPROVAL_PAGE_URL` (`http://localhost:5173` until the approval page is deployed;
 then set it to the page's https URL and add that origin to `ALLOWED_ORIGINS` in `fly.toml`).
 `/health` answers `{"ok":true}`; requests from `wallet_test.sh` reach it. The earlier, pre-NEAR relay app on Fly
@@ -37,3 +37,11 @@ then set it to the page's https URL and add that origin to `ALLOWED_ORIGINS` in 
 the approval page at `/approval/` and the owner console at `/console/`. The relay's
 `ALLOWED_ORIGINS` is `https://styxco.xyz` only, and its Telegram links go to
 `https://styxco.xyz/approval/`. The standalone Vercel projects used briefly that day were deleted.
+
+## Per-approver Telegram links (13 Nov 2026)
+
+The relay (commit `b8ea16f`, deployed to Fly the same day) polls `@Styx_pvt_bot`. An approver sends
+`/start` in a private chat, opens the one-time link (`styxco.xyz/approval/?link=<code>`, page commit
+`c31356b`), and signs a NEP-413 link message in Meteor. The relay then sends the alerts for that key
+to that chat; `TELEGRAM_CHAT_ID` only gets alerts for keys nobody has linked. Links are stored in
+`/data/relay/telegram-links.json` on the Fly volume. `/status` and `/unlink` in the bot.

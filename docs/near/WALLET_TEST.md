@@ -143,6 +143,13 @@ it should propose normally.
 Don't show `~/.near-credentials`, `~/.styx-near/`, the relay token or the `cat` output in B. Record
 part A from step A3 on.
 
+## Telegram alerts for your own key
+
+Once per chat: send `/start` to `@Styx_pvt_bot`, open the link it sends (on a phone, in the Meteor
+app's browser, as below), connect Meteor and press **Sign link message**. It is not a transaction.
+The bot answers "Linked" with your public key; from then on alerts for requests that ask that key
+to sign come to you. `/status` shows linked keys, `/unlink` stops them.
+
 ## On a phone with the Meteor app
 
 No documented link opens a page inside the Meteor app, so Telegram cannot launch the app straight to
