@@ -8,7 +8,7 @@ primary_region = "sin"
   HOST = "0.0.0.0"
   PORT = "8788"
   RELAY_STATE_FILE = "/data/relay/requests.json"
-  ALLOWED_ORIGINS = "https://styxco.xyz,https://owner-console-near.vercel.app"
+  ALLOWED_ORIGINS = "https://styxco.xyz"
 
 [[mounts]]
   source = "relay_data"

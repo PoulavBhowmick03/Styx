@@ -30,3 +30,10 @@ state). Secrets set with `flyctl secrets import`, never in the repo: `RELAY_TOKE
 then set it to the page's https URL and add that origin to `ALLOWED_ORIGINS` in `fly.toml`).
 `/health` answers `{"ok":true}`; requests from `wallet_test.sh` reach it. The earlier, pre-NEAR relay app on Fly
 (`erebus-vault-relay`) belongs to another project and was left running.
+
+## Site and relay origins (13 Nov 2026)
+
+`styxco.xyz` (Vercel project `styx-approve`, built by `scripts/build_site.sh`) serves the landing page,
+the approval page at `/approval/` and the owner console at `/console/`. The relay's
+`ALLOWED_ORIGINS` is `https://styxco.xyz` only, and its Telegram links go to
+`https://styxco.xyz/approval/`. The standalone Vercel projects used briefly that day were deleted.
