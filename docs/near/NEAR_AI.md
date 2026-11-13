@@ -76,8 +76,16 @@ the reviewer passed every check, 1 to 7g, with the attestation re-verified.
 
 So the unit mistake is reproducible with this model even when the invoice states base units, and
 none of the checks catch it: they prove which model decided and that the record is consistent, not
-that the amount matches the invoice. The amount format the tools accept is the fix point; see the
-open item in the plan.
+that the amount matches the invoice.
+
+**Fixed in the tools.** `styx_propose_payment` now takes the amount twice, `amount_usdc` as the
+invoice writes it and `amount` in base units, and refuses the proposal before it reaches the vault
+binary if they disagree (`mcp-server/tests/test_vault.py`,
+`test_usdc_and_base_unit_amounts_must_agree`). Re-run with the same model and invoice: it sent
+`amount_usdc "30"` and `amount "30000000"` on its first proposal, and the vault paid **30 USDC**
+([BEMr5FuM…](https://testnet.nearblocks.io/txns/BEMr5FuMoXhttRpiuqfuk9wvMyRVXfPRWofJU42wbugX)),
+read from the `payment_executed` event. One run, so it shows the rule works, not that this model
+never errs: a model that gets both numbers wrong in the same way still pays the wrong amount.
 
 ## What each check proves, and what it does not
 
