@@ -1,5 +1,5 @@
 app = "styx-relay-near"
-primary_region = "bom"
+primary_region = "sin"
 
 [build]
   dockerfile = "Dockerfile"
@@ -8,7 +8,7 @@ primary_region = "bom"
   HOST = "0.0.0.0"
   PORT = "8788"
   RELAY_STATE_FILE = "/data/relay/requests.json"
-  ALLOWED_ORIGINS = "https://REPLACE-WITH-APPROVAL-PAGE.vercel.app"
+  ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
 [[mounts]]
   source = "relay_data"

@@ -18,7 +18,7 @@ OWNER="${OWNER:-styx-owner-c87a.testnet}"
 NETWORK="${NETWORK:-testnet-fastnear}"
 RELAY="${RELAY:-http://127.0.0.1:8788}"
 PAGE="${PAGE:-http://localhost:5173}"
-TOKEN_FILE="$HOME/.styx-near/relay-token"
+TOKEN_FILE="${RELAY_TOKEN_FILE:-$HOME/.styx-near/relay-token}"
 LAST="$HOME/.styx-near/wallet-test-last.env"
 [ -f "$TOKEN_FILE" ] || { umask 077; openssl rand -hex 24 > "$TOKEN_FILE"; }
 TOKEN="$(cat "$TOKEN_FILE")"
@@ -65,7 +65,9 @@ import json, sys, urllib.request
 pending = json.load(open(sys.argv[1]))
 req = urllib.request.Request(sys.argv[2] + "/requests", data=json.dumps({"pending": pending}).encode(),
                              headers={"content-type": "application/json", "authorization": "Bearer " + sys.argv[3]})
-print(json.load(urllib.request.urlopen(req, timeout=20))["requestId"])
+reply = json.load(urllib.request.urlopen(req, timeout=20))
+print("telegram alert sent" if reply.get("alerted") else "no telegram alert (not configured, or it failed)", file=sys.stderr)
+print(reply["requestId"])
 PY
 )
   printf 'ENVFILE=%s\nPAYMENT_ID=%s\nREQUEST_ID=%s\nTAG=%s\n' "$envfile" "$id" "$request" "$tag" > "$LAST"

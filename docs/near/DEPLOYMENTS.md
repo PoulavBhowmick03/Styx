@@ -20,3 +20,13 @@ Deployed 12 Nov 2026 from `contracts/near/build.sh` output (non-reproducible bui
 | Arc chain settings | chain 5042002, USDC `0x3600…0000`, max fee 200 gwei, priority 1 gwei, gas limit 120000 |
 | Allowed EVM vendors | `0xf4D88218d13333247BF7616AFFb45F24a21E07cc`, `0x14E823AE14720657A7B90429797A5Ea4636e1291` (addresses only; nobody holds their keys) |
 | Agent | the same function-call key, here allowed `pay`, `pay_with_exception`, `pay_evm`, `pay_evm_with_exception`, `post_record` |
+
+## NEAR relay on Fly (13 Nov 2026)
+
+`https://styx-relay-near.fly.dev` (app `styx-relay-near`, region `sin`, 1 GB volume for request
+state). Secrets set with `flyctl secrets import`, never in the repo: `RELAY_TOKEN` (kept locally in
+`~/.styx-near/relay-token-fly`), `TELEGRAM_BOT_TOKEN` (bot `@erebus_pvt_bot`), `TELEGRAM_CHAT_ID`,
+`RELAY_PUBLIC_URL`, `APPROVAL_PAGE_URL` (`http://localhost:5173` until the approval page is deployed;
+then set it to the page's https URL and add that origin to `ALLOWED_ORIGINS` in `fly.toml`).
+`/health` answers `{"ok":true}`; requests from `wallet_test.sh` reach it. The Arc build's relay
+(`erebus-vault-relay`) is a separate app and was left running.
