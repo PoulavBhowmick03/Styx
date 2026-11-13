@@ -52,7 +52,16 @@ state folder will live. It holds no key material. If the key was generated in th
 screen also shows the commands that move both downloads into `$HOME/.styx-near-agent/<vault>/`
 (owner-only permissions) and print the `claude mcp add` line.
 
-Status: covered by unit tests and the mocked-wallet browser test (`test/wallet-smoke.mjs`); not yet
+**Approver invites.** Under the approver field, *Copy an invite link* gives `?join=<vault>`. The approver
+opens it, connects their wallet and signs one NEP-413 message (`inviteMessage`: not a transaction; the
+recipient is the vault). The page returns a link carrying their account, public key, nonce and
+signature. When the owner opens it, the console checks the signature, asks the RPC whether the key is
+on that account (`view_access_key`), says which, and fills the approver field. Adding the approver is
+still the owner's own transaction. An old signature for the same vault and key still checks out: it
+proves the approver held the key, not when they signed.
+
+Status: covered by unit tests and the mocked-wallet browser tests (`test/wallet-smoke.mjs`,
+`test/invite-smoke.mjs`, whose stand-in wallet signs with a real throwaway key) (`test/wallet-smoke.mjs`); not yet
 run with a real Meteor wallet on testnet.
 
 Owner methods: configure_agent, set_recipient, set_approver, set_vault_daily_limit, pause, unpause,
