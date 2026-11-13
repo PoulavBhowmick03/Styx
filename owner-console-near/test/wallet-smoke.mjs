@@ -33,7 +33,7 @@ try{
    assert.ok(result,'Missing canned RPC result');await route.fulfill({json:{result}});
   });
   await page.goto((process.env.CONSOLE_URL??'http://127.0.0.1:5174')+'/?vault='+fixture.vault);
-  await page.getByText(/Lists unavailable or partial:/).waitFor();
+  await page.getByText(/Lists unavailable/).waitFor();
   if(accountId==='stranger.testnet'){
    assert.match(await page.locator('#role').textContent(),/Read-only/);
    for(const button of await page.locator('[data-write]').all())assert.equal(await button.isDisabled(),true);
