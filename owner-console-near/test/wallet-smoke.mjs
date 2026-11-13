@@ -20,6 +20,7 @@ try{
    if(q.method==='status')result=fixture.status;
   else if(q.method==='query'){
     if(p.request_type==='view_access_key_list')result=fixture.accessKeys;
+    else if(p.request_type==='view_account')result={amount:'10000000000000000000000000',locked:'0',storage_usage:500,code_hash:'11111111111111111111111111111111',block_height:1,block_hash:'mock'};
     else{
      const args=JSON.parse(Buffer.from(p.args_base64,'base64').toString());
      result=structuredClone(fixture.views[p.account_id+':'+p.method_name+':'+JSON.stringify(args,Object.keys(args).sort())]);
@@ -48,8 +49,23 @@ try{
    assert.deepEqual(submitted.actions,[{type:'FunctionCall',params:{methodName:'pause',args:{},gas:'100000000000000',deposit:'0'}}]);
    const card=page.locator('#overview-data article').filter({has:page.getByText('Paused',{exact:true})});
    assert.match(await card.textContent(),/true/);
+   // Guided setup: the rules step sends several vault calls as one transaction, one approval.
+   await page.locator('#setup-steps button',{hasText:'Set the rules'}).click();
+   const setup=page.locator('#setup-form');
+   await setup.locator('input[name="limit"]').fill('500');
+   await setup.locator('input[name="recipient"]').fill('vendor-a.styx-owner-c87a.testnet');
+   await setup.locator('input[name="agent"]').fill('');
+   await setup.getByRole('button',{name:'Review and sign'}).click();
+   assert.match(await page.locator('#preview').textContent(),/2 calls, one approval/);
+   await page.evaluate(()=>{window.__submitted=undefined;});
+   await page.locator('#send').click();
+   await page.waitForFunction(()=>window.__submitted);
+   const batch=await page.evaluate(()=>window.__submitted);
+   assert.equal(batch.receiverId,fixture.vault);
+   assert.deepEqual(batch.actions.map(a=>[a.params.methodName,a.params.gas]),[['set_vault_daily_limit','30000000000000'],['set_recipient','30000000000000']]);
+   assert.match(await page.locator('#setup-form').textContent(),/Styx_pvt_bot/);
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction. No real wallet or transaction.');
 }finally{await browser.close();}

@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, type EventRow, type Plan } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -19,7 +19,7 @@ const readForm=(form:HTMLFormElement)=>Object.fromEntries(new FormData(form).ent
 let context:{vault:string;network:string;rpc:RPC}|undefined, facts:Awaited<ReturnType<typeof overview>>|undefined;
 let selector:WalletSelector|undefined, connected='',rows:EventRow[]=[],busy=false;
 let known={agents:new Set<string>(),approvers:new Set<string>(),recipients:new Set<string>()};
-let plan:Plan|undefined,planContext:typeof context;
+let plan:Batch|undefined,planContext:typeof context;
 let unsubscribe:(()=>void)|undefined;
 const review=$<HTMLDialogElement>('#review');
 let pendingAction:(()=>Promise<void>)|undefined;
@@ -138,14 +138,21 @@ function fieldInput(field:string,value=''){
  }else{input=document.createElement('input');input.required=true;input.autocomplete='off';if(field==='valid_until')input.placeholder='Unix seconds, e.g. 1794614400';}
  input.name=field;if(value)input.value=value;label.append(input);return label;
 }
-function reviewLines(values:Record<string,string>,p:Plan){
- const human=Object.entries(values).filter(([k])=>['amount','per_payment_limit','daily_limit','limit'].includes(k)).map(([k,v])=>`${labels[k]}: ${v} → ${String(p.args[k])} base units`);
- return [`Network: ${context!.network}`,`Signer: ${connected}`,`Vault: ${context!.vault}`,`Token: ${facts!.info.token}`,...human,`Attached NEAR: ${near(p.deposit)} (${p.deposit} yoctoNEAR)`,'',JSON.stringify(p,null,2)];
+function reviewLines(values:Record<string,string>,b:Batch){
+ // Only amounts that a call in this transaction actually uses; an unused form field is not shown.
+ const used=new Set(b.calls.flatMap(c=>Object.keys(c.args)));
+ const units=Object.entries(values).filter(([k,v])=>v && used.has(k) && ['amount','per_payment_limit','daily_limit','limit'].includes(k)).map(([k,v])=>`${labels[k]}: ${v}`);
+ const calls=b.calls.length>1?['',`${b.calls.length} calls, one approval. They run in order and fail together:`,...b.calls.map((c,i)=>`  ${i+1}. ${describePlan(c)}`)]:[];
+ return [`Network: ${context!.network}`,`Signer: ${connected}`,`Vault: ${context!.vault}`,`Token: ${facts!.info.token}`,...units,`Attached NEAR: ${near(batchDeposit(b))}`,...calls,'',JSON.stringify(b.calls.length>1?b:b.calls[0],null,2)];
+}
+function previewBatch(plans:Plan[],values:Record<string,string>){
+ if(!context || !facts || connected!==facts.info.owner) throw Error('Connect the vault owner');
+ plan=batchPlan(plans);planContext=context;
+ openReview(describeBatch(plan),reviewLines(values,plan),sendPlan);
 }
 function previewPlan(method:string,values:Record<string,string>){
- if(!context || !facts || connected!==facts.info.owner) throw Error('Connect the vault owner');
- plan=formPlan(method,values,context.vault,facts.info.token,context.network);planContext=context;
- openReview(describePlan(plan),reviewLines(values,plan),sendPlan);
+ if(!context || !facts) throw Error('Connect the vault owner');
+ previewBatch([formPlan(method,values,context.vault,facts.info.token,context.network)],values);
 }
 for(const [method,title,fields] of definitions){
  const form=document.createElement('form');form.className='panel';form.dataset.method=method;form.append(el('h3',title));
@@ -161,6 +168,7 @@ $('#send').onclick=async()=>{const action=pendingAction;if(action && !busy) awai
 async function sendPlan(){
  if(!plan || !context || !selector || context!==planContext || busy) return;
  const selected=plan,c=context;busy=true;role();
+ const title=describeBatch(selected);
  try{
   await c.rpc.assertNetwork(c.network);
   const current=await c.rpc.view(c.vault,'get_vault');
@@ -168,24 +176,29 @@ async function sendPlan(){
   if(active!==current.owner || current.token!==facts?.info.token) throw Error('Owner or token changed; read and preview again');
   const wallet=await selector.wallet();
   if(!(await wallet.getAccounts()).some(a=>a.accountId===active)) throw Error('Selected wallet account differs');
-  if(selected.method==='storage_deposit' && await c.rpc.view(current.token,'storage_balance_of',{account_id:c.vault})) throw Error('Vault is already registered; refresh state');
-  // Funding sends the owner's own tokens: say so before the wallet fails on chain.
-  if(selected.method==='ft_transfer'){
-   const held=await c.rpc.view(current.token,'ft_balance_of',{account_id:active});
-   if(BigInt(held)<BigInt(String(selected.args.amount))) throw Error(`Your account holds ${amount(held)} of ${current.token}, less than ${amount(String(selected.args.amount))}.`+(c.network==='testnet' && current.token===TEST_TOKEN?' On testnet, use Mint tUSDC to fund the vault directly.':''));
+  for(const call of selected.calls){
+   if(call.method==='storage_deposit' && await c.rpc.view(current.token,'storage_balance_of',{account_id:c.vault})) throw Error('Vault is already registered; refresh state');
+   // Funding sends the owner's own tokens: say so before the wallet fails on chain.
+   if(call.method==='ft_transfer'){
+    const held=await c.rpc.view(current.token,'ft_balance_of',{account_id:active});
+    if(BigInt(held)<BigInt(String(call.args.amount))) throw Error(`Your account holds ${amount(held)} of ${current.token}, less than ${amount(String(call.args.amount))}.`+(c.network==='testnet' && current.token===TEST_TOKEN?' On testnet, use Mint tUSDC to fund the vault directly.':''));
+   }
   }
+  const funds=fundsProblem(await c.rpc.call('query',{request_type:'view_account',finality:'final',account_id:active}),batchDeposit(selected),active!);
+  if(funds) throw Error(funds);
   clearPlan();say('Waiting for wallet approval. Do not submit again while the outcome is unknown.');
-  const callback=new URL(location.href);callback.searchParams.set('vault',c.vault);callback.searchParams.set('rpc',c.rpc.url);callback.searchParams.set('network',c.network);
-  const result=await wallet.signAndSendTransaction({signerId:active,receiverId:selected.receiverId,actions:[{type:'FunctionCall',params:{methodName:selected.method,args:selected.args,gas:selected.gas,deposit:selected.deposit}}]});
+  const result=await wallet.signAndSendTransaction({signerId:active,receiverId:selected.receiverId,actions:selected.calls.map(p=>({type:'FunctionCall' as const,params:{methodName:p.method,args:p.args,gas:p.gas,deposit:p.deposit}}))});
   const hash=(result as any)?.transaction?.hash;
   if(hash) await c.rpc.transaction(hash,active!);
-  if(typeof selected.args.agent==='string')known.agents.add(selected.args.agent);
-  if(typeof selected.args.approver==='string')known.approvers.add(selected.args.approver);
-  if(typeof selected.args.recipient==='string')known.recipients.add(selected.args.recipient);
+  for(const call of selected.calls){
+   if(typeof call.args.agent==='string')known.agents.add(call.args.agent);
+   if(typeof call.args.approver==='string')known.approvers.add(call.args.approver);
+   if(typeof call.args.recipient==='string')known.recipients.add(call.args.recipient);
+  }
   setupChoice=undefined;await refresh();say(hash?`Transaction finalized: ${hash}. State read back from the chain.`:'Wallet returned without a transaction outcome. State refreshed; verify before retrying.');
-  if(hash) toast('ok',describePlan(selected),'Finalized and read back from the chain.',txLink(c.network,hash));
+  if(hash) toast('ok',title,'Finalized and read back from the chain.',txLink(c.network,hash));
   else toast('error','No transaction outcome','The wallet returned without one. State refreshed; check before retrying.');
- }catch(e){fail(e);status.append(document.createTextNode(' If you approved in the wallet, the outcome may be unknown. Check state and transaction status before retrying.'));toast('error',`Not done: ${describePlan(selected)}`,e instanceof Error?e.message:String(e));try{await refresh();}catch{/* retain the original error */}}
+ }catch(e){fail(e);status.append(document.createTextNode(' If you approved in the wallet, the outcome may be unknown. Check state and transaction status before retrying.'));toast('error',`Not done: ${title}`,e instanceof Error?e.message:String(e));try{await refresh();}catch{/* retain the original error */}}
  finally{busy=false;role();}
 }
 // Makes an agent key in this browser, downloads it once, and returns the public key.
@@ -247,6 +260,8 @@ createForm.onsubmit=async e=>{e.preventDefault();try{
  if(taken) throw Error(`${vault} already exists; choose another name`);
  if(!selector) await walletSetup(network,factory);
  if(!connected){setupModal(selector!,{contractId:factory}).show();createStatus.textContent='Connect your wallet, then press Preview vault again.';return;}
+ const funds=fundsProblem(await rpc.call('query',{request_type:'view_account',finality:'final',account_id:connected}),p.deposit,connected);
+ if(funds) throw Error(funds+(network==='testnet'?' Top up the account with testnet NEAR, then press Preview vault again.':''));
  createStatus.textContent='';
  openReview(`Create ${vault}`,[`Network: ${network}`,`Signer and owner: ${connected}`,`Factory: ${factory}`,`New vault: ${vault}`,`Token: ${p.args.token}`,`Attached NEAR: ${amountNear(p.deposit)} (minimum ${amountNear(minimum)})`,'',JSON.stringify(p,null,2)],()=>sendCreate(p,rpc,network));
 }catch(err){createStatus.textContent=err instanceof Error?err.message:String(err);}};
@@ -260,25 +275,40 @@ async function sendCreate(p:Plan,rpc:RPC,network:string){
   const tx=await rpc.call('tx',{tx_hash:hash,sender_account_id:signer,wait_until:'FINAL'});
   const vault=createdVault(tx);
   if(!vault){createStatus.textContent=`Creation failed and the deposit was refunded (${hash}).`;toast('error','Vault not created','The deposit was refunded.',txLink(network,hash));return;}
-  createStatus.textContent=`Created ${vault}. Opening it.`;toast('ok',`Vault created: ${vault}`,'You own it. Set it up below, one step at a time.',txLink(network,hash));
+  createStatus.textContent=`Created ${vault}. Opening it.`;toast('ok',`Vault created: ${vault}`,'You own it. Two more approvals below and it is ready.',txLink(network,hash));
   (loadForm.elements.namedItem('vault') as HTMLInputElement).value=vault;busy=false;await load();
   $('#setup').scrollIntoView({behavior:'smooth'});
  }catch(err){const m=err instanceof Error?err.message:String(err);createStatus.textContent=m+' If you approved in the wallet, check the transaction before retrying.';toast('error','Vault not created',m);}
  finally{busy=false;}
 }
 
-// ---- Guided setup: one step at a time, each ticked off from chain state ----
-type Step={title:string;why:string;method:()=>string;fields:string[];defaults:()=>Record<string,string>;done:()=>boolean};
+// ---- Guided setup: two steps, one wallet approval each, ticked off from chain state ----
+// Each step's calls go to one contract (the token, then the vault), so each step is one transaction.
+const BOT='Styx_pvt_bot';
+type Step={title:string;why:string;fields:string[];optional?:boolean;defaults:()=>Record<string,string>;plans:(v:Record<string,string>)=>Plan[];done:()=>boolean};
 const testToken=()=>context?.network==='testnet' && facts?.info.token===TEST_TOKEN;
 const agentInstalled=()=>!!facts?.keys.keys.some((k:any)=>typeof k.access_key.permission==='object' && k.access_key.permission.FunctionCall?.method_names?.includes('pay'));
+const rulesDone={limit:()=>(facts?.info.vault_daily_limit??'0')!=='0',recipient:()=>known.recipients.size>0,approver:()=>known.approvers.size>0,agent:agentInstalled};
+const owned=(method:string,v:Record<string,string>)=>formPlan(method,v,context!.vault,facts!.info.token,context!.network);
 const steps:Step[]=[
- {title:'Register with the token',why:'The token keeps a balance for the vault only after this one-time registration. It costs 0.00125 NEAR.',method:()=>'storage_deposit',fields:[],defaults:()=>({}),done:()=>!!facts?.storage},
- {title:'Fund the vault',why:'The agent pays from this balance. On testnet, mint test tUSDC straight into the vault.',method:()=>testToken()?'mint':'ft_transfer',fields:['amount'],defaults:()=>({amount:'100'}),done:()=>BigInt(facts?.balance??'0')>0n},
- {title:'Set the vault daily limit',why:'Nothing can be paid while it is 0. It caps every agent together per UTC day.',method:()=>'set_vault_daily_limit',fields:['limit'],defaults:()=>({limit:'500'}),done:()=>(facts?.info.vault_daily_limit??'0')!=='0'},
- {title:'Allow a recipient',why:'The agent can pay only accounts you allow.',method:()=>'set_recipient',fields:['recipient','allowed'],defaults:()=>({allowed:'true'}),done:()=>known.recipients.size>0},
- {title:'Add an approver',why:'Their NEAR public key signs payments over the per-payment limit. They get each request in Telegram after sending /start to @Styx_pvt_bot.',method:()=>'set_approver',fields:['approver','enabled'],defaults:()=>({enabled:'true'}),done:()=>known.approvers.size>0},
- {title:'Add the agent',why:'Generate the agent key here (it downloads once), then set its limits. The vault installs it as a key that can only call the pay methods.',method:()=>'configure_agent',fields:['agent','per_payment_limit','daily_limit','valid_until','enabled'],defaults:()=>({per_payment_limit:'10',daily_limit:'100',valid_until:String(Math.floor(Date.now()/1000)+7*86400),enabled:'true'}),done:agentInstalled},
+ {title:'Register and fund the vault',why:`One approval: the token registers the vault (0.00125 NEAR, once) and ${'{fund}'} into it. The agent pays from this balance.`,fields:['amount'],defaults:()=>({amount:'100'}),
+  plans:v=>[...(facts?.storage?[]:[owned('storage_deposit',{})]),owned(testToken()?'mint':'ft_transfer',v)],done:()=>!!facts?.storage && BigInt(facts?.balance??'0')>0n},
+ {title:'Set the rules',why:'One approval sets the vault\'s daily cap, who it may pay, who approves exceptions, and the agent\'s own limits. Leave a field empty to skip it.',
+  fields:['limit','recipient','approver','agent','per_payment_limit','daily_limit','valid_until'],optional:true,
+  defaults:()=>({limit:rulesDone.limit()?'':'500',per_payment_limit:'10',daily_limit:'100',valid_until:String(Math.floor(Date.now()/1000)+7*86400)}),
+  plans:v=>[
+   ...(v.limit?[owned('set_vault_daily_limit',{limit:v.limit})]:[]),
+   ...(v.recipient?[owned('set_recipient',{recipient:v.recipient.trim(),allowed:'true'})]:[]),
+   ...(v.approver?[owned('set_approver',{approver:v.approver.trim(),enabled:'true'})]:[]),
+   ...(v.agent?[owned('configure_agent',{agent:v.agent.trim(),per_payment_limit:v.per_payment_limit,daily_limit:v.daily_limit,valid_until:v.valid_until,enabled:'true'})]:[]),
+  ],done:()=>Object.values(rulesDone).every(f=>f())},
 ];
+function telegramNote(){
+ const box=document.createElement('div');box.className='setup-note';
+ const link=el('a',`Open @${BOT} in Telegram`) as HTMLAnchorElement;link.href=`https://t.me/${BOT}`;link.target='_blank';link.rel='noopener noreferrer';
+ box.append(el('p',`Your approver links their wallet to Telegram once: send /start to @${BOT}, open the link it replies with, and sign the link message in their NEAR wallet. After that, every request over the per-payment limit reaches their phone.`),link);
+ return box;
+}
 let setupChoice:number|undefined;
 function renderSetup(){
  const section=$('#setup');
@@ -293,14 +323,25 @@ function renderSetup(){
   button.onclick=()=>{setupChoice=i;renderSetup();};item.append(button);return item;
  }));
  const form=$<HTMLFormElement>('#setup-form');
- if(current<0){form.replaceChildren(el('h3','This vault is ready'),el('p','The agent can pay allowed recipients within its limits. Give it the downloaded key file and the vault name; payments over the per-payment limit go to your approver.'));return;}
- const step=steps[current],method=step.method(),values=step.defaults();
- form.replaceChildren(el('p',`Step ${current+1} of ${steps.length}${state[current]?' · already done':''}`),el('h3',step.title),el('p',step.why));
- for(const field of step.fields) form.append(fieldInput(field,values[field]??''));
+ if(current<0){
+  form.replaceChildren(el('h3','This vault is ready'),el('p','The agent can pay allowed recipients within its limits. Give it the downloaded key file and the vault name. Payments over the per-payment limit go to your approver.'),telegramNote());
+  return;
+ }
+ const step=steps[current],values=step.defaults();
+ const fund=testToken()?'mints test tUSDC':'moves your tokens';
+ form.replaceChildren(el('p',`Step ${current+1} of ${steps.length} · one wallet approval${state[current]?' · already done':''}`),el('h3',step.title),el('p',step.why.replace('{fund}',fund)));
+ for(const field of step.fields){
+  const label=fieldInput(field,values[field]??'');
+  if(step.optional){const input=label.querySelector('input');if(input)input.required=false;}
+  if(field==='recipient' && rulesDone.recipient()) label.append(el('small','A recipient is already allowed; add another or leave empty.'));
+  if(field==='approver'){if(rulesDone.approver()) label.append(el('small','An approver is already set; add another or leave empty.'));form.append(label,telegramNote());continue;}
+  if(field==='agent' && agentInstalled()) label.append(el('small','An agent is already installed; add another or leave empty.'));
+  form.append(label);
+ }
  const actions=document.createElement('div');actions.className='setup-actions';
- if(method==='configure_agent'){const gen=el('button','Generate agent key') as HTMLButtonElement;gen.type='button';gen.className='secondary';gen.onclick=()=>{try{const pk=generateAgentKey();(form.elements.namedItem('agent') as HTMLInputElement).value=pk;toast('ok','Agent key downloaded','Keep the file safe; only its public key goes on chain.');}catch(e){toast('error','Cannot generate a key',e instanceof Error?e.message:String(e));}};actions.append(gen);}
+ if(step.fields.includes('agent')){const gen=el('button','Generate agent key') as HTMLButtonElement;gen.type='button';gen.className='secondary';gen.onclick=()=>{try{const pk=generateAgentKey();(form.elements.namedItem('agent') as HTMLInputElement).value=pk;toast('ok','Agent key downloaded','Keep the file safe; only its public key goes on chain.');}catch(e){toast('error','Cannot generate a key',e instanceof Error?e.message:String(e));}};actions.append(gen);}
  const sign=el('button','Review and sign') as HTMLButtonElement;sign.dataset.write='';sign.disabled=busy;actions.append(sign);
  const skip=el('button',current<steps.length-1?'Skip this step':'Close') as HTMLButtonElement;skip.type='button';skip.className='secondary';skip.onclick=()=>{setupChoice=current<steps.length-1?current+1:-1;renderSetup();};actions.append(skip);
  form.append(actions);
- form.onsubmit=e=>{e.preventDefault();try{previewPlan(method,readForm(form));}catch(err){toast('error','Cannot preview',err instanceof Error?err.message:String(err));}};
+ form.onsubmit=e=>{e.preventDefault();try{const v=readForm(form);previewBatch(step.plans(v),v);}catch(err){toast('error','Cannot preview',err instanceof Error?err.message:String(err));}};
 }

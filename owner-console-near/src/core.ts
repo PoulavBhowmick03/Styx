@@ -158,3 +158,30 @@ export function describePlan(p:Plan):string{
   default:return p.method;
  }
 }
+
+// ---- Several calls to one receiver, signed once ----
+// NEAR runs a transaction's actions in order, in one receipt, and all of them fail together.
+// Setup calls burn 1.5 to 3.2 Tgas each on testnet, so 30 Tgas per call leaves a wide margin
+// and eight calls stay under the 300 Tgas transaction limit.
+export const BATCH_GAS='30000000000000';
+export type Batch={receiverId:string;calls:Plan[]};
+export function batchPlan(plans:Plan[]):Batch{
+ if(!plans.length) throw Error('Nothing to sign: fill in at least one field');
+ if(plans.length>8) throw Error('At most eight calls in one transaction');
+ const receiverId=plans[0].receiverId;
+ if(plans.some(p=>p.receiverId!==receiverId)) throw Error('One transaction can only call one contract');
+ return {receiverId,calls:plans.length===1?plans:plans.map(p=>({...p,gas:BATCH_GAS}))};
+}
+export const describeBatch=(b:Batch)=>b.calls.length===1?describePlan(b.calls[0]):`${b.calls.length} changes in one transaction`;
+export const batchDeposit=(b:Batch)=>b.calls.reduce((s,p)=>s+BigInt(p.deposit),0n).toString();
+
+// ---- Can this account pay for what it is about to sign? ----
+// NEAR keeps 1e19 yoctoNEAR per byte of account storage locked; the rest of `amount` is spendable.
+export const GAS_RESERVE='50000000000000000000000'; // 0.05 NEAR for gas
+export function spendable(view:{amount:string;storage_usage:number}):bigint{
+ const free=BigInt(view.amount)-BigInt(view.storage_usage)*10n**19n;return free>0n?free:0n;
+}
+export function fundsProblem(view:{amount:string;storage_usage:number},deposit:string,who:string):string|null{
+ const free=spendable(view),need=BigInt(deposit)+BigInt(GAS_RESERVE);
+ return free>=need?null:`${who} has ${amountNear(free.toString())} NEAR to spend; this needs ${amountNear(deposit)} NEAR plus about 0.05 for gas.`;
+}

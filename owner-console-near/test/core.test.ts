@@ -59,3 +59,27 @@ describe('describing what a transaction did',()=>{
   expect(describePlan(createPlan('acme',TEST_TOKEN,'4','testnet','3804260000000000000000000'))).toBe('Vault created: acme');
  });
 });
+
+import { batchPlan,BATCH_GAS,describeBatch,batchDeposit,spendable,fundsProblem } from '../src/core';
+describe('one approval for several calls',()=>{
+ const p=(m:string,v:Record<string,string>={})=>formPlan(m,v,LIVE_VAULT,TEST_TOKEN,'testnet');
+ it('batches calls to the vault and gives each 30 Tgas',()=>{
+  const b=batchPlan([p('set_vault_daily_limit',{limit:'500'}),p('set_recipient',{recipient:'vendor-a.styx-owner-c87a.testnet',allowed:'true'})]);
+  expect(b.receiverId).toBe(LIVE_VAULT);expect(b.calls.map(c=>c.gas)).toEqual([BATCH_GAS,BATCH_GAS]);
+  expect(describeBatch(b)).toBe('2 changes in one transaction');expect(describeBatch(batchPlan([b.calls[0]]))).toBe('Vault daily limit set to 500');
+ });
+ it('keeps a single call as it was',()=>{const one=p('pause');expect(batchPlan([one]).calls).toEqual([one]);});
+ it('batches token registration and mint, summing the deposit',()=>{
+  const b=batchPlan([p('storage_deposit'),p('mint',{amount:'100'})]);expect(b.receiverId).toBe(TEST_TOKEN);expect(batchDeposit(b)).toBe(STORAGE_DEPOSIT);
+ });
+ it('refuses mixed receivers, empty and oversized batches',()=>{
+  expect(()=>batchPlan([p('storage_deposit'),p('pause')])).toThrow(/one contract/);
+  expect(()=>batchPlan([])).toThrow();expect(()=>batchPlan(Array(9).fill(p('pause')))).toThrow();
+ });
+});
+describe('funds before signing',()=>{
+ const view=(near:string,bytes=182)=>({amount:(BigInt(near)*10n**24n).toString(),storage_usage:bytes});
+ it('subtracts locked storage',()=>expect(spendable({amount:'10000000000000000000000',storage_usage:100})).toBe(9000000000000000000000n));
+ it('passes when the deposit and gas fit',()=>expect(fundsProblem(view('10'),(4n*10n**24n).toString(),'a.testnet')).toBeNull());
+ it('explains a shortfall in NEAR',()=>expect(fundsProblem(view('3'),(4n*10n**24n).toString(),'a.testnet')).toMatch(/^a\.testnet has 2\.99\d* NEAR to spend; this needs 4 NEAR/));
+});
