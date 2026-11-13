@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0a09">
+<title>Styx: try the agent's key</title>
+<link rel="icon" href="/styx-logo.png">
+</head>
+<body>
+<div class="wrap try">
+<header class="top"><a class="brand" href="/"><img src="/styx-logo.png" alt="Styx" width="600" height="237"></a><span class="net">NEAR testnet</span></header>
+<p class="kicker"><b>Try it</b>No wallet needed</p>
+<h1>This is the agent's key. Use it.</h1>
+<p class="lede-sm">This vault on NEAR testnet holds test tokens. Its agent's private key is on this page, public on purpose. Each button signs a real transaction with it, in your browser, and shows what came back.</p>
+<div id="status" role="status">Reading the vault…</div>
+
+<section class="card" id="key-card" hidden>
+<dl class="facts">
+<div class="row"><dt>Vault</dt><dd><a id="vault-link" target="_blank" rel="noreferrer"></a></dd></div>
+<div class="row"><dt>Agent's private key</dt><dd><code class="key-address" id="secret"></code><button class="secondary small" id="copy" type="button">Copy</button></dd></div>
+<div class="row"><dt>What NEAR lets this key do</dt><dd id="key-scope"></dd></div>
+</dl>
+</section>
+
+<section class="card" id="rules-card" hidden>
+<h2>The vault's rules, read from the chain</h2>
+<dl class="facts grid" id="rules"></dl>
+<p class="note" id="rules-note"></p>
+</section>
+
+<section id="attempts" hidden>
+<label class="stranger">The stranger: any NEAR account that the owner never allowed
+<input id="stranger" value="stranger.testnet" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+<h2>Pay</h2><div class="list" data-group="pay"></div>
+<h2>Change the rules</h2><p class="note">The owner's methods, called with the agent's key.</p><div class="list" data-group="owner"></div>
+<h2>Go around the vault</h2><p class="note">Things a full-access key could do on the vault account.</p><div class="list" data-group="key"></div>
+<h2>Anything else</h2>
+<div class="card free">
+<label>Contract<input id="free-receiver" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+<label>Method<input id="free-method" placeholder="pause" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+<label>Arguments (JSON)<textarea id="free-args" rows="2" spellcheck="false">{}</textarea></label>
+<button id="free-send" type="button">Sign and send</button>
+<div class="result" id="free-result" hidden></div>
+</div>
+</section>
+<p class="note foot">Test tokens on NEAR testnet. Every visitor uses the same key, so today's budget may be partly spent when you arrive; the vault then refuses with its daily limit. The same key works from the near CLI.</p>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
