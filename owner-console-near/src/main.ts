@@ -220,7 +220,7 @@ $('#generate').onclick=()=>{
 };
 $('#lookup').onsubmit=async e=>{e.preventDefault();try{
  if(!context) throw Error('Read a vault first');const v=readForm($<HTMLFormElement>('#lookup'));
- if(v.kind==='agent')known.agents.add(publicKey(v.key));else if(v.kind==='approver')known.approvers.add(publicKey(v.key));else known.recipients.add(account(v.key));await refreshKnown();
+ if(v.kind==='agent')known.agents.add(publicKey(v.key));else if(v.kind==='approver')known.approvers.add(publicKey(v.key));else known.recipients.add(account(v.key));await refreshKnown();renderSetup();
 }catch(e){fail(e);}};
 $('#history').onclick=()=>loadHistory().catch(fail);
 $('#disconnect').onclick=async()=>{try{await (await selector?.wallet())?.signOut();connected='';clearPlan();role();}catch(e){fail(e);}};
