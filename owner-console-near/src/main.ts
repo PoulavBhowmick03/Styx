@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -340,6 +340,13 @@ const testToken=()=>context?.network==='testnet' && facts?.info.token===TEST_TOK
 const agentInstalled=()=>!!facts?.keys.keys.some((k:any)=>typeof k.access_key.permission==='object' && k.access_key.permission.FunctionCall?.method_names?.includes('pay'));
 const rulesDone={limit:()=>(facts?.info.vault_daily_limit??'0')!=='0',recipient:()=>known.recipients.size>0,approver:()=>known.approvers.size>0,agent:agentInstalled};
 const owned=(method:string,v:Record<string,string>)=>formPlan(method,v,context!.vault,facts!.info.token,context!.network);
+// A pasted list becomes one set_recipient per account in the same transaction; names after a comma are kept locally.
+function recipientPlans(text:string):Plan[]{
+ const list=parseRecipients(text);let named=false;
+ for(const r of list) if(r.name && names[r.account]!==r.name){names[r.account]=r.name;named=true;}
+ if(named) saveLabels();
+ return list.map(r=>owned('set_recipient',{recipient:r.account,allowed:'true'}));
+}
 const steps:Step[]=[
  {title:'Register and fund the vault',why:`One approval: the token registers the vault (0.00125 NEAR, once) and ${'{fund}'} into it. The agent pays from this balance.`,fields:['amount'],defaults:()=>({amount:'100'}),
   plans:v=>[...(facts?.storage?[]:[owned('storage_deposit',{})]),owned(testToken()?'mint':'ft_transfer',v)],done:()=>!!facts?.storage && BigInt(facts?.balance??'0')>0n},
@@ -348,7 +355,7 @@ const steps:Step[]=[
   defaults:()=>({approver:invited?.publicKey??'',limit:rulesDone.limit()?'':'500',per_payment_limit:'10',daily_limit:'100',valid_until:String(Math.floor(Date.now()/1000)+7*86400)}),
   plans:v=>[
    ...(v.limit?[owned('set_vault_daily_limit',{limit:v.limit})]:[]),
-   ...(v.recipient?[owned('set_recipient',{recipient:v.recipient.trim(),allowed:'true'})]:[]),
+   ...recipientPlans(v.recipient??''),
    ...(v.approver?[owned('set_approver',{approver:v.approver.trim(),enabled:'true'})]:[]),
    ...(v.agent?[owned('configure_agent',{agent:v.agent.trim(),per_payment_limit:v.per_payment_limit,daily_limit:v.daily_limit,valid_until:v.valid_until,enabled:'true'})]:[]),
   ],done:()=>Object.values(rulesDone).every(f=>f())},
@@ -388,6 +395,11 @@ function agentHandoff(){
  else box.append(el('p','This visit did not generate the key, so move them by hand: the agent key file to $HOME/.styx-near-agent/'+vault+'/agent.json (chmod 600), the settings file to demo.env beside it, and a state folder there (mkdir -m 700). Then run scripts/near/mcp_config.sh on that demo.env.'));
  return box;
 }
+function recipientBox(value:string){
+ const label=el('label','Recipients the agent may pay');const t=document.createElement('textarea');t.name='recipient';t.rows=3;t.value=value;
+ t.placeholder='vendor-a.testnet, Vendor A\nvendor-b.testnet';t.autocomplete='off';t.spellcheck=false;
+ label.append(t,el('small','One account per line, a name after a comma if you like. All of them go in this one approval.'));return label;
+}
 function presetBar(form:HTMLFormElement){
  const bar=document.createElement('div');bar.className='presets';bar.append(el('span','Start from'));
  for(const p of PRESETS){const b=el('button',p.name) as HTMLButtonElement;b.type='button';b.className='secondary';b.title=p.note;
@@ -416,7 +428,7 @@ function renderSetup(){
  form.replaceChildren(el('p',`Step ${current+1} of ${steps.length} · one wallet approval${state[current]?' · already done':''}`),el('h3',step.title),el('p',step.why.replace('{fund}',fund)));
  if(step.fields.includes('per_payment_limit')) form.append(presetBar(form));
  for(const field of step.fields){
-  const label=fieldInput(field,values[field]??'');
+  const label=field==='recipient'?recipientBox(values[field]??''):fieldInput(field,values[field]??'');
   if(step.optional){const input=label.querySelector('input');if(input)input.required=false;}
   if(field==='recipient' && rulesDone.recipient()) label.append(el('small','A recipient is already allowed; add another or leave empty.'));
   if(field==='approver'){if(rulesDone.approver()) label.append(el('small','An approver is already set; add another or leave empty.'));label.append(inviteBox());form.append(label,telegramNote());continue;}

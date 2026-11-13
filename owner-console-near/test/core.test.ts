@@ -74,7 +74,7 @@ describe('one approval for several calls',()=>{
  });
  it('refuses mixed receivers, empty and oversized batches',()=>{
   expect(()=>batchPlan([p('storage_deposit'),p('pause')])).toThrow(/one contract/);
-  expect(()=>batchPlan([])).toThrow();expect(()=>batchPlan(Array(9).fill(p('pause')))).toThrow();
+  expect(()=>batchPlan([])).toThrow();expect(()=>batchPlan(Array(21).fill(p('pause')))).toThrow();
  });
 });
 describe('funds before signing',()=>{
@@ -158,4 +158,18 @@ describe('key labels',()=>{
  });
  it('cleans and caps names',()=>{expect(cleanLabel('a'.repeat(60))).toHaveLength(40);expect(()=>cleanLabel('  ')).toThrow();});
  it('shows the name with a short key',()=>{expect(named(agent,{[agent]:'CFO'})).toBe(`CFO (${short(agent)})`);expect(named(agent,{})).toBe(agent);});
+});
+
+import { parseRecipients,BATCH_GAS_LONG } from '../src/core';
+describe('recipient lists',()=>{
+ it('reads one per line with optional names, or a plain separated list, without duplicates',()=>{
+  expect(parseRecipients('vendor-a.testnet, Vendor A\nvendor-b.testnet\n\nVENDOR-A.testnet')).toEqual([{account:'vendor-a.testnet',name:'Vendor A'},{account:'vendor-b.testnet'}]);
+  expect(parseRecipients('a.testnet b.testnet;c.testnet')).toEqual([{account:'a.testnet'},{account:'b.testnet'},{account:'c.testnet'}]);
+ });
+ it('names the bad line',()=>expect(()=>parseRecipients('ok.testnet\nbad!')).toThrow(/Not a NEAR account: bad!/));
+ it('gives a long batch 14 Tgas a call, under 300 Tgas',()=>{
+  const plans=Array.from({length:20},(_,i)=>formPlan('set_recipient',{recipient:`v${i}.testnet`,allowed:'true'},LIVE_VAULT,TEST_TOKEN,'testnet'));
+  const b=batchPlan(plans);expect(b.calls.every(c=>c.gas===BATCH_GAS_LONG)).toBe(true);
+  expect(b.calls.reduce((s,c)=>s+BigInt(c.gas),0n)<=300_000_000_000_000n).toBe(true);
+ });
 });

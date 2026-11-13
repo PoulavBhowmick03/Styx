@@ -69,6 +69,9 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 #advanced > summary { cursor: pointer; font: 0.8125rem var(--mono); color: var(--fore-2); padding: 0.5rem 0; }
 #advanced > summary:hover, #advanced[open] > summary { color: var(--fore); }
 
+/* Recipient list */
+.setup-form textarea { width: 100%; min-height: 4.5rem; font: 0.8125rem/1.5 var(--mono); resize: vertical; }
+
 /* Names */
 .label-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .file-button { display: inline-flex; align-items: center; cursor: pointer; padding: 0.5rem 0.9rem; border: 1px solid var(--rule-2); border-radius: var(--radius); font-size: 0.875rem; color: var(--fore); }

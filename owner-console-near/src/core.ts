@@ -163,16 +163,18 @@ export function describePlan(p:Plan):string{
 
 // ---- Several calls to one receiver, signed once ----
 // NEAR runs a transaction's actions in order, in one receipt, and all of them fail together.
-// Setup calls burn 1.5 to 3.2 Tgas each on testnet, so 30 Tgas per call leaves a wide margin
-// and eight calls stay under the 300 Tgas transaction limit.
+// Setup calls burn 1.5 to 3.2 Tgas each on testnet. Up to eight calls get 30 Tgas each; a longer
+// batch (for example a recipient list) gets 14 Tgas each, so twenty calls stay under the 300 Tgas limit.
 export const BATCH_GAS='30000000000000';
+export const BATCH_GAS_LONG='14000000000000';
+export const BATCH_MAX=20;
 export type Batch={receiverId:string;calls:Plan[]};
 export function batchPlan(plans:Plan[]):Batch{
  if(!plans.length) throw Error('Nothing to sign: fill in at least one field');
- if(plans.length>8) throw Error('At most eight calls in one transaction');
+ if(plans.length>BATCH_MAX) throw Error(`At most ${BATCH_MAX} calls in one transaction`);
  const receiverId=plans[0].receiverId;
  if(plans.some(p=>p.receiverId!==receiverId)) throw Error('One transaction can only call one contract');
- return {receiverId,calls:plans.length===1?plans:plans.map(p=>({...p,gas:BATCH_GAS}))};
+ return {receiverId,calls:plans.length===1?plans:plans.map(p=>({...p,gas:plans.length>8?BATCH_GAS_LONG:BATCH_GAS}))};
 }
 export const describeBatch=(b:Batch)=>b.calls.length===1?describePlan(b.calls[0]):`${b.calls.length} changes in one transaction`;
 export const batchDeposit=(b:Batch)=>b.calls.reduce((s,p)=>s+BigInt(p.deposit),0n).toString();
@@ -283,3 +285,18 @@ export function parseLabels(text:string,vault:string):Labels{
 export const labelsFile=(vault:string,labels:Labels)=>JSON.stringify({vault:account(vault),labels},null,2)+'\n';
 export const short=(k:string)=>k.startsWith('ed25519:')?`${k.slice(0,14)}…${k.slice(-4)}`:k;
 export const named=(k:string,labels:Labels)=>labels[k]?`${labels[k]} (${short(k)})`:k;
+
+// ---- A pasted recipient list: one account per line (or comma/space separated), optional name after a comma ----
+export function parseRecipients(text:string):{account:string;name?:string}[]{
+ const out:{account:string;name?:string}[]=[],seen=new Set<string>();
+ const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+ for(const line of lines){
+  const named=/^([^,\s]+)\s*,\s*(.+)$/.exec(line);
+  const parts=named?[named[1]]:line.split(/[\s,;]+/).filter(Boolean);
+  for(const raw of parts){
+   const a=raw.toLowerCase();try{account(a);}catch{throw Error(`Not a NEAR account: ${raw}`);}
+   if(seen.has(a)) continue;seen.add(a);out.push(named?{account:a,name:cleanLabel(named[2])}:{account:a});
+  }
+ }
+ return out;
+}

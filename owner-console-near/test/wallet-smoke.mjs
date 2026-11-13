@@ -24,6 +24,7 @@ try{
     else{
      const args=JSON.parse(Buffer.from(p.args_base64,'base64').toString());
      result=structuredClone(fixture.views[p.account_id+':'+p.method_name+':'+JSON.stringify(args,Object.keys(args).sort())]);
+     if(!result && p.method_name.startsWith('get_')) result={result:[...Buffer.from('null')],logs:[],block_height:1,block_hash:'mock'}; // no entry, as the contract answers
      if(p.method_name==='get_agent'){const a=JSON.parse(Buffer.from(result.result).toString());a.valid_until='1600000000';result.result=[...Buffer.from(JSON.stringify(a))];}
      if(p.method_name==='get_vault'){
       const info=JSON.parse(Buffer.from(result.result).toString());info.paused=paused;result.result=[...Buffer.from(JSON.stringify(info))];
@@ -77,16 +78,16 @@ try{
    await setup.getByRole('button',{name:'Team'}).click();
    assert.equal(await setup.locator('input[name="per_payment_limit"]').inputValue(),'50');
    await setup.locator('input[name="limit"]').fill('500');
-   await setup.locator('input[name="recipient"]').fill('vendor-a.styx-owner-c87a.testnet');
+   await setup.locator('textarea[name="recipient"]').fill('vendor-a.styx-owner-c87a.testnet, Vendor A\nvendor-b.testnet');
    await setup.locator('input[name="agent"]').fill('');
    await setup.getByRole('button',{name:'Review and sign'}).click();
-   assert.match(await page.locator('#preview').textContent(),/2 calls, one approval/);
+   assert.match(await page.locator('#preview').textContent(),/3 calls, one approval/);
    await page.evaluate(()=>{window.__submitted=undefined;});
    await page.locator('#send').click();
    await page.waitForFunction(()=>window.__submitted);
    const batch=await page.evaluate(()=>window.__submitted);
    assert.equal(batch.receiverId,fixture.vault);
-   assert.deepEqual(batch.actions.map(a=>[a.params.methodName,a.params.gas]),[['set_vault_daily_limit','30000000000000'],['set_recipient','30000000000000']]);
+   assert.deepEqual(batch.actions.map(a=>[a.params.methodName,a.params.args.recipient??null,a.params.gas]),[['set_vault_daily_limit',null,'30000000000000'],['set_recipient','vendor-a.styx-owner-c87a.testnet','30000000000000'],['set_recipient','vendor-b.testnet','30000000000000']]);
    assert.match(await page.locator('#setup-form').textContent(),/Styx_pvt_bot/);
    // With the indexer down, name the approver by hand; then every rule is done and the ready screen shows the hand-off.
    await page.locator('#lookup select').selectOption('approver');
@@ -102,5 +103,5 @@ try{
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules and a pasted recipient list batched into one transaction, presets and agent hand-off shown; expired agent renewed with the same limits; a key named, exported and kept across a reload. No real wallet or transaction.');
 }finally{await browser.close();}
