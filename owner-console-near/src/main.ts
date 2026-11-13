@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, type EventRow, type Plan } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, type EventRow, type Plan } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -199,3 +199,39 @@ for(const key of ['vault','rpc','network']){const v=query.get(key);if(v)(loadFor
 // A wallet redirect or an explicit vault link reads state on arrival; opening the page alone is read-only too.
 if(query.has('vault') || query.has('transactionHashes')) loadForm.requestSubmit();
 role();
+// ---- Create a vault through the factory: preview, sign in the wallet, read the result, open it ----
+const createForm=$<HTMLFormElement>('#create-form'),createStatus=$('#create-status');
+(createForm.elements.namedItem('token') as HTMLInputElement).value=TEST_TOKEN;
+let creation:{plan:Plan;rpc:RPC;vault:string}|undefined;
+const cancelCreate=()=>{creation=undefined;$('#create-confirm').hidden=true;};
+createForm.oninput=cancelCreate;
+$('#create-cancel').onclick=cancelCreate;
+createForm.onsubmit=async e=>{e.preventDefault();cancelCreate();try{
+ const v=readForm(createForm),where=readForm(loadForm),network=where.network,factory=FACTORIES[network];
+ if(!factory) throw Error(`No vault factory on ${network}`);
+ const rpc=new RPC(where.rpc);await rpc.assertNetwork(network);
+ const minimum=await rpc.view(factory,'min_deposit');
+ const plan=createPlan(v.name,v.token,v.deposit,network,minimum),vault=`${plan.args.name}.${factory}`;
+ const taken=await rpc.call('query',{request_type:'view_account',finality:'final',account_id:vault}).then(()=>true,()=>false);
+ if(taken) throw Error(`${vault} already exists; choose another name`);
+ if(!selector) await walletSetup(network,factory);
+ if(!connected){setupModal(selector!,{contractId:factory}).show();createStatus.textContent='Connect your wallet, then press Preview vault again.';return;}
+ creation={plan,rpc,vault};
+ $('#create-preview').textContent=[`Network: ${network}`,`Signer and owner: ${connected}`,`Factory: ${factory}`,`New vault: ${vault}`,`Token: ${plan.args.token}`,`Attached NEAR: ${amountNear(plan.deposit)} (minimum ${amountNear(minimum)})`,JSON.stringify(plan,null,2)].join('\n');
+ $('#create-confirm').hidden=false;createStatus.textContent='';
+}catch(err){createStatus.textContent=err instanceof Error?err.message:String(err);}};
+$('#create-send').onclick=async()=>{
+ const c=creation;if(!c || !selector || busy) return;busy=true;
+ try{
+  const wallet=await selector.wallet(),signer=connected;
+  cancelCreate();createStatus.textContent='Waiting for wallet approval. Do not submit again while the outcome is unknown.';
+  const result=await wallet.signAndSendTransaction({signerId:signer,receiverId:c.plan.receiverId,actions:[{type:'FunctionCall',params:{methodName:c.plan.method,args:c.plan.args,gas:c.plan.gas,deposit:c.plan.deposit}}]});
+  const hash=(result as any)?.transaction?.hash;if(!hash) throw Error('Wallet returned without a transaction. Check your wallet before trying again.');
+  const tx=await c.rpc.call('tx',{tx_hash:hash,sender_account_id:signer,wait_until:'FINAL'});
+  const vault=createdVault(tx);
+  if(!vault){createStatus.textContent=`Creation failed and the deposit was refunded (${hash}).`;return;}
+  createStatus.textContent=`Created ${vault} in ${hash}. Opening it.`;
+  (loadForm.elements.namedItem('vault') as HTMLInputElement).value=vault;busy=false;await load();
+ }catch(err){createStatus.textContent=(err instanceof Error?err.message:String(err))+' If you approved in the wallet, check the transaction before retrying.';}
+ finally{busy=false;}
+};

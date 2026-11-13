@@ -37,3 +37,7 @@ progress { width: 100%; height: 0.75rem; accent-color: var(--ember); }
 #confirmation button { margin: 0.5rem 0.5rem 0 0; }
 footer { font-size: 0.8125rem; color: var(--fore-2); padding: 2rem 0 0; border-top: 1px solid var(--rule); line-height: 1.7; }
 @media (max-width: 40rem) { .net { display: none; } .top-actions button { padding: 0.4rem 0.75rem; } }
+#create { border-top: 0; padding-top: 1rem; }
+#create code { font-size: 0.8125rem; }
+#create-confirm button { margin: 0.5rem 0.5rem 0 0; }
+.open-kicker { display: block; margin: 1.5rem 0 0.75rem; }

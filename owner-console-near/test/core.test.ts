@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -39,4 +39,11 @@ describe('indexer paging',()=>{
    expect(result.notice).toContain('50 indexed transactions checked');expect(result.notice).toContain('Stopped early: Indexer unavailable (422)');
   }finally{vi.unstubAllGlobals();}
  });
+});
+describe('creating a vault',()=>{
+ const min='3804260000000000000000000';
+ it('builds the factory call with the caller-paid deposit',()=>{const p=createPlan('acme-pay',TEST_TOKEN,'4','testnet',min);expect(p).toEqual({receiverId:'styx-vaults.testnet',method:'create_vault',args:{name:'acme-pay',token:TEST_TOKEN},deposit:'4000000000000000000000000',gas:'100000000000000'});expect(createPlan('a1',TEST_TOKEN,'3.9','testnet',min).deposit).toBe('3900000000000000000000000');});
+ for(const bad of ['a','Acme','acme.pay','-acme','acme-','ac--me','acme pay','x'.repeat(33)]) it(`refuses vault name ${JSON.stringify(bad)}`,()=>expect(()=>vaultName(bad)).toThrow('Vault name'));
+ it('refuses a deposit under the minimum, bad NEAR amounts and unknown networks',()=>{expect(()=>createPlan('acme',TEST_TOKEN,'3.5','testnet',min)).toThrow('at least 3.8042');for(const d of ['-1','4,5','1e3','']) expect(()=>nearToYocto(d)).toThrow();expect(()=>createPlan('acme',TEST_TOKEN,'4','mainnet',min)).toThrow('No vault factory');});
+ it('reads the created vault, or null for a refunded failure',()=>{const b64=(v:unknown)=>Buffer.from(JSON.stringify(v)).toString('base64');expect(createdVault({status:{SuccessValue:b64('acme.styx-vaults.testnet')}})).toBe('acme.styx-vaults.testnet');expect(createdVault({status:{SuccessValue:b64(null)}})).toBeNull();expect(()=>createdVault({status:{Failure:{}}})).toThrow();});
 });

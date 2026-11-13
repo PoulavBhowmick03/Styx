@@ -115,3 +115,26 @@ export async function overview(rpc:RPC,vault:string){
   rpc.view(info.token,'storage_balance_of',{account_id:vault}),rpc.call('query',{request_type:'view_access_key_list',finality:'final',account_id:vault})]);
  return {info,day,spent,balance,storage,keys};
 }
+
+// ---- Creating a vault through the factory (contracts/near/styx-factory) ----
+export const FACTORIES:Record<string,string>={testnet:'styx-vaults.testnet'};
+// Mirrors the factory's rule, so a bad name is caught before the wallet opens.
+export function vaultName(name:string):string{
+ if(!/^[a-z0-9]([a-z0-9]|[-_](?=[a-z0-9])){1,31}$/.test(name) || name.length>32) throw Error('Vault name: 2 to 32 of a-z, 0-9, - or _, starting and ending with a letter or digit');
+ return name;
+}
+export function nearToYocto(value:string):string{
+ const m=/^(0|[1-9][0-9]{0,8})(?:\.([0-9]{1,24}))?$/.exec(value.trim());if(!m) throw Error('Deposit must be NEAR, for example 4 or 4.5');
+ return (BigInt(m[1])*10n**24n+BigInt((m[2]??'').padEnd(24,'0')||'0')).toString();
+}
+export function createPlan(name:string,token:string,depositNear:string,network:string,minimum:string):Plan{
+ const factory=FACTORIES[network];if(!factory) throw Error(`No vault factory on ${network}`);
+ const deposit=nearToYocto(depositNear);if(BigInt(deposit)<BigInt(minimum)) throw Error(`Deposit must be at least ${amountNear(minimum)} NEAR (the vault code's storage plus 0.5 NEAR)`);
+ return {receiverId:factory,method:'create_vault',args:{name:vaultName(name),token:account(token)},deposit,gas:'100000000000000'};
+}
+export const amountNear=(yocto:string)=>{const v=BigInt(yocto),whole=v/10n**24n,frac=(v%10n**24n).toString().padStart(24,'0').slice(0,4).replace(/0+$/,'');return frac?`${whole}.${frac}`:`${whole}`;};
+// The factory returns the vault account, or null when creation failed and the deposit was refunded.
+export function createdVault(tx:any):string|null{
+ const value=tx?.status?.SuccessValue;if(typeof value!=='string') throw Error('Transaction did not succeed');
+ return JSON.parse(Buffer.from(value,'base64').toString()||'null');
+}
