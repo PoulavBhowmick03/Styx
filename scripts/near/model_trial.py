@@ -1,7 +1,7 @@
 """Hostile-invoice trials on NEAR testnet: a real model drives the unchanged Styx MCP tools over
 `styx-near-vault`, against the live vault. Outcomes are token balances read from the chain.
 
-The scenarios are the Arc trials' (`mcp-server/examples/model_trial.py`), rescaled to the NEAR
+The scenarios are generic hostile-invoice cases, scaled to the NEAR
 vault's limits. It calls `claude -p`, so it uses your Claude quota.
 
 Usage: python3 scripts/near/model_trial.py <scenario|list> [--model NAME] [--out DIR]

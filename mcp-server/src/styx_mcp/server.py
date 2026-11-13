@@ -1,4 +1,4 @@
-"""Starts the Styx MCP server. STYX_BACKEND chooses the vault tools or the reviewer's disclosure tools."""
+"""Starts the Styx MCP server: the agent's payment tools over styx-near-vault (STYX_BACKEND=vault)."""
 from __future__ import annotations
 
 import os
@@ -15,11 +15,7 @@ def build_server() -> MCPServer:
         from styx_mcp.vault import build_vault_server
 
         return build_vault_server()
-    if backend == "disclosure":
-        from styx_mcp.disclosure import build_disclosure_server
-
-        return build_disclosure_server()
-    raise ConfigError("STYX_BACKEND must be vault or disclosure")
+    raise ConfigError("STYX_BACKEND must be vault")
 
 
 def main() -> None:

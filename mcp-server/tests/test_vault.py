@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import re
-import shutil
 import socket
 import stat
 import subprocess
@@ -22,8 +21,6 @@ from styx_mcp.config import ConfigError
 from styx_mcp.vault import VaultSettings
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = Path(os.environ.get("STYX_TEST_VAULT_BIN", ROOT / "sdk/evm/target/debug/styx-vault"))
-DISCLOSURE_BINARY = Path(os.environ.get("STYX_TEST_DISCLOSURE_BIN", ROOT / "sdk/evm/target/debug/styx-disclosure"))
 TOOLS = {"styx_propose_payment", "styx_request_owner_approval", "styx_submit_payment", "styx_payment_status"}
 
 
@@ -167,180 +164,6 @@ def test_tools_expose_exactly_the_agent_surface_and_pass_structured_errors(tmp_p
     assert proposal["invoice_file"] == str(directory.resolve() / "invoice.txt")
     assert proposal["amount"] == "6000000"
     assert next(request for request in requests if request["method"] == "submit").keys() == {"method", "payment_id"}
-
-
-TOOLS_AVAILABLE = BINARY.exists() and all(shutil.which(tool) for tool in ("anvil", "forge", "cast"))
-
-
-@pytest.mark.skipif(not TOOLS_AVAILABLE, reason="build styx-vault and install Foundry to run this test")
-def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    config = tmp_path / "anvil.json"
-    anvil = subprocess.Popen(["anvil", "--port", str(port), "--silent", "--config-out", str(config)])
-    rpc = f"http://127.0.0.1:{port}"
-    try:
-        for _ in range(100):
-            ready = config.exists() and subprocess.run(
-                ["cast", "chain-id", "--rpc-url", rpc], capture_output=True).returncode == 0
-            if ready:
-                break
-            time.sleep(0.1)
-        keys = json.loads(config.read_text())["private_keys"]
-        owner_key, agent_key = keys[0], keys[1]
-        contracts = ROOT / "contracts/evm"
-
-        def create(contract, *arguments):
-            output = subprocess.run(
-                ["forge", "create", contract, "--broadcast", "--rpc-url", rpc, "--private-key", owner_key,
-                 "--constructor-args", *arguments],
-                cwd=contracts, capture_output=True, text=True, check=True).stdout
-            return re.search(r"Deployed to: (0x[0-9a-fA-F]{40})", output).group(1).lower()
-
-        def send(target, signature, *arguments):
-            subprocess.run(["cast", "send", target, signature, *arguments, "--rpc-url", rpc,
-                            "--private-key", owner_key], capture_output=True, check=True)
-
-        def address(key):
-            return subprocess.run(["cast", "wallet", "address", "--private-key", key], capture_output=True,
-                                  text=True, check=True).stdout.strip().lower()
-
-        def balance_of(token, account):
-            output = subprocess.run(["cast", "call", token, "balanceOf(address)(uint256)", account, "--rpc-url", rpc],
-                                    capture_output=True, text=True, check=True).stdout
-            return int(output.split()[0])
-
-        token = create("src/MockERC20.sol:MockERC20", "USD Coin", "USDC")
-        vault = create("src/StyxPolicyVault.sol:StyxPolicyVault", address(owner_key), token)
-        vendor = "0x00000000000000000000000000000000000000a1"
-        now = int(time.time())
-        send(vault, "configurePolicy(address,uint256,uint256,uint64)", address(agent_key), "1000000", "10000000",
-             str(now + 86400))
-        send(vault, "setRecipient(address,bool)", vendor, "true")
-        send(token, "mint(address,uint256)", vault, "8000000")
-
-        directory = private_dir(tmp_path / "vault")
-        (directory / "invoice.txt").write_bytes(b"invoice body")
-        key_file = tmp_path / "agent.key"
-        key_file.write_text(agent_key)
-        key_file.chmod(0o600)
-        env = {
-            "STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(BINARY),
-            "STYX_VAULT_CHAIN_ID": "31337", "STYX_VAULT_RPC_URLS": rpc,
-            "STYX_VAULT_ADDRESS": vault, "STYX_VAULT_TOKEN": token,
-            "STYX_VAULT_STATE_ROOT": str(tmp_path / "journal"), "STYX_VAULT_AGENT_KEY_FILE": str(key_file),
-        }
-
-        async def propose(session, amount):
-            return result(await session.call_tool("styx_propose_payment", {
-                "recipient": vendor, "amount_usdc": f"{int(amount) / 1_000_000:f}".rstrip("0").rstrip("."), "amount": amount, "invoice_name": "invoice.txt",
-                "invoice_reference": "INV-1", "valid_until": now + 3600,
-            }))
-
-        async def body(session):
-            ordinary = await propose(session, "250000")
-            assert ordinary["ok"], ordinary
-            assert ordinary["result"]["path"] == "ordinary"
-            payment_id = ordinary["result"]["payment_id"]
-            settled = result(await session.call_tool("styx_submit_payment", {"payment_id": payment_id}))
-            assert settled["result"]["state"] == "settled", settled
-            status = result(await session.call_tool("styx_payment_status", {"payment_id": payment_id}))
-            assert status["result"]["state"] == "settled"
-
-            oversized = await propose(session, "6000000")
-            assert oversized["result"]["path"] == "exception_required"
-            refused = result(await session.call_tool("styx_submit_payment", {
-                "payment_id": oversized["result"]["payment_id"],
-            }))
-            assert refused["error"]["code"] == "OWNER_APPROVAL_REQUIRED"
-
-            over_daily = await propose(session, "11000000")
-            assert over_daily["error"]["code"] == "POLICY_LIMIT"
-
-        paid = {}
-
-        async def pay_and_capture(session):
-            await body(session)
-            again = await propose(session, "100000")
-            paid["id"] = again["result"]["payment_id"]
-            settled = result(await session.call_tool("styx_submit_payment", {"payment_id": paid["id"]}))
-            assert settled["result"]["state"] == "settled", settled
-
-        run_session(env, pay_and_capture)
-        assert balance_of(token, vendor) == 350000
-
-        # The reviewer's server runs apart from the agent's, with its own key and its own RPC.
-        record_file = private_dir(tmp_path / "issuer") / "payment.record"
-        exported = subprocess.run(
-            [str(BINARY)], input=json.dumps({"method": "export_record", "payment_id": paid["id"],
-                                             "record_file": str(record_file)}),
-            capture_output=True, text=True,
-            env={name: value for name, value in env.items() if name.startswith("STYX_VAULT_")},
-        )
-        assert exported.returncode == 0, exported.stdout
-        issuer_key = tmp_path / "issuer" / "issuer.key"
-        issuer_key.write_bytes(bytes([0x42]) * 32)
-        issuer_key.chmod(0o600)
-        issuer = address("0x" + "42" * 32)
-        code = subprocess.run(["cast", "code", vault, "--rpc-url", rpc], capture_output=True, text=True,
-                              check=True).stdout.strip()
-        code_hash = subprocess.run(["cast", "keccak", code], capture_output=True, text=True, check=True).stdout.strip()
-
-        reviewer_dir = private_dir(tmp_path / "reviewer")
-        reviewer_env = {
-            "STYX_BACKEND": "disclosure", "STYX_DISCLOSURE_DIR": str(reviewer_dir),
-            "STYX_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
-            "STYX_DISCLOSURE_VAULT_PINS": json.dumps({
-                "chain_id": 31337, "rpc_urls": [rpc], "vault": vault, "vault_code_hash": code_hash,
-            }),
-        }
-        issuer_dir = private_dir(tmp_path / "issuer")
-        issuer_env = {
-            "STYX_BACKEND": "disclosure", "STYX_DISCLOSURE_DIR": str(issuer_dir),
-            "STYX_DISCLOSURE_CLI": str(DISCLOSURE_BINARY),
-            "STYX_DISCLOSURE_VAULT_ISSUER_KEY_FILE": str(issuer_key),
-        }
-
-        async def reviewer_key(session):
-            assert "export_vault_payment" not in {t.name for t in (await session.list_tools()).tools}
-            return result(await session.call_tool("create_disclosure_key", {}))["result"]["recipient_public_key"]
-
-        public_key = run_session(reviewer_env, reviewer_key)
-
-        async def issue(session):
-            assert "verify_vault_payment" not in {t.name for t in (await session.list_tools()).tools}
-            issued = result(await session.call_tool("export_vault_payment", {
-                "record_name": "payment.record", "recipient_public_key": public_key,
-                "grant_name": "payment.grant", "expires_at": now + 86400,
-            }))
-            assert issued["ok"], issued
-            assert issued["result"]["issuer"] == issuer
-
-        run_session(issuer_env, issue)
-        (reviewer_dir / "payment.grant").write_bytes((issuer_dir / "payment.grant").read_bytes())
-        (reviewer_dir / "payment.grant").chmod(0o600)
-
-        async def review(session):
-            checked = result(await session.call_tool("verify_vault_payment", {
-                "grant_name": "payment.grant", "expected_issuer": issuer, "opened_name": "opened.json",
-            }))
-            assert checked["ok"], checked
-            for name in ("record_integrity", "settlement", "policy_at_execution"):
-                assert checked["result"][name] == "verified", checked
-            assert checked["result"]["authorization"] == "not_applicable"
-            assert "invoice body" not in json.dumps(checked)
-            wrong = result(await session.call_tool("verify_vault_payment", {
-                "grant_name": "payment.grant", "expected_issuer": "0x" + "11" * 20,
-            }))
-            assert wrong["error"]["code"] == "DISCLOSURE_UNAVAILABLE"
-
-        run_session(reviewer_env, review)
-        opened = json.loads((reviewer_dir / "opened.json").read_text())
-        assert bytes.fromhex(opened["evidence"]["invoiceHex"][2:]) == b"invoice body"
-    finally:
-        anvil.kill()
-        anvil.wait()
 
 
 def test_models_can_leave_the_timestamps_out(tmp_path):
