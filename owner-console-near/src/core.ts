@@ -108,7 +108,7 @@ export async function history(rpc:RPC,vault:string,network:string,get:typeof fet
  return {rows,notice:`Event window: ${seen.size} indexed transactions checked; ${failed} unavailable or failed. ${stopped?`Stopped early: ${stopped}.`:complete?'Indexer list exhausted.':'Limited to the latest 75 indexer entries.'} Older keys or events may be absent. Use manual lookups.`};
 }
 export async function overview(rpc:RPC,vault:string){
- const info=await rpc.view(vault,'get_vault');if(info.contract_version!==1) throw Error('Unsupported vault contract version');
+ const info=await rpc.view(vault,'get_vault');if(![1,2].includes(info.contract_version)) throw Error('Unsupported vault contract version');
  const day=await rpc.view(vault,'current_day');
  const [spent,balance,storage,keys]=await Promise.all([
   rpc.view(vault,'spent_by_vault',{day}),rpc.view(info.token,'ft_balance_of',{account_id:vault}),
