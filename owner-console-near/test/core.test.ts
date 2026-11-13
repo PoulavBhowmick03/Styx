@@ -22,6 +22,17 @@ describe('events and chain reads from the live vault snapshot',()=>{
   const rpc=new RPC('https://example.com');vi.spyOn(rpc,'view').mockImplementation(async(account,method,args={})=>{const sorted=JSON.stringify(args,Object.keys(args).sort());return JSON.parse(Buffer.from(live.views[account+':'+method+':'+sorted].result).toString());});vi.spyOn(rpc,'call').mockResolvedValue(live.accessKeys);
   const state=await overview(rpc,LIVE_VAULT);expect(state.info.owner).toBe('styx-owner-c87a.testnet');expect(state.info.token).toBe(TEST_TOKEN);expect(state.keys.keys.some((k:any)=>k.public_key===live.known.agent)).toBe(true);
  });
- it('reports indexer outage without treating it as no history',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('',{status:403})));try{const result=await history(new RPC('https://example.com'),LIVE_VAULT,'testnet');expect(result.notice).toContain('unavailable or partial');expect(result.notice).toContain('Manual key lookups');}finally{vi.unstubAllGlobals();}});
+ it('reports indexer outage without treating it as no history',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('',{status:403})));try{const result=await history(new RPC('https://example.com'),LIVE_VAULT,'testnet');expect(result.notice).toContain('Lists unavailable');expect(result.notice).toContain('Manual key lookups');}finally{vi.unstubAllGlobals();}});
 });
 it('rejects RPC/wallet network mismatch before signing',async()=>{const rpc=new RPC('https://example.com');vi.spyOn(rpc,'call').mockResolvedValue({chain_id:'testnet'});await rpc.assertNetwork('testnet');await expect(rpc.assertNetwork('mainnet')).rejects.toThrow('differs');});
+describe('indexer paging',()=>{
+ it('follows the cursor past the first page and keeps rows when a later page fails',async()=>{
+  const urls:string[]=[];const page=(n:number,from:number)=>({cursor:'c'+from,txns:Array.from({length:n},(_,i)=>({transaction_hash:'h'+(from+i),signer_account_id:'s.testnet'}))});
+  const get=vi.fn(async(url:string)=>{urls.push(url);return urls.length===1?new Response(JSON.stringify(page(25,0))):urls.length===2?new Response(JSON.stringify(page(25,25))):new Response('',{status:422});}) as never;
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response('',{status:503})));
+  try{const result=await history(new RPC('https://example.com'),LIVE_VAULT,'testnet',get);
+   expect(urls[0]).not.toMatch(/[?&]page=/);expect(urls[1]).toContain('cursor=c0');expect(urls[2]).toContain('cursor=c25');
+   expect(result.notice).toContain('50 indexed transactions checked');expect(result.notice).toContain('Stopped early: Indexer unavailable (422)');
+  }finally{vi.unstubAllGlobals();}
+ });
+});

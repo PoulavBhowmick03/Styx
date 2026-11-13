@@ -81,28 +81,31 @@ export function indexerRows(data:any):{hash:string;sender:string}[]{
  return data.txns.map((t:any)=>{const hash=t.transaction_hash??t.hash,sender=t.signer_account_id??t.signer_id??t.predecessor_account_id;
  if(typeof hash!=='string' || typeof sender!=='string') throw Error('Indexer transaction is missing its hash or sender');return {hash,sender};});
 }
-export async function history(rpc:RPC,vault:string,network:string):Promise<{rows:EventRow[];notice:string}>{
+export async function history(rpc:RPC,vault:string,network:string,get:typeof fetch=fetch):Promise<{rows:EventRow[];notice:string}>{
  const host=network==='testnet'?'https://api-testnet.nearblocks.io':'https://api.nearblocks.io';
- const rows:EventRow[]=[],seen=new Set<string>();let failed=0,complete=false;
- try{
-  // Bound work and always label the result as a window, never a complete registry.
-  for(let page=1;page<=3;page++){
-   const r=await fetch(`${host}/v1/account/${encodeURIComponent(vault)}/txns?page=${page}&per_page=25`,{signal:AbortSignal.timeout(15000)});
+ const rows:EventRow[]=[],seen=new Set<string>();let failed=0,complete=false,cursor:string|undefined,stopped='';
+ // Bound work and always label the result as a window, never a complete registry.
+ // NearBlocks serves only the first page by number; later pages need the returned cursor.
+ for(let page=1;page<=3;page++){
+  let txns:{hash:string;sender:string}[];
+  try{
+   const r=await get(`${host}/v1/account/${encodeURIComponent(vault)}/txns?per_page=25${cursor?`&cursor=${encodeURIComponent(cursor)}`:''}`,{signal:AbortSignal.timeout(15000)});
    if(!r.ok) throw Error(`Indexer unavailable (${r.status})`);
-   const txns=indexerRows(await r.json());
-   for(const {hash,sender} of txns){
-    if(seen.has(hash)) continue;seen.add(hash);
-    try{
-     const tx=await rpc.transaction(hash,sender);
-     const block=await rpc.call('block',{block_id:tx.transaction_outcome.block_hash});
-     const time=new Date(Number(BigInt(block.header.timestamp_nanosec??block.header.timestamp)/1000000n)).toISOString();
-     rows.push(...parseEvents(tx,vault,time));
-    }catch{failed++;}
-   }
-   if(txns.length<25){complete=true;break;}
+   const data=await r.json();txns=indexerRows(data);cursor=typeof data.cursor==='string'?data.cursor:undefined;
+  }catch(e){stopped=e instanceof Error?e.message:String(e);break;}
+  for(const {hash,sender} of txns){
+   if(seen.has(hash)) continue;seen.add(hash);
+   try{
+    const tx=await rpc.transaction(hash,sender);
+    const block=await rpc.call('block',{block_id:tx.transaction_outcome.block_hash});
+    const time=new Date(Number(BigInt(block.header.timestamp_nanosec??block.header.timestamp)/1000000n)).toISOString();
+    rows.push(...parseEvents(tx,vault,time));
+   }catch{failed++;}
   }
-  return {rows,notice:`Event window: ${seen.size} indexed transactions checked; ${failed} unavailable or failed. ${complete?'Indexer page exhausted.':'Limited to the latest 75 transactions.'} Older keys or events may be absent. Use manual lookups.`};
- }catch(e){return {rows,notice:`Lists unavailable or partial: ${e instanceof Error?e.message:String(e)}. Manual key lookups still work.`};}
+  if(txns.length<25 || !cursor){complete=true;break;}
+ }
+ if(stopped && !seen.size) return {rows,notice:`Lists unavailable: ${stopped}. Manual key lookups still work.`};
+ return {rows,notice:`Event window: ${seen.size} indexed transactions checked; ${failed} unavailable or failed. ${stopped?`Stopped early: ${stopped}.`:complete?'Indexer list exhausted.':'Limited to the latest 75 indexer entries.'} Older keys or events may be absent. Use manual lookups.`};
 }
 export async function overview(rpc:RPC,vault:string){
  const info=await rpc.view(vault,'get_vault');if(info.contract_version!==1) throw Error('Unsupported vault contract version');
