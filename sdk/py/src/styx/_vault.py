@@ -46,9 +46,11 @@ class VaultSeam:
     }
 
     def __init__(self, binary: str | Path | None = None, timeout: int = 180) -> None:
-        resolved = str(binary) if binary is not None else shutil.which("styx-vault")
+        # Without STYX_VAULT_CLI, use the NEAR agent CLI on PATH (cargo install puts styx-near-vault
+        # there), or the older styx-vault name.
+        resolved = str(binary) if binary is not None else (shutil.which("styx-near-vault") or shutil.which("styx-vault"))
         if not resolved or timeout <= 0:
-            raise VaultError(INVALID, "configure the styx-vault binary")
+            raise VaultError(INVALID, "configure the agent CLI: install styx-near-vault on PATH or set STYX_VAULT_CLI")
         self._binary = resolved
         self._timeout = timeout
 

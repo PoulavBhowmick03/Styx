@@ -305,3 +305,18 @@ def test_error_messages_carry_file_names_not_absolute_paths(tmp_path):
     message = "cannot read /private/var/folders/pf/tp4/T/near-trial-880/vault/signature-owner.json"
     assert _ABSOLUTE_PATH.sub(r"\1", message) == "cannot read signature-owner.json"
     assert _ABSOLUTE_PATH.sub(r"\1", "request approval first") == "request approval first"
+
+
+def test_seam_finds_the_near_cli_on_path(tmp_path, monkeypatch):
+    """Without STYX_VAULT_CLI the seam uses styx-near-vault from PATH (as cargo install leaves it)."""
+    from styx._vault import VaultSeam
+    cli = tmp_path / "styx-near-vault"
+    cli.write_text("#!/bin/sh\n")
+    cli.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert VaultSeam()._binary == str(cli)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    import pytest
+    from styx import VaultError
+    with pytest.raises(VaultError):
+        VaultSeam()
