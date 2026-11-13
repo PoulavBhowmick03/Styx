@@ -61,8 +61,8 @@ fn chain(token: &str) -> EvmChain {
         enabled: true,
     }
 }
-fn fields() -> (U128, U128, U64) {
-    (U128(50_000_000_000), U128(1_000_000_000), U64(100_000))
+fn fields() -> (U128, U128, U64, String) {
+    (U128(50_000_000_000), U128(1_000_000_000), U64(100_000), TOKEN_A.into())
 }
 struct World {
     c: Contract,
@@ -235,8 +235,10 @@ fn emitted(raw: &str) -> (Vec<Vec<u8>>, [u8; 32], VerifyingKey) {
             .unwrap();
     (fields, digest, recovered)
 }
+// Fixed: the token is captured when signing is requested, so a change during signing cannot
+// alter the assembled transaction. It still carries TOKEN_A and recovers to the MPC key.
 #[test]
-fn vm_token_change_during_mpc_emits_transaction_for_wrong_signer() {
+fn vm_token_change_during_mpc_keeps_the_signed_token() {
     let mut w = setup();
     let p = evm_payment(&w, "token-race", 60);
     context(vault(), w.agent.clone(), DAY);
@@ -250,9 +252,9 @@ fn vm_token_change_during_mpc_emits_transaction_for_wrong_signer() {
         w.c.on_evm_signed(p, 1, 0, fields(), None, None, Ok(sig))
             .unwrap();
     let (decoded, new_digest, recovered) = emitted(&tx.raw_tx);
-    assert_eq!(hex(&decoded[5]), &TOKEN_B[2..]);
-    assert_ne!(new_digest, digest);
-    assert_ne!(recovered, key);
+    assert_eq!(hex(&decoded[5]), &TOKEN_A[2..]);
+    assert_eq!(new_digest, digest);
+    assert_eq!(recovered, key);
     assert_eq!(w.c.evm_nonce(ARC), 1);
     assert_eq!(w.c.spent_by_agent(w.agent, 1).0, 60);
     assert!(w.c.consumed_payment("token-race".into()).is_some());
@@ -655,8 +657,11 @@ fn vm_evm_exception_cannot_lift_shared_vault_daily_cap() {
     drop(w.c.pay_evm_with_exception(p, a, sig));
 }
 
+// Fixed: the approved hash includes the chain's token, so changing the token after approval
+// changes the hash and the old approval is refused.
 #[test]
-fn vm_evm_approval_survives_token_change_before_submission() {
+#[should_panic(expected = "PaymentHashMismatch")]
+fn vm_evm_approval_is_refused_after_a_token_change() {
     let mut w = setup();
     let p = evm_payment(&w, "approval-asset", 150);
     let original_hash = w.c.evm_payment_hash(p.clone());
@@ -676,7 +681,31 @@ fn vm_evm_approval_survives_token_change_before_submission() {
             .to_vec(),
     );
     w.c.set_evm_chain(ARC, chain(TOKEN_B));
-    assert_eq!(w.c.evm_payment_hash(p.clone()), original_hash);
+    assert_ne!(w.c.evm_payment_hash(p.clone()), original_hash);
+    context(vault(), w.agent.clone(), DAY);
+    drop(w.c.pay_evm_with_exception(p, a, approval));
+}
+
+// The same approval with the token unchanged still pays, so the binding refuses only a changed asset.
+#[test]
+fn vm_evm_approval_pays_when_the_token_is_unchanged() {
+    let mut w = setup();
+    let p = evm_payment(&w, "approval-same-asset", 150);
+    let a = ExceptionAuthorization {
+        payment_hash: w.c.evm_payment_hash(p.clone()),
+        signer: w.approver.1.clone(),
+        signer_version: 1,
+        approval_nonce: Base64VecU8(vec![12; 32]),
+        authorization_expiry: U64(3 * DAY),
+        callback_url: None,
+    };
+    let approval = Base64VecU8(
+        w.approver
+            .0
+            .sign(&independent_nep413(&w.c, &a, vault().as_str()))
+            .to_bytes()
+            .to_vec(),
+    );
     context(vault(), w.agent.clone(), DAY);
     drop(w.c.pay_evm_with_exception(p.clone(), a.clone(), approval));
     let digest = requested_digest();
@@ -685,7 +714,7 @@ fn vm_evm_approval_survives_token_change_before_submission() {
         w.c.on_evm_signed(p, 1, 0, fields(), Some(a), None, Ok(answer))
             .unwrap();
     let (decoded, emitted_digest, recovered) = emitted(&tx.raw_tx);
-    assert_eq!(hex(&decoded[5]), &TOKEN_B[2..]);
+    assert_eq!(hex(&decoded[5]), &TOKEN_A[2..]);
     assert_eq!(emitted_digest, digest);
     assert_eq!(recovered, key);
 }

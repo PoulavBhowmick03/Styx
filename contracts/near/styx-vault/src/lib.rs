@@ -405,7 +405,7 @@ impl Contract {
         signature: Base64VecU8,
     ) -> Promise {
         let (_, day) = self.check_evm(&payment);
-        let hash = hash_evm_payment(&payment);
+        let hash = hash_evm_payment(&payment, &self.evm_token(payment.chain_id));
         let digest = self.check_authorization(&hash, &authorization, &signature);
         self.execute_evm(payment, day, Some((authorization, digest)))
     }
@@ -508,7 +508,7 @@ impl Contract {
         payment: EvmPayment,
         day: u64,
         nonce: u64,
-        transfer_fields: (U128, U128, U64),
+        transfer_fields: (U128, U128, U64, String),
         exception: Option<ExceptionAuthorization>,
         approval_digest: Option<Base64VecU8>,
         #[callback_result] result: Result<MpcSignature, PromiseError>,
@@ -521,7 +521,7 @@ impl Contract {
                 let s = evm::unhex::<32>(&sig.s.scalar);
                 match (big_r, s) {
                     (Some(big_r), Some(s)) => evm::normalize(&big_r, &s, sig.recovery_id).map(|(r, s, v)| {
-                        let transfer = self.transfer_for(&payment, &chain, nonce, transfer_fields);
+                        let transfer = self.transfer_for(&payment, nonce, &transfer_fields);
                         let raw = transfer.signed(v, &r, &s);
                         SignedEvmTx {
                             payment_id: payment.payment_id.clone(),
@@ -549,7 +549,8 @@ impl Contract {
                         "chain_id": payment.chain_id,
                         "recipient": payment.recipient,
                         "amount": payment.amount,
-                        "payment_hash": Base64VecU8::from(hash_evm_payment(&payment).to_vec()),
+                        "payment_hash": Base64VecU8::from(hash_evm_payment(&payment, &transfer_fields.3).to_vec()),
+                        "token": transfer_fields.3,
                         "evidence_commitment": payment.evidence_commitment,
                         "nonce": nonce,
                         "tx_hash": tx.tx_hash,
@@ -647,8 +648,10 @@ impl Contract {
         self.evm_pending
     }
 
+    /// The hash an approver signs for an EVM payment. It includes the chain's current token, so an
+    /// approval stops matching if the owner changes the token before the payment is made.
     pub fn evm_payment_hash(&self, payment: EvmPayment) -> Base64VecU8 {
-        Base64VecU8::from(hash_evm_payment(&payment).to_vec())
+        Base64VecU8::from(hash_evm_payment(&payment, &self.evm_token(payment.chain_id)).to_vec())
     }
 
     pub fn consumed_payment(&self, payment_id: String) -> Option<Base64VecU8> {
@@ -726,15 +729,21 @@ impl Contract {
         (policy, day)
     }
 
+    /// The chain's configured token, lowercase `0x` + 40 hex.
+    fn evm_token(&self, chain_id: u64) -> String {
+        self.evm_chains.get(&chain_id).map(|c| c.token.clone()).unwrap_or_else(|| env::panic_str("ChainNotAllowed"))
+    }
+
     /// The transfer the vault signs for this payment: its token, gas caps and nonce, never the agent's.
-    fn transfer_for(&self, p: &EvmPayment, chain: &EvmChain, nonce: u64, fields: (U128, U128, U64)) -> evm::Transfer {
+    /// All of them are fixed when signing is requested (`fields`), never re-read in the callback.
+    fn transfer_for(&self, p: &EvmPayment, nonce: u64, fields: &(U128, U128, U64, String)) -> evm::Transfer {
         evm::Transfer {
             chain_id: p.chain_id,
             nonce,
             max_priority_fee_per_gas: fields.1 .0,
             max_fee_per_gas: fields.0 .0,
             gas_limit: fields.2 .0,
-            token: evm::parse_address(&chain.token).expect("token checked when set"),
+            token: evm::parse_address(&fields.3).expect("token checked when set"),
             recipient: evm::parse_address(&p.recipient).expect("recipient checked"),
             amount: p.amount.0,
         }
@@ -751,10 +760,11 @@ impl Contract {
         let nonce = self.evm_nonce(payment.chain_id);
         // The gas fields are fixed now and passed to the callback, so the signed transaction is
         // exactly the one whose hash the signer saw, even if the owner changes the caps meanwhile.
-        let fields = (chain.max_fee_per_gas, chain.max_priority_fee_per_gas, chain.gas_limit);
-        let transfer = self.transfer_for(&payment, &chain, nonce, fields);
+        // The token is fixed the same way: the transaction assembled later is the one that was signed.
+        let fields = (chain.max_fee_per_gas, chain.max_priority_fee_per_gas, chain.gas_limit, chain.token.clone());
+        let transfer = self.transfer_for(&payment, nonce, &fields);
         let sighash = env::keccak256_array(&transfer.signing_payload());
-        self.consumed_payments.insert(payment.payment_id.clone(), hash_evm_payment(&payment));
+        self.consumed_payments.insert(payment.payment_id.clone(), hash_evm_payment(&payment, &chain.token));
         let key = (payment.agent.clone(), day);
         let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
         self.spent_by_agent_day.insert(key, agent_spent + payment.amount.0);
@@ -896,10 +906,12 @@ fn build_exception_message(vault: &AccountId, a: &ExceptionAuthorization) -> Str
     )
 }
 
-fn hash_evm_payment(p: &EvmPayment) -> [u8; 32] {
+fn hash_evm_payment(p: &EvmPayment, token: &str) -> [u8; 32] {
     // Domain-separated from `hash_payment`, so a NEAR payment's approval can never match an EVM one.
-    let mut bytes = b"styx-evm-payment".to_vec();
+    // v2 appends the token the vault will transfer, so an approval names the asset as well.
+    let mut bytes = b"styx-evm-payment-v2".to_vec();
     p.serialize(&mut bytes).expect("borsh");
+    token.to_string().serialize(&mut bytes).expect("borsh");
     env::sha256_array(&bytes)
 }
 

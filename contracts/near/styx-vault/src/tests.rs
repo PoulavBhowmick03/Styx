@@ -410,8 +410,8 @@ fn evm_payment(id: &str, amount: u128) -> EvmPayment {
     }
 }
 
-fn fields() -> (U128, U128, U64) {
-    (U128(50_000_000_000), U128(1_000_000_000), U64(100_000))
+fn fields() -> (U128, U128, U64, String) {
+    (U128(50_000_000_000), U128(1_000_000_000), U64(100_000), "0x3600000000000000000000000000000000000000".into())
 }
 
 #[test]
@@ -495,7 +495,7 @@ fn evm_exception_with_a_valid_signature_is_sent_to_the_signer() {
     let (sk, pk) = key(2);
     let p = evm_payment("e1", 150);
     let mut a = authorization(&payment("unused", 1), &pk, 1);
-    a.payment_hash = Base64VecU8::from(hash_evm_payment(&p).to_vec());
+    a.payment_hash = Base64VecU8::from(hash_evm_payment(&p, "0x3600000000000000000000000000000000000000").to_vec());
     let sig = sign(&c, &sk, &a);
     as_agent(agent(), DAY_NS);
     c.pay_evm_with_exception(p, a, sig);
@@ -524,7 +524,7 @@ fn signer_answer_becomes_a_raw_transaction_that_recovers_to_the_signing_key() {
     c.pay_evm(p.clone());
     // Stand-in for the MPC signer: sign the same sighash with a known secp256k1 key.
     let chain = c.get_evm_chain(ARC).unwrap();
-    let transfer = c.transfer_for(&p, &chain, 0, fields());
+    let transfer = c.transfer_for(&p, 0, &fields());
     let sighash = Keccak256::digest(transfer.signing_payload());
     let mpc_key = K256Key::from_slice(&[9u8; 32]).unwrap();
     let (sig, rid) = mpc_key.sign_prehash_recoverable(&sighash).unwrap();
