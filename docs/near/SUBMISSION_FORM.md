@@ -34,4 +34,5 @@ On testnet: payments inside the limits settled on NEAR, Arc and Base, exceptions
   withdraw, and NEAR enforces that at the access-key level.
 - Do not claim "secure", "audited", "solves" or prompt-injection prevention, and do not add
   disclaimers either. Say what ran.
-- The approval page has not yet been used with a real wallet. Do that before showing it on camera.
+- The approval page has been used with a real wallet (Meteor app, `TESTNET_RUN.md`); the owner console
+  has not. Keep the console's write actions off camera until it has.

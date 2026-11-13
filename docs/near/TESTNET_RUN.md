@@ -133,7 +133,26 @@ second barrier behind that; the unit tests `a5_agent_cannot_raise_its_own_limit`
 Sonnet 5.5 and Haiku 5.5 drove the MCP tools against this vault in six scenarios each: see
 [`MODEL_TRIAL.md`](MODEL_TRIAL.md).
 
+## Real wallet on a phone (13 Nov 2026)
+
+The approver `poulav.testnet` (key `ed25519:mA3qigk1SJQ85o3RGcd32hEHoGM6bjDCvjekyQtNZ2N`), in the
+Meteor app on an Android phone:
+
+1. Sent `/start` to `@Styx_pvt_bot`, opened the link and signed the Telegram link message. The relay
+   stored the key against that chat (`/data/relay/telegram-links.json`; no transaction, nothing on chain).
+2. `wallet_test.sh request near` proposed 120 tUSDC to `vendor-a.styx-owner-c87a.testnet`, over the
+   100 tUSDC per-payment limit (payment `0x983e4354…90a0237`); the relay printed `telegram alert sent`.
+3. From the alert, signed the exception on `styxco.xyz/approval/` in Meteor.
+4. `wallet_test.sh submit` settled it: `pay_with_exception`
+   [Eauk4L8M…](https://testnet.nearblocks.io/txns/Eauk4L8MRK13NccLXDcxQseA7uDWacFBhfa9SZXGQ195),
+   `ft_transfer` of 120 tUSDC from the vault to vendor-a and `payment_executed`.
+
+Two page bugs showed up only with the real wallet and were fixed before the run passed: Wallet
+Selector needs a global `Buffer` for its nonce check (`3647b46`), and Meteor returns extra fields
+that the strict signature schema refused (`84fab3f`). The linked chat is also the relay's fallback
+chat, so this run does not by itself show per-key routing; `relay-near/src/links.test.ts` does.
+
 ## Not yet run
 
-- The approval page with a real wallet (Meteor Wallet).
+- The owner console with a real wallet.
 - Hostile-invoice model trials on NEAR.

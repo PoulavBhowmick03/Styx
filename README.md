@@ -140,8 +140,9 @@ USDC), relay `https://styx-relay-near.fly.dev`.
   attested.
 - A model that gets both the USDC and the base-unit amount wrong in the same way still pays the
   wrong amount within the limits.
-- The approval page and owner console have not yet been used with a real wallet on camera; see
-  `docs/near/WALLET_TEST.md`.
+- The owner console has not yet been used with a real wallet; see `docs/near/WALLET_TEST.md`. The
+  approval page has: one NEAR exception signed in the Meteor app and settled
+  (`docs/near/TESTNET_RUN.md`).
 
 ## License
 

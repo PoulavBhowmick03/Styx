@@ -1,7 +1,7 @@
 # Real-wallet test: the approval page and the owner console
 
-Two things have never been done with a real wallet: an approver signing on the approval page, and
-the owner using the owner console. This is the script to do both, in about 20 minutes. Everything
+An approver signing on the approval page has been done with a real wallet (13 Nov 2026, Meteor app
+on a phone, recorded in `TESTNET_RUN.md`). The owner using the owner console has not. This is the script to do both, in about 20 minutes. Everything
 is NEAR testnet. Use **Meteor Wallet**: the browser extension on a laptop, or the Meteor app on a
 phone. The pages are live at `https://styxco.xyz/approval/` and `https://styxco.xyz/console/`.
 
@@ -29,18 +29,15 @@ Already done for `poulav.testnet` on 13 Nov 2026: funded with 2 testnet NEAR, an
 `ed25519:mA3qigk1SJQ85o3RGcd32hEHoGM6bjDCvjekyQtNZ2N` registered as an approver on both vaults
 (steps A1 and A2). Start at A3 with that key.
 
-Open three terminals:
-
-| Terminal | Command | Leave it running |
-| --- | --- | --- |
-| 1, relay | `scripts/near/wallet_test.sh relay` | yes |
-| 2, approval page | `cd approval-page-near && npm run dev` (it prints `http://localhost:5173`) | yes |
-| 3, you | everything below | |
+One terminal is enough: `wallet_test.sh` uses the hosted relay (`https://styx-relay-near.fly.dev`)
+and page (`https://styxco.xyz/approval/`) by default. To run both locally instead, start
+`scripts/near/wallet_test.sh relay` and `cd approval-page-near && npm run dev`, and set
+`RELAY=http://127.0.0.1:8788 PAGE=http://localhost:5173 RELAY_TOKEN_FILE=~/.styx-near/relay-token`.
 
 ## A. The approval page with your wallet
 
 **A1. Find your wallet's key** (done for poulav.testnet). The vault only accepts signatures from a key the owner registered.
-In terminal 3:
+In a terminal:
 
 ```sh
 near account list-keys <your-account>.testnet network-config testnet-fastnear now
@@ -63,7 +60,7 @@ Expect `succeeded` twice and `{"enabled":true,"version":1}` for both vaults.
 scripts/near/wallet_test.sh request near ed25519:<your key>
 ```
 
-It prints a URL like `http://localhost:5173/?relay=http://127.0.0.1:8788&request=…`.
+It prints a URL like `https://styxco.xyz/approval/?relay=https://styx-relay-near.fly.dev&request=…`.
 
 **A4. Approve it in the browser.** Open the URL.
 - The page should show the payment read back from the chain: 120 tUSDC to
@@ -125,7 +122,7 @@ payments table may say the indexer is unavailable: that is expected on testnet, 
 allowed. Check the JSON preview, sign in Meteor, and confirm the console re-reads it from the chain
 (allowed, version 1). Then do the same with allowed off (version 2).
 
-**B3. Pause and resume.** Pause the vault, sign. In terminal 3, try a payment inside the limits:
+**B3. Pause and resume.** Pause the vault, sign. In the terminal, try a payment inside the limits:
 
 ```sh
 set -a; . ~/.styx-near/demo.env; set +a

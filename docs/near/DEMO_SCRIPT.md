@@ -20,7 +20,7 @@ multichain segment (2 USDC on Arc, 10 USDC on Base): an underfunded transfer rev
 
 ## Before recording
 
-1. Real-wallet test passed once (`docs/near/WALLET_TEST.md`). If it has not, use the test signer for
+1. Real-wallet test passed once on 13 Nov 2026 (`TESTNET_RUN.md`, Meteor app). If it fails on the day, use the test signer for
    the 0:55 segment and leave the page out.
 2. Telegram: send `/start` to `@Styx_pvt_bot` from the phone, open the link it returns and sign the
    link message in Meteor (the bot confirms "Linked"), then confirm `wallet_test.sh request` prints
