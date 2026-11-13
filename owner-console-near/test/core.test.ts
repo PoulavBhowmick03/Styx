@@ -94,10 +94,13 @@ describe('agent hand-off',()=>{
   expect(env).not.toMatch(/private|secret|ed25519:[1-9A-HJ-NP-Za-km-z]{80,}/);
  });
  it('refuses a bad approver or vault',()=>{expect(()=>agentEnv(vault,'nope')).toThrow();expect(()=>agentEnv('Bad Vault',approver)).toThrow();});
- it('moves the downloads into a private folder, then runs mcp_config.sh',()=>{
-  const cmds=agentSetupCommands(vault,'styx-agent-x-1234.json');
-  expect(cmds.split('\n')).toHaveLength(4);expect(cmds).toContain('chmod 600');expect(cmds).toContain(agentEnvName(vault));expect(cmds).toMatch(/^mkdir -p -m 700/);
-  expect(()=>agentSetupCommands(vault,'../../etc/passwd')).toThrow();
+ it('moves the key into a private folder, installs the CLI and adds the MCP server, without the repo',()=>{
+  const cmds=agentSetupCommands(vault,'styx-agent-x-1234.json',approver),lines=cmds.split('\n');
+  expect(lines).toHaveLength(4);expect(cmds).toContain('chmod 600');expect(lines[0]).toMatch(/^mkdir -p -m 700 .*\/invoices"$/);
+  expect(lines[2]).toBe('cargo install --locked --git https://github.com/PoulavBhowmick03/Styx styx-near');
+  expect(lines[3]).toContain(`-e STYX_NEAR_APPROVER=${approver}`);expect(lines[3]).toMatch(/-- uvx --from "git\+https:\/\/github.com\/PoulavBhowmick03\/Styx#subdirectory=mcp-server" styx-mcp-server$/);
+  expect(cmds).not.toMatch(/private|secret/);
+  expect(()=>agentSetupCommands(vault,'../../etc/passwd',approver)).toThrow();expect(()=>agentSetupCommands(vault,'styx-agent-x.json','nope')).toThrow();
  });
  it('presets keep the agent day inside the vault day',()=>{for(const p of PRESETS) expect(Number(p.values.daily_limit)).toBeLessThanOrEqual(Number(p.values.limit));});
 });

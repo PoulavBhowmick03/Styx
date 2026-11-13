@@ -200,14 +200,16 @@ export function agentEnv(vault:string,approver:string):string{
   `STYX_NEAR_APPROVER=${publicKey(approver)}`,''].join('\n');
 }
 export const agentEnvName=(vault:string)=>`styx-agent-${account(vault)}.env`;
-// Run from the repo root. Assumes the browser saved both files to ~/Downloads.
-export function agentSetupCommands(vault:string,keyFile:string):string{
+// No clone needed: cargo installs the agent CLI from GitHub, and uvx runs the MCP server from GitHub
+// (it finds styx-near-vault on PATH). Assumes the browser saved the key file to ~/Downloads.
+export const REPO='https://github.com/PoulavBhowmick03/Styx';
+export function agentSetupCommands(vault:string,keyFile:string,approver:string):string{
  if(!/^styx-agent-[a-z0-9._-]+\.json$/.test(keyFile)) throw Error('Unexpected key file name');
- const home=agentHome(vault);
- return [`mkdir -p -m 700 "${home}/state"`,
+ const home=agentHome(vault),v=account(vault),a=publicKey(approver);
+ return [`mkdir -p -m 700 "${home}/state" "${home}/invoices"`,
   `mv ~/Downloads/${keyFile} "${home}/agent.json" && chmod 600 "${home}/agent.json"`,
-  `mv ~/Downloads/${agentEnvName(vault)} "${home}/demo.env"`,
-  `scripts/near/mcp_config.sh "${home}/demo.env"`].join('\n');
+  `cargo install --locked --git ${REPO} styx-near`,
+  `claude mcp add styx-vault -e STYX_BACKEND=vault -e STYX_VAULT_DIR="${home}/invoices" -e STYX_NEAR_VAULT=${v} -e STYX_NEAR_AGENT_KEY_FILE="${home}/agent.json" -e STYX_NEAR_STATE_ROOT="${home}/state" -e STYX_NEAR_APPROVER=${a} -- uvx --from "git+${REPO}#subdirectory=mcp-server" styx-mcp-server`].join('\n');
 }
 
 // ---- Starting points for the rules step (amounts in tokens) ----

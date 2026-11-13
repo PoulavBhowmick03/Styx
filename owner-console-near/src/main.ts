@@ -405,9 +405,9 @@ function agentHandoff(){
  box.append(el('h4','Hand the agent its key'));
  const approver=[...known.approvers][0];
  if(!approver){box.append(el('p','Add an approver first: the agent\'s settings name who it asks for exceptions.'));return box;}
- box.append(el('p','Download the settings (vault, approver, and where the key file will live; no key material). From the Styx repo, these commands move both downloads into a private folder and print the claude mcp add line for your agent.'));
+ box.append(el('p','Run these in a terminal (they need Rust\'s cargo, uv and Claude Code): they move the key file into an owner-only folder, install the agent CLI, and give Claude Code the Styx payment tools for this vault. No key is shown here. The settings file is for scripts/near/mcp_config.sh if you work from the repo.'));
  const dl=el('button','Download agent settings') as HTMLButtonElement;dl.type='button';dl.className='secondary';dl.onclick=()=>download(agentEnvName(vault),agentEnv(vault,approver));box.append(dl);
- if(lastAgentFile) box.append(copyBlock(agentSetupCommands(vault,lastAgentFile)));
+ if(lastAgentFile) box.append(copyBlock(agentSetupCommands(vault,lastAgentFile,approver)));
  else box.append(el('p','This visit did not generate the key, so move them by hand: the agent key file to $HOME/.styx-near-agent/'+vault+'/agent.json (chmod 600), the settings file to demo.env beside it, and a state folder there (mkdir -m 700). Then run scripts/near/mcp_config.sh on that demo.env.'));
  return box;
 }
