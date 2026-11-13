@@ -2,8 +2,8 @@
 
 Two things have never been done with a real wallet: an approver signing on the approval page, and
 the owner using the owner console. This is the script to do both, in about 20 minutes. Everything
-is NEAR testnet. Use a laptop browser with the **Meteor Wallet** extension (or MyNearWallet in the
-same browser); a phone comes later, once the page is deployed.
+is NEAR testnet. Use **Meteor Wallet**: the browser extension on a laptop, or the Meteor app on a
+phone. The pages are live at `https://styxco.xyz/approval/` and `https://styxco.xyz/console/`.
 
 The terminal side is `scripts/near/wallet_test.sh`. It was run on 13 Nov 2026 with the test signer
 standing in for the wallet: a NEAR and a Base exception both settled through the relay. What's left
@@ -20,8 +20,8 @@ cargo build --release --manifest-path sdk/near/Cargo.toml   # the agent CLI, if 
 
 Have a **testnet** account in a browser wallet on the laptop. Poulav's is `poulav.testnet`, which
 lives in a mobile wallet: export its recovery phrase (or private key) from the phone wallet and
-import it into the **Meteor** extension (testnet) or **MyNearWallet** (testnet.mynearwallet.com) in
-the laptop browser. A phone can't open the local pages: `localhost` is the laptop, and over plain
+import it into the **Meteor** extension (testnet) in the laptop browser, or use the Meteor app on the
+phone. A phone can't open the local pages: `localhost` is the laptop, and over plain
 http on a LAN address the browser blocks `crypto.randomUUID()`, which the page needs. The phone
 works once the page is deployed on https.
 
@@ -95,7 +95,7 @@ address, sign, then `scripts/near/wallet_test.sh submit`. Expect `settled` with 
 (check it on sepolia.basescan.org). `request arc` does the same on Arc.
 
 **What to note, either way:** which wallet, whether the page's read-back matched, whether signing
-worked inline (Meteor) or by redirect (MyNearWallet), any error text, and the transaction ids. Paste
+worked inline in Meteor, any error text, and the transaction ids. Paste
 them to Claude and they go into `TESTNET_RUN.md`.
 
 ## B. The owner console with the owner account
@@ -142,3 +142,14 @@ it should propose normally.
 
 Don't show `~/.near-credentials`, `~/.styx-near/`, the relay token or the `cat` output in B. Record
 part A from step A3 on.
+
+## On a phone with the Meteor app
+
+The page reaches Meteor in one of two ways: through the wallet's injected bridge (the Meteor
+extension, or Meteor's in-app browser if the app provides one), or by opening Meteor's web wallet
+(`wallet.meteorwallet.app`) in a popup. No documented link opens a page inside the Meteor app, so
+try, in order, and note which one worked:
+
+1. Tap **Review and sign with Meteor** in the Telegram alert.
+2. If the wallet does not appear, long-press the link in the alert and open it in the phone browser.
+3. If the Meteor app has a built-in browser, paste the link there.

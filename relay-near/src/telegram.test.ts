@@ -19,7 +19,7 @@ describe('telegram alert', () => {
     expect(text).toContain('Amount: 6 USDC');
     expect(text).toContain('Base Sepolia');
     expect(text).toContain('Per-payment limit: 5 USDC');
-    expect(text).toContain('Review and sign: https://page/?request=x');
+    expect(text).toContain('Review and sign with Meteor Wallet: https://page/?request=x');
   });
   it('sends one plain-text message with a button for https links, and reports failure', async () => {
     const calls: { url: string; body: Record<string, unknown> }[] = [];

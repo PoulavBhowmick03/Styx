@@ -1,6 +1,5 @@
 import { setupWalletSelector, type WalletSelector } from '@near-wallet-selector/core';
 import { setupModal } from '@near-wallet-selector/modal-ui';
-import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
@@ -41,7 +40,7 @@ function render(){
 }
 async function walletSetup(network:string,vault:string){
  unsubscribe?.();
- selector=await setupWalletSelector({network:network as 'testnet'|'mainnet',modules:[setupMyNearWallet(),setupMeteorWallet()]});
+ selector=await setupWalletSelector({network:network as 'testnet'|'mainnet',modules:[setupMeteorWallet()]});
  const update=()=>{const accounts=selector!.store.getState().accounts;connected=accounts.find(a=>a.active)?.accountId??'';clearPlan();role();};
  update();const subscription=selector.store.observable.subscribe(update);unsubscribe=()=>subscription.unsubscribe();
  $('#connect').onclick=()=>setupModal(selector!,{contractId:vault}).show();
@@ -145,7 +144,7 @@ $('#send').onclick=async()=>{
   if(selected.method==='storage_deposit' && await c.rpc.view(current.token,'storage_balance_of',{account_id:c.vault})) throw Error('Vault is already registered; refresh state');
   clearPlan();say('Waiting for wallet approval. Do not submit again while the outcome is unknown.');
   const callback=new URL(location.href);callback.searchParams.set('vault',c.vault);callback.searchParams.set('rpc',c.rpc.url);callback.searchParams.set('network',c.network);
-  const result=await wallet.signAndSendTransaction({... (wallet.id==='my-near-wallet'?{callbackUrl:callback.toString()}:{}),signerId:active,receiverId:selected.receiverId,actions:[{type:'FunctionCall',params:{methodName:selected.method,args:selected.args,gas:selected.gas,deposit:selected.deposit}}]});
+  const result=await wallet.signAndSendTransaction({signerId:active,receiverId:selected.receiverId,actions:[{type:'FunctionCall',params:{methodName:selected.method,args:selected.args,gas:selected.gas,deposit:selected.deposit}}]});
   const hash=(result as any)?.transaction?.hash;
   if(hash) await c.rpc.transaction(hash,active!);
   if(typeof selected.args.agent==='string')known.agents.add(selected.args.agent);

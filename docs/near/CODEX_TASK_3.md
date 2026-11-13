@@ -1,5 +1,7 @@
 # Codex task 3: the owner's console on NEAR
 
+> **13 Nov 2026:** MyNearWallet shut down in October 2026, so both pages now offer only Meteor Wallet. Mentions of MyNearWallet below are historical.
+
 Same repo and rules as tasks 1 and 2 (`/Users/odinson/Developer/Styx-near`, `main`, small
 conventional commits, pull before every push, no keys in git, do not edit `contracts/`,
 `sdk/near/`, `scripts/near/`, or `docs/near/` files other than the one named below). Read

@@ -1,6 +1,5 @@
 import { setupWalletSelector } from '@near-wallet-selector/core';
 import { setupModal } from '@near-wallet-selector/modal-ui';
-import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import '@near-wallet-selector/modal-ui/styles.css';
 import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
@@ -42,13 +41,13 @@ async function main(){
   if(isEvmPending(p) && saved.evmToken!==facts.evmChain.token) throw new Error('EVM token configuration changed. Reload and review the destination again.');
   await post({accountId:fragment.get('accountId')??'',publicKey:fragment.get('publicKey')??'',signature:fragment.get('signature')??''},saved.callback);return;
  }
- const selector=await setupWalletSelector({network:p.network,modules:[setupMyNearWallet(),setupMeteorWallet()]});
+ const selector=await setupWalletSelector({network:p.network,modules:[setupMeteorWallet()]});
  const modal=setupModal(selector,{contractId:p.vault});
  connect.hidden=false;sign.hidden=false;status.textContent='Chain checks passed. Confirm the vault, token and RPC before signing.';
  connect.onclick=()=>modal.show();
  sign.onclick=async()=>{sign.disabled=true;try{
   await check();const wallet=await selector.wallet();
-  const callback=wallet.id==='my-near-wallet'?location.origin+location.pathname+location.search:null;
+  const callback=null; // Meteor signs inline; no redirect callback is put in the signed payload
   const state=crypto.randomUUID();
   if(callback) sessionStorage.setItem('styx-near-sign',JSON.stringify({endpoint,nonce:p.authorization.approval_nonce,callback,state,evmToken:displayedEvmToken??null}));
   const result=await wallet.signMessage({message:p.message,nonce:Buffer.from(p.authorization.approval_nonce,'base64'),recipient:p.vault,...(callback?{callbackUrl:callback,state}:{})});

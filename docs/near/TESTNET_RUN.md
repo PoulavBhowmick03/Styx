@@ -135,5 +135,5 @@ Sonnet 5.5 and Haiku 5.5 drove the MCP tools against this vault in six scenarios
 
 ## Not yet run
 
-- The approval page with a real wallet (Meteor or MyNearWallet). The relay has run locally only.
+- The approval page with a real wallet (Meteor Wallet).
 - Hostile-invoice model trials on NEAR.

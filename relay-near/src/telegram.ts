@@ -26,7 +26,8 @@ export function alertText(p: Pending, link: string): string {
     `Invoice: ${p.invoiceReference}`,
     `Approver key asked to sign: ${p.authorization.signer}`,
     '',
-    `Review and sign: ${link}`,
+    `Review and sign with Meteor Wallet: ${link}`,
+    'If the wallet does not open from Telegram, long-press the link and open it in your phone browser.',
     'Nothing is paid unless you sign this exact payment in your NEAR wallet.',
   ].join('\n');
 }
@@ -40,7 +41,7 @@ export function telegramNotifier(options: {
   return async (pending, requestId) => {
     const link = `${options.pageUrl.replace(/\/$/, '')}/?relay=${encodeURIComponent(options.relayUrl)}&request=${requestId}`;
     const body: Record<string, unknown> = { chat_id: options.chatId, text: alertText(pending, link), link_preview_options: { is_disabled: true } };
-    if (link.startsWith('https://')) body.reply_markup = { inline_keyboard: [[{ text: 'Review and sign', url: link }]] };
+    if (link.startsWith('https://')) body.reply_markup = { inline_keyboard: [[{ text: 'Review and sign with Meteor', url: link }]] };
     try {
       const response = await send(`${base}/bot${options.botToken}/sendMessage`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),

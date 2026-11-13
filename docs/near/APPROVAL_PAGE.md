@@ -1,5 +1,7 @@
 # NEAR approval page and relay
 
+> **13 Nov 2026:** MyNearWallet shut down in October 2026, so both pages now offer only Meteor Wallet. Mentions of MyNearWallet below are historical.
+
 ## Local run
 
 Use Node 22 or later. From the repository root:

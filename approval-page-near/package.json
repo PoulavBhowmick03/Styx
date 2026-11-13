@@ -14,7 +14,6 @@
     "@near-wallet-selector/core": "^8.10.0",
     "@near-wallet-selector/meteor-wallet": "^8.10.0",
     "@near-wallet-selector/modal-ui": "^8.10.0",
-    "@near-wallet-selector/my-near-wallet": "^8.10.0",
     "borsh": "^2.0.0",
     "bs58": "^6.0.0",
     "buffer": "^6.0.3",
