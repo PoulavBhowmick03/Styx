@@ -51,8 +51,13 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
    "Create a vault" signs one `create_vault` call to the factory `styx-vaults.testnet` (attach about
    4 NEAR). It creates `<name>.styx-vaults.testnet` owned by you, with no access keys, and opens it.
    Then fund it, allow a recipient, set an approver and add an agent key from the same page.
+   Without a browser wallet, the same call from the CLI:
+   `near contract call-function as-transaction styx-vaults.testnet create_vault json-args '{"name":"<name>","token":"usdc.styx-owner-c87a.testnet"}' prepaid-gas '100 Tgas' attached-deposit '4 NEAR' sign-as <your-account>.testnet network-config testnet sign-with-keychain send`.
 1. **On a local NEAR sandbox, no accounts needed.** `cd contracts/near/styx-vault && cargo test`.
-   You should see 41 unit tests and 2 sandbox tests pass. Then `cd ../../..` back to the repo root
+   You should see 41 unit tests, 15 audit reproductions (`tests/audit_pocs.rs`, now regression tests
+   for the fixed findings) and 2 sandbox tests pass. The factory's tests run the same way:
+   `cd contracts/near/styx-factory && cargo test` (5 unit, 2 sandbox). Both build their own wasm on
+   the first run through `contracts/near/build.sh`, so the first run takes a few minutes. Then `cd ../../..` back to the repo root
    for the steps below. The sandbox tests deploy the vault and
    token, pay through a real function-call key, settle an exception with a NEP-413 signature, roll
    back a failed transfer, and check that attacks A1 to A6 are refused by name.
