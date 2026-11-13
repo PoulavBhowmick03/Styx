@@ -405,3 +405,58 @@ def test_a_declined_request_is_a_final_no(tmp_path):
         assert not list(vault_dir.glob("signature-*"))
     finally:
         relay.shutdown()
+
+
+def test_an_unanswered_request_escalates_to_the_next_approver(tmp_path):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Relay(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            data = json.dumps({"status": "pending"}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    relay = ThreadingHTTPServer(("127.0.0.1", 0), Relay)
+    threading.Thread(target=relay.serve_forever, daemon=True).start()
+    b, c = "ed25519:" + "B" * 44, "ed25519:" + "C" * 44
+    try:
+        vault_dir = private_dir(tmp_path / "vault")
+        payment_id = "0x" + "ef" * 32
+        stem = payment_id[2:14]
+        record = vault_dir / f"relay-{stem}.txt"
+        record.write_text("r" * 43)
+        old = time.time() - 20 * 60
+        os.utime(record, (old, old))
+        env = {"STYX_VAULT_DIR": str(vault_dir), "STYX_VAULT_CLI": str(scripted_binary(tmp_path, {})),
+               "STYX_VAULT_RELAY_URL": f"http://127.0.0.1:{relay.server_address[1]}", "STYX_VAULT_RELAY_TOKEN": "t",
+               "STYX_VAULT_APPROVERS": f"{b},{c}", "STYX_VAULT_ESCALATE_MINUTES": "10"}
+
+        async def body(session):
+            started = time.monotonic()
+            reply = result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id, "wait_seconds": 60}))
+            return reply, time.monotonic() - started
+
+        reply, took = run_session(env, body)
+        assert reply["result"]["status"] == "pending" and reply["result"]["escalate_to"] == b and took < 20
+        assert f"signer {b}" in reply["result"]["next_action"]
+
+        (vault_dir / f"asked-{stem}.json").write_text(json.dumps(["default", b]))
+        reply, _ = run_session(env, body)
+        assert reply["result"]["escalate_to"] == c
+
+        (vault_dir / f"asked-{stem}.json").write_text(json.dumps(["default", b, c]))
+        quick = {**env}
+
+        async def once(session):
+            return result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id}))
+
+        assert "escalate_to" not in run_session(quick, once)["result"]  # everyone asked: just pending
+        no_list = {k: v for k, v in env.items() if k != "STYX_VAULT_APPROVERS"}
+        assert "escalate_to" not in run_session(no_list, once)["result"]
+    finally:
+        relay.shutdown()

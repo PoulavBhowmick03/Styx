@@ -24,6 +24,13 @@ vault's Chain Signatures.
 `STYX_VAULT_RELAY_TOKEN`. The CLI reads its own `STYX_NEAR_*` settings (vault, agent key file, state
 directory, approver, EVM RPCs); see `sdk/near/src/main.rs` and `scripts/near/quickstart.sh`.
 
+`STYX_VAULT_CLI` can be left out when `styx-near-vault` is on PATH. With a relay,
+`styx_check_owner_approval` takes `wait_seconds` (up to 600) and returns as soon as the approver
+signs or declines; a decline is final. `STYX_VAULT_APPROVERS` (comma-separated `ed25519:` keys, in
+order) and `STYX_VAULT_ESCALATE_MINUTES` (default 10) make an unanswered request come back with
+`escalate_to`, the next approver to ask. The CLI keeps one authorization per payment, so asking the
+next approver replaces the earlier request: a late signature from the first approver is then refused.
+
 ## Test
 
 ```bash

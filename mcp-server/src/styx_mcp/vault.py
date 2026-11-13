@@ -97,6 +97,9 @@ class VaultSettings:
     binary: str | None = None
     relay_url: str | None = None
     relay_token: str | None = field(default=None, repr=False)
+    # Approvers to ask next, in order, when a request goes unanswered for escalate_after seconds.
+    escalation: tuple[str, ...] = ()
+    escalate_after: int = 600
 
     @classmethod
     def from_env(cls) -> VaultSettings:
@@ -119,8 +122,15 @@ class VaultSettings:
             raise ConfigError("set both STYX_VAULT_RELAY_URL and STYX_VAULT_RELAY_TOKEN, or neither")
         if relay_url and not relay_url.startswith(("https://", "http://")):
             raise ConfigError("STYX_VAULT_RELAY_URL must be an http or https URL")
+        escalation = tuple(k.strip() for k in os.environ.get("STYX_VAULT_APPROVERS", "").split(",") if k.strip())
+        if any(re.fullmatch(_NEAR_KEY, k, flags=re.ASCII) is None for k in escalation):
+            raise ConfigError("STYX_VAULT_APPROVERS must list NEAR public keys (ed25519:...), comma separated")
+        minutes = os.environ.get("STYX_VAULT_ESCALATE_MINUTES", "10")
+        if not re.fullmatch(r"[0-9]{1,4}(\.[0-9]+)?", minutes):
+            raise ConfigError("STYX_VAULT_ESCALATE_MINUTES must be a number of minutes")
         return cls(artifacts=root.resolve(), binary=os.environ.get("STYX_VAULT_CLI"),
-                   relay_url=relay_url.rstrip("/") if relay_url else None, relay_token=relay_token)
+                   relay_url=relay_url.rstrip("/") if relay_url else None, relay_token=relay_token,
+                   escalation=escalation, escalate_after=int(float(minutes) * 60))
 
     def artifact(self, name: str) -> str:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", name, flags=re.ASCII):
@@ -198,6 +208,26 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             return {"owner_alerted": sent.get("alerted") is True, **needs_link}
         except (OSError, ValueError, KeyError):
             return {"owner_alerted": False}
+
+    def asked_file(stem: str) -> Path:
+        return Path(settings.artifact(f"asked-{stem}.json"))
+
+    def note_asked(stem: str, who: str) -> None:
+        path = asked_file(stem)
+        asked = json.loads(path.read_text()) if path.exists() else []
+        if who not in asked:
+            path.write_text(json.dumps([*asked, who]))
+
+    def escalation_due(payment_id: str) -> str | None:
+        """The next approver to ask, once the current request has waited escalate_after seconds."""
+        if not settings.escalation:
+            return None
+        stem = payment_id.removeprefix("0x")[:12]
+        record = Path(settings.artifact(f"relay-{stem}.txt"))
+        if not record.exists() or time.time() - record.stat().st_mtime < settings.escalate_after:
+            return None
+        asked = json.loads(asked_file(stem).read_text()) if asked_file(stem).exists() else ["default"]
+        return next((k for k in settings.escalation if k not in asked), None)
 
     def fetch_signature(payment_id: str) -> dict[str, Any]:
         stem = payment_id.removeprefix("0x")[:12]
@@ -317,6 +347,7 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             response["result"]["pending_file"] = name
             if settings.relay_url:
                 response["result"].update(await asyncio.to_thread(send_to_relay, pending, stem))
+                note_asked(stem, signer or "default")
                 response["result"]["next_action"] = (
                     "Tell your user in one line that the approver was asked, then call styx_check_owner_approval with "
                     "this payment_id and wait_seconds 300: it returns as soon as the approver signs. When it says "
@@ -374,6 +405,14 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
                 while True:
                     response = await asyncio.to_thread(fetch_signature, payment_id)
                     pending = response.get("ok") and response["result"].get("status") == "pending"
+                    nxt = await asyncio.to_thread(escalation_due, payment_id) if pending else None
+                    if nxt:
+                        minutes = round(settings.escalate_after / 60)
+                        response["result"].update({"escalate_to": nxt, "next_action": (
+                            f"No answer for {minutes} minutes. Call styx_request_owner_approval with this payment_id "
+                            f"and signer {nxt}, tell your user you asked the next approver, then wait again. The "
+                            "earlier request is replaced; do not propose the payment again.")})
+                        return response
                     if not pending or time.monotonic() + _POLL_SECONDS > deadline:
                         return response
                     await asyncio.sleep(_POLL_SECONDS)
