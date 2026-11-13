@@ -62,6 +62,7 @@ async def main() -> None:
         print("tools:", ", ".join(tools))
         proposed = result(await session.call_tool("styx_propose_payment", {
             "recipient": os.environ["RECIPIENT"], "amount": os.environ["AMOUNT"],
+            "amount_usdc": f"{int(os.environ['AMOUNT']) / 1_000_000:f}".rstrip("0").rstrip("."),
             "invoice_name": "invoice-2001.txt", "invoice_reference": "INV-2001"}))
         print("propose:", proposed)
         payment_id = proposed["result"]["payment_id"]

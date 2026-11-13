@@ -135,7 +135,7 @@ def test_tools_expose_exactly_the_agent_surface_and_pass_structured_errors(tmp_p
         tools = {tool.name for tool in (await session.list_tools()).tools}
         assert tools == TOOLS
         proposed = result(await session.call_tool("styx_propose_payment", {
-            "recipient": "0x" + "a1" * 20, "amount": "6000000", "invoice_name": "invoice.txt",
+            "recipient": "0x" + "a1" * 20, "amount_usdc": "6", "amount": "6000000", "invoice_name": "invoice.txt",
             "invoice_reference": "INV-1", "valid_until": 1800000000,
         }))
         assert proposed["ok"] and proposed["result"]["path"] == "exception_required"
@@ -154,7 +154,7 @@ def test_tools_expose_exactly_the_agent_surface_and_pass_structured_errors(tmp_p
         assert unavailable["error"]["code"] == "VERIFICATION_UNAVAILABLE"
 
         escape = result(await session.call_tool("styx_propose_payment", {
-            "recipient": "0x" + "a1" * 20, "amount": "1", "invoice_name": "../outside",
+            "recipient": "0x" + "a1" * 20, "amount_usdc": "0.000001", "amount": "1", "invoice_name": "../outside",
             "invoice_reference": "x", "valid_until": 1,
         }))
         assert escape["error"]["code"] == "INVALID_REQUEST"
@@ -234,7 +234,7 @@ def test_agent_pays_and_is_refused_through_mcp_on_a_real_chain(tmp_path):
 
         async def propose(session, amount):
             return result(await session.call_tool("styx_propose_payment", {
-                "recipient": vendor, "amount": amount, "invoice_name": "invoice.txt",
+                "recipient": vendor, "amount_usdc": f"{int(amount) / 1_000_000:f}".rstrip("0").rstrip("."), "amount": amount, "invoice_name": "invoice.txt",
                 "invoice_reference": "INV-1", "valid_until": now + 3600,
             }))
 
@@ -352,7 +352,7 @@ def test_models_can_leave_the_timestamps_out(tmp_path):
 
     async def body(session):
         await session.call_tool("styx_propose_payment", {
-            "recipient": "0x" + "a1" * 20, "amount": "1", "invoice_name": "i.txt", "invoice_reference": "x",
+            "recipient": "0x" + "a1" * 20, "amount_usdc": "0.000001", "amount": "1", "invoice_name": "i.txt", "invoice_reference": "x",
         })
         await session.call_tool("styx_request_owner_approval", {"payment_id": "0x" + "ab" * 32})
 
@@ -445,3 +445,32 @@ def test_a_registered_agent_asks_the_approver_its_owner_chose_and_reports_when_t
         server.shutdown()
     sent = [json.loads(line) for line in capture.read_text().splitlines()]
     assert [request.get("signer") for request in sent if request["method"] == "request_approval"] == [approver]
+
+
+def test_usdc_and_base_unit_amounts_must_agree(tmp_path):
+    """The unit mistake seen live: "30" sent as base units for a 30 USDC invoice is refused."""
+    directory = tmp_path / "vault"
+    directory.mkdir(mode=0o700)
+    (directory / "invoice.txt").write_text("30 USDC")
+    binary = scripted_binary(tmp_path, {
+        "version": [{"status": "ok", "protocol": 1, "contract_version": 1}, 0],
+        "propose": [{"status": "ok", "payment_id": "0x" + "ab" * 32, "payment_hash": "0x" + "cd" * 32, "path": "ordinary"}, 0],
+    })
+
+    async def body(session):
+        async def propose(usdc, base):
+            return result(await session.call_tool("styx_propose_payment", {
+                "recipient": "vendor.testnet", "amount_usdc": usdc, "amount": base,
+                "invoice_name": "invoice.txt", "invoice_reference": "INV-30"}))
+        wrong = await propose("30", "30")
+        assert wrong["error"]["code"] == "INVALID_REQUEST" and "30000000" in wrong["error"]["message"]
+        assert (await propose("30 USDC", "30000000"))["error"]["code"] == "INVALID_REQUEST"
+        assert (await propose("0.1234567", "123456"))["error"]["code"] == "INVALID_REQUEST"
+        assert (await propose("30", "30000000"))["ok"]
+        assert (await propose("0.5", "500000"))["ok"]
+
+    run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(binary)}, body)
+    proposals = [json.loads(line) for line in (tmp_path / "requests.log").read_text().splitlines()
+                 if json.loads(line)["method"] == "propose"]
+    # Only the two agreeing proposals reached the binary, in base units.
+    assert [p["amount"] for p in proposals] == ["30000000", "500000"]

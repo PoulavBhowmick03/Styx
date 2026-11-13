@@ -31,6 +31,18 @@ _FORBIDDEN_VARIABLES = (
 _RELAY_UNAVAILABLE = "RELAY_UNAVAILABLE"
 # Models do not know the current time, and a guessed deadline fails the payment.
 _DEFAULT_PAYMENT_SECONDS = 3600
+# USDC has six decimals on every chain the vault pays on.
+_USDC_DECIMALS = 6
+_USDC_AMOUNT = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]{1,6})?")
+
+
+def usdc_to_base_units(amount_usdc: str) -> int:
+    """`"30"` or `"0.5"` USDC as base units. Refuses anything that is not a plain decimal."""
+    text = amount_usdc.strip()
+    if not _USDC_AMOUNT.fullmatch(text):
+        raise VaultError(_INVALID, "amount_usdc must be a plain decimal in USDC, such as 30 or 0.5")
+    whole, _, fraction = text.partition(".")
+    return int(whole) * 10**_USDC_DECIMALS + int(fraction.ljust(_USDC_DECIMALS, "0") or 0)
 _RELAY_TIMEOUT_SECONDS = 15
 _MAX_RELAY_RESPONSE_BYTES = 64 * 1024
 
@@ -84,8 +96,10 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         raise ConfigError("vault binary protocol mismatch")
     is_v2 = capabilities.get("contract_version") == 2
     server = MCPServer(name="styx-vault", instructions=(
-        "Propose and submit payments the vault allows. Amounts are decimal strings in USDC base units: "
-        "1 USDC is 1000000. On-chain rules enforce the limits, not these tools. "
+        "Propose and submit payments the vault allows. A proposal states the amount twice: amount_usdc in "
+        "USDC as the invoice writes it (30 means 30 USDC), and amount in base units (1 USDC is 1000000, so "
+        "30 USDC is 30000000). They must agree or the proposal is refused. "
+        "On-chain rules enforce the limits, not these tools. "
         "A payment over the per-payment limit needs the owner's signature; request it and wait. "
         "You cannot approve an exception, change policy or withdraw. "
         "Never retry a failed or unknown payment under a new proposal: "
@@ -149,16 +163,25 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
 
     @server.tool()
     async def styx_propose_payment(
-        recipient: str, amount: str, invoice_name: str, invoice_reference: str, valid_until: int | None = None,
+        recipient: str, amount_usdc: str, amount: str, invoice_name: str, invoice_reference: str,
+        valid_until: int | None = None,
     ) -> dict[str, Any]:
         """Journal a new payment from an invoice file in the vault directory. Moves no funds.
 
+        amount_usdc is the amount in USDC as the invoice states it ("30" for 30 USDC, "0.5" for half).
+        amount is the same amount in base units, 1 USDC = 1000000 ("30000000" for 30 USDC). Both are
+        required and must agree; a mismatch is refused so a unit mistake cannot pay the wrong amount.
         Leave valid_until out unless you were given a time: it defaults to one hour from now.
         """
         try:
             invoice = settings.artifact(invoice_name)
+            expected = usdc_to_base_units(amount_usdc)
         except VaultError as error:
             return invalid(error)
+        if amount.strip() != str(expected):
+            return invalid(VaultError(_INVALID, (
+                f"amounts disagree: amount_usdc {amount_usdc} USDC is {expected} base units, but amount is "
+                f"{amount}. Restate both from the invoice")))
         return await call("propose", recipient=recipient, amount=amount, invoice_file=invoice,
                           invoice_reference=invoice_reference,
                           valid_until=valid_until if valid_until is not None else int(time.time()) + _DEFAULT_PAYMENT_SECONDS)

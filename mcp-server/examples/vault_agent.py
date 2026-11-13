@@ -131,7 +131,8 @@ class Agent:
         return result
 
     async def propose(self, amount: str, invoice: str, reference: str) -> dict:
-        return await self.tool("styx_propose_payment", recipient=self.vendor, amount=amount, invoice_name=invoice,
+        usdc = f"{int(amount) / 1_000_000:f}".rstrip("0").rstrip(".")
+        return await self.tool("styx_propose_payment", recipient=self.vendor, amount_usdc=usdc, amount=amount, invoice_name=invoice,
                                invoice_reference=reference, valid_until=int(time.time()) + 3600)
 
     async def settle(self, payment_id: str, signature: str | None = None) -> str:
