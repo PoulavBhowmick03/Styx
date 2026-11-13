@@ -202,6 +202,12 @@ a.textlink:hover { border-color: var(--ember); }
 .term .bad { color: var(--ember); }
 .term .caret { display: inline-block; width: 0.55rem; height: 1rem; margin-top: 0.5rem; background: var(--ember); animation: blink 1.1s steps(1) infinite; }
 @media (min-width: 40rem) { .term .lines { font-size: 0.875rem; } .term .cmd { flex-basis: 25rem; } }
+/* On a phone the outcome goes under its command, so it is never off-screen. */
+@media (max-width: 39.99rem) {
+  .term .ln { flex-wrap: wrap; white-space: normal; gap: 0.4rem 1.25rem; line-height: 1.35; }
+  .term .cmd { flex: 1 1 0; min-width: 0; }
+  .term .res { flex: 1 0 100%; padding-left: 4.75rem; }
+}
 
 /* Numbered rows */
 .steps4 { list-style: none; margin: 2rem 0 0; padding: 0; counter-reset: s; }

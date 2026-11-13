@@ -60,7 +60,7 @@
     <h2>Four steps, each one checkable on the chain.</h2>
     <ol class="steps4">
       <li><h3>Fund the vault</h3><p>The owner funds a vault on NEAR, allows the recipients it may pay, and sets each agent's limits per payment and per day.</p></li>
-      <li><h3>The agent pays</h3><p>Within the limits it pays on its own, on NEAR or, through Chain Signatures, in USDC on Arc and Base from the vault's one EVM address.</p></li>
+      <li><h3>The agent pays</h3><p>Within the limits it pays on its own, on NEAR or, through Chain Signatures, in USDC on Arc and Base from the vault's one EVM address. Its model can run in a NEAR AI Cloud TEE; the runner checks the attestation before any tool runs.</p></li>
       <li><h3>The approver signs</h3><p>Over a limit, the request arrives in the approver's own Telegram chat. They review the payment, read back from the vault, and sign that exact payment in their NEAR wallet.</p></li>
       <li><h3>A reviewer checks</h3><p>Each payment can carry a record sealed to one reviewer, who opens it with their own key and checks it against the chain with their own RPC.</p></li>
     </ol>
