@@ -101,3 +101,31 @@ describe('agent hand-off',()=>{
  });
  it('presets keep the agent day inside the vault day',()=>{for(const p of PRESETS) expect(Number(p.values.daily_limit)).toBeLessThanOrEqual(Number(p.values.limit));});
 });
+
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
+import { createHash } from 'node:crypto';
+import { inviteSigningBytes,inviteValid,joinUrl,returnUrl,readInvite,newInviteNonce,inviteNonceBytes,inviteMessage } from '../src/core';
+describe('approver invites',()=>{
+ const vault='styx-demo-2917.styx-vaults.testnet',base='https://styxco.xyz/console/';
+ const pair=nacl.sign.keyPair(),pk='ed25519:'+bs58.encode(pair.publicKey);
+ const sign=(nonce:string)=>Buffer.from(nacl.sign.detached(createHash('sha256').update(inviteSigningBytes(vault,inviteNonceBytes(nonce))).digest(),pair.secretKey)).toString('base64');
+ it('accepts a NEP-413 signature over the invite message, round-tripped through the return link',async()=>{
+  const nonce=newInviteNonce(),i={vault,accountId:'poulav.testnet',publicKey:pk,nonce,signature:sign(nonce)};
+  const back=readInvite(new URL(returnUrl(base,'testnet',i)).searchParams)!;
+  expect(back).toEqual(i);expect(await inviteValid(back)).toBe(true);
+ });
+ it('rejects a signature for another vault, another key or another nonce',async()=>{
+  const nonce=newInviteNonce(),sig=sign(nonce);
+  expect(await inviteValid({vault:'other.testnet',accountId:'a.testnet',publicKey:pk,nonce,signature:sig})).toBe(false);
+  expect(await inviteValid({vault,accountId:'a.testnet',publicKey:'ed25519:'+bs58.encode(nacl.sign.keyPair().publicKey),nonce,signature:sig})).toBe(false);
+  expect(await inviteValid({vault,accountId:'a.testnet',publicKey:pk,nonce:newInviteNonce(),signature:sig})).toBe(false);
+  expect(await inviteValid({vault,accountId:'a.testnet',publicKey:pk,nonce,signature:'garbage'})).toBe(false);
+ });
+ it('builds the join link and ignores links without an approver',()=>{
+  expect(joinUrl(base+'?vault=x#y',vault,'testnet')).toBe(`${base}?join=${vault}&network=testnet`);
+  expect(readInvite(new URLSearchParams('vault='+vault))).toBeNull();
+  expect(()=>readInvite(new URLSearchParams(`vault=${vault}&approver=${pk}&approver_account=a.testnet&nonce=AA&sig=x`))).toThrow(/nonce/);
+  expect(inviteMessage(vault)).toContain(vault);
+ });
+});

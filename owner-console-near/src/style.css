@@ -80,6 +80,10 @@ dialog#review pre { max-height: 40vh; overflow: auto; padding: 0.75rem; backgrou
 .presets span { font: 0.6875rem var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--fore-2); }
 .presets button { min-height: 0; padding: 0.35rem 0.8rem; font-size: 0.8125rem; }
 .presets button.on { border-color: var(--ember); color: var(--fore); }
+.invite { margin-top: 0.5rem; display: grid; gap: 0.4rem; justify-items: start; }
+.invite button { min-height: 0; padding: 0.35rem 0.8rem; font-size: 0.8125rem; }
+#join { margin: 2rem 0; }
+#join h2 { font-family: var(--serif); font-weight: 400; }
 .setup-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
 
 /* Payments on a phone: each row becomes a card with its labels. */

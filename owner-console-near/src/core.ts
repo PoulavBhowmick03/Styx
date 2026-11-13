@@ -1,5 +1,7 @@
 import { Buffer } from 'buffer';
 import bs58 from 'bs58';
+import nacl from 'tweetnacl';
+import { serialize } from 'borsh';
 export const LIVE_VAULT='vault.styx-owner-c87a.testnet';
 export const TEST_TOKEN='usdc.styx-owner-c87a.testnet';
 export const GAS='100000000000000';
@@ -212,3 +214,39 @@ export const PRESETS:{name:string;note:string;values:Record<string,string>}[]=[
  {name:'Personal agent',note:'10 a payment, 100 a day',values:{limit:'500',per_payment_limit:'10',daily_limit:'100'}},
  {name:'Team',note:'50 a payment, 500 a day',values:{limit:'2000',per_payment_limit:'50',daily_limit:'500'}},
 ];
+
+// ---- Approver invites: the approver proves they hold a key by signing one NEP-413 message ----
+// Not a transaction. The owner's console checks the signature and that the key is on the named
+// account, then fills in the approver field; adding the approver is still the owner's own transaction.
+export const inviteMessage=(vault:string)=>`Styx: I will approve payments over the limit for ${account(vault)} with this key.`;
+const b64u=(b:Uint8Array)=>Buffer.from(b).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64u=(s:string)=>new Uint8Array(Buffer.from(s.replace(/-/g,'+').replace(/_/g,'/'),'base64'));
+export function inviteSigningBytes(vault:string,nonce:Uint8Array):Uint8Array{
+ if(nonce.length!==32) throw Error('Nonce must be 32 bytes');
+ return serialize({struct:{tag:'u32',message:'string',nonce:{array:{type:'u8',len:32}},recipient:'string',callbackUrl:{option:'string'}}},
+  {tag:2147484061,message:inviteMessage(vault),nonce:Array.from(nonce),recipient:vault,callbackUrl:null});
+}
+export type Invite={vault:string;accountId:string;publicKey:string;nonce:string;signature:string};
+export function joinUrl(base:string,vault:string,network:string):string{
+ const u=new URL(base);u.search='';u.hash='';u.searchParams.set('join',account(vault));u.searchParams.set('network',network);return u.toString();
+}
+export function returnUrl(base:string,network:string,i:Invite):string{
+ const u=new URL(base);u.search='';u.hash='';
+ for(const [k,v] of [['vault',i.vault],['network',network],['approver',i.publicKey],['approver_account',i.accountId],['nonce',i.nonce],['sig',i.signature]]) u.searchParams.set(k,v);
+ return u.toString();
+}
+export function readInvite(q:URLSearchParams):Invite|null{
+ if(!q.get('approver')) return null;
+ const i={vault:account(q.get('vault')??''),accountId:account(q.get('approver_account')??''),publicKey:publicKey(q.get('approver')??''),nonce:q.get('nonce')??'',signature:q.get('sig')??''};
+ if(unb64u(i.nonce).length!==32) throw Error('Invite link is damaged: bad nonce');return i;
+}
+export const newInviteNonce=()=>{const n=new Uint8Array(32);crypto.getRandomValues(n);return b64u(n);};
+export const inviteNonceBytes=(n:string)=>unb64u(n);
+// Wallets return the signature in base64 (NEP-413). The wallet signs sha256 of the Borsh payload.
+export async function inviteValid(i:Invite):Promise<boolean>{
+ try{
+  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',new Uint8Array(inviteSigningBytes(i.vault,unb64u(i.nonce)))));
+  const sig=Buffer.from(i.signature.replace(/-/g,'+').replace(/_/g,'/'),'base64');
+  return sig.length===64 && nacl.sign.detached.verify(digest,new Uint8Array(sig),bs58.decode(i.publicKey.slice(8)));
+ }catch{return false;}
+}

@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, type Invite, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -243,9 +243,32 @@ loadForm.onsubmit=e=>{e.preventDefault();void load();};
 // then opens the wallet list, instead of doing nothing.
 $('#connect').onclick=async()=>{try{if(!selector) await load();if(selector && context) setupModal(selector,{contractId:context.vault}).show();}catch(e){fail(e);}};
 const query=new URLSearchParams(location.search);
+// ---- Join mode (?join=<vault>): an invited approver signs one message and gets a link back for the owner ----
+async function joinFlow(vault:string,network:string){
+ for(const sec of document.querySelectorAll<HTMLElement>('main > section, main > nav, main > form, #status, #role, main > .kicker')) sec.hidden=true;
+ $('#join').hidden=false;$('#join-title').textContent=`Approve exceptions for ${vault}`;
+ $('#join-lead').textContent='The owner of this vault asked you to approve payments that go over its limit. Connect your NEAR wallet and sign one message: it is not a transaction, cannot move funds, and only proves which key you will approve with. You get a link to send back to the owner.';
+ const sel=await setupWalletSelector({network:network as 'testnet'|'mainnet',modules:[setupMeteorWallet(),setupMeteorWalletApp({contractId:vault})]});
+ const sync=()=>{const a=sel.store.getState().accounts.find(x=>x.active);$('#join-sign').hidden=!a;$('#join-connect').textContent=a?`Connected: ${a.accountId}`:'Connect wallet';};
+ sync();sel.store.observable.subscribe(sync);
+ $('#join-connect').onclick=()=>setupModal(sel,{contractId:vault}).show();
+ $('#join-sign').onclick=async()=>{
+  try{
+   const nonce=newInviteNonce(),wallet=await sel.wallet();
+   const r=await wallet.signMessage({message:inviteMessage(vault),nonce:Buffer.from(inviteNonceBytes(nonce)),recipient:vault});
+   if(!r) return;
+   const i:Invite={vault,accountId:r.accountId,publicKey:r.publicKey,nonce,signature:r.signature};
+   if(!(await inviteValid(i))) throw Error('The wallet returned a signature that does not check out. Try again.');
+   const url=returnUrl(consoleBase(),network,i);
+   $('#join-status').textContent=`Signed with ${r.publicKey}. Send this link to the vault owner:`;
+   const result=$('#join-result');result.replaceChildren(copyBlock(url),telegramNote(true));$('#join-sign').hidden=true;
+  }catch(e){$('#join-status').textContent=e instanceof Error?e.message:String(e);}
+ };
+}
 for(const key of ['vault','rpc','network']){const v=query.get(key);if(v)(loadForm.elements.namedItem(key) as HTMLInputElement).value=v;}
 // A wallet redirect or an explicit vault link reads state on arrival; opening the page alone is read-only too.
-if(query.has('vault') || query.has('transactionHashes')) loadForm.requestSubmit();
+if(query.has('join')){const v=query.get('join')!;joinFlow(account(v),query.get('network')==='mainnet'?'mainnet':'testnet').catch(fail);}
+else if(query.has('vault') || query.has('transactionHashes')) loadForm.requestSubmit();
 role();
 // ---- Create a vault through the factory: preview, sign in the wallet, read the result, open it ----
 const createForm=$<HTMLFormElement>('#create-form'),createStatus=$('#create-status');
@@ -295,7 +318,7 @@ const steps:Step[]=[
   plans:v=>[...(facts?.storage?[]:[owned('storage_deposit',{})]),owned(testToken()?'mint':'ft_transfer',v)],done:()=>!!facts?.storage && BigInt(facts?.balance??'0')>0n},
  {title:'Set the rules',why:'One approval sets the vault\'s daily cap, who it may pay, who approves exceptions, and the agent\'s own limits. Leave a field empty to skip it.',
   fields:['limit','recipient','approver','agent','per_payment_limit','daily_limit','valid_until'],optional:true,
-  defaults:()=>({limit:rulesDone.limit()?'':'500',per_payment_limit:'10',daily_limit:'100',valid_until:String(Math.floor(Date.now()/1000)+7*86400)}),
+  defaults:()=>({approver:invited?.publicKey??'',limit:rulesDone.limit()?'':'500',per_payment_limit:'10',daily_limit:'100',valid_until:String(Math.floor(Date.now()/1000)+7*86400)}),
   plans:v=>[
    ...(v.limit?[owned('set_vault_daily_limit',{limit:v.limit})]:[]),
    ...(v.recipient?[owned('set_recipient',{recipient:v.recipient.trim(),allowed:'true'})]:[]),
@@ -303,13 +326,21 @@ const steps:Step[]=[
    ...(v.agent?[owned('configure_agent',{agent:v.agent.trim(),per_payment_limit:v.per_payment_limit,daily_limit:v.daily_limit,valid_until:v.valid_until,enabled:'true'})]:[]),
   ],done:()=>Object.values(rulesDone).every(f=>f())},
 ];
-function telegramNote(){
+function telegramNote(you=false){
  const box=document.createElement('div');box.className='setup-note';
  const link=el('a',`Open @${BOT} in Telegram`) as HTMLAnchorElement;link.href=`https://t.me/${BOT}`;link.target='_blank';link.rel='noopener noreferrer';
- box.append(el('p',`Your approver links their wallet to Telegram once: send /start to @${BOT}, open the link it replies with, and sign the link message in their NEAR wallet. After that, every request over the per-payment limit reaches their phone.`),link);
+ box.append(el('p',you?`Get each request on your phone: send /start to @${BOT} in Telegram, open the link it replies with, and sign the link message in this wallet. Once is enough.`:`Your approver links their wallet to Telegram once: send /start to @${BOT}, open the link it replies with, and sign the link message in their NEAR wallet. After that, every request over the per-payment limit reaches their phone.`),link);
  return box;
 }
-let setupChoice:number|undefined,lastAgentFile:string|undefined;
+let setupChoice:number|undefined,lastAgentFile:string|undefined,invited:(Invite&{onChain:boolean})|undefined;
+const consoleBase=()=>location.origin+location.pathname;
+function inviteBox(){
+ const box=document.createElement('div');box.className='invite';
+ if(invited){box.append(el('small',`From ${invited.accountId}'s invite: signature checked${invited.onChain?', and the key is on that account':'. The key is not on that account on chain; check with them before adding it.'}`));}
+ const b=el('button','Copy an invite link for your approver') as HTMLButtonElement;b.type='button';b.className='secondary';
+ b.onclick=async()=>{const url=joinUrl(consoleBase(),context!.vault,context!.network);try{await navigator.clipboard.writeText(url);toast('ok','Invite link copied','Send it to your approver. They sign once in their wallet and send you back a link that fills this in.');}catch{prompt('Copy this invite link',url);}};
+ box.append(b);return box;
+}
 function download(name:string,text:string){
  const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -361,7 +392,7 @@ function renderSetup(){
   const label=fieldInput(field,values[field]??'');
   if(step.optional){const input=label.querySelector('input');if(input)input.required=false;}
   if(field==='recipient' && rulesDone.recipient()) label.append(el('small','A recipient is already allowed; add another or leave empty.'));
-  if(field==='approver'){if(rulesDone.approver()) label.append(el('small','An approver is already set; add another or leave empty.'));form.append(label,telegramNote());continue;}
+  if(field==='approver'){if(rulesDone.approver()) label.append(el('small','An approver is already set; add another or leave empty.'));label.append(inviteBox());form.append(label,telegramNote());continue;}
   if(field==='agent' && agentInstalled()) label.append(el('small','An agent is already installed; add another or leave empty.'));
   form.append(label);
  }
@@ -371,4 +402,16 @@ function renderSetup(){
  const skip=el('button',current<steps.length-1?'Skip this step':'Close') as HTMLButtonElement;skip.type='button';skip.className='secondary';skip.onclick=()=>{setupChoice=current<steps.length-1?current+1:-1;renderSetup();};actions.append(skip);
  form.append(actions);
  form.onsubmit=e=>{e.preventDefault();try{const v=readForm(form);previewBatch(step.plans(v),v);}catch(err){toast('error','Cannot preview',err instanceof Error?err.message:String(err));}};
+}
+
+// ---- Return link from an invited approver (declared after the setup state it fills in) ----
+if(!query.has('join')){
+ // A return link from an invited approver: check the signature and that the key is on their account.
+ try{const i=readInvite(query);if(i){(async()=>{
+  if(!(await inviteValid(i))){toast('error','Invite link did not check out','The signature does not match the key and vault. Ask the approver for a new link.');return;}
+  const rpc=new RPC((loadForm.elements.namedItem('rpc') as HTMLInputElement).value);
+  const onChain=await rpc.call('query',{request_type:'view_access_key',finality:'final',account_id:i.accountId,public_key:i.publicKey}).then(()=>true,()=>false);
+  invited={...i,onChain};setupChoice=1;renderSetup();
+  toast('ok',`Approver invite from ${i.accountId}`,onChain?'Signature checked; the key is on their account. It is filled in under Set the rules.':'Signature checked, but the key is not on that account. Check with them before adding it.');
+ })().catch(fail);}}catch(e){fail(e);}
 }
