@@ -63,6 +63,7 @@ class Evidence:
                 'report_sha256': sha256_hex(self.pre.raw),
                 'report_url': self.pre.url,
                 'verified': self.pre.checks,
+                **({'tls_binding': self.pre.tls} if self.pre.tls else {}),
             },
             'completions': self.completions,
             'invoice_sha256': sha256_hex(self.invoice),

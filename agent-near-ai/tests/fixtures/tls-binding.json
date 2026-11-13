@@ -1,0 +1,6 @@
+{
+  "nonce": "3ddfbc71c72f14249d9286b2e3b2026be3a669412a8221a2c51ca870ff90a159",
+  "peer_spki_sha256": "73862c254372091cc6895b900111503860694f8916ebf0c63b18d245ba8ba5ad",
+  "recorded": "2026-11-13",
+  "note": "peer certificate read from the same TLS connection that returned the report"
+}

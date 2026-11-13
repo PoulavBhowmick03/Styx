@@ -218,3 +218,35 @@ class ReviewerIntegrationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TLSBindingEvidenceTests(unittest.TestCase):
+    """7h: the runner's recorded peer certificate against the gateway fingerprint the saved quote binds.
+    The TLS fixture was recorded live over one connection on 13 Nov 2026."""
+    TLS_REPORT = (FIXTURES / 'attestation-report-tls.json').read_bytes()
+    TLS = json.loads((FIXTURES / 'tls-binding.json').read_text())
+
+    def setUp(self):
+        self.record = CannedRPC(exception=False).record
+
+    def evidence(self, peer):
+        value = evidence_for(self.record)
+        value['attestation'] = dict(value['attestation'], nonce=self.TLS['nonce'], report_sha256=sha256_hex(self.TLS_REPORT),
+                                    tls_binding={'peer_spki_sha256': peer, 'host': 'cloud-api.near.ai', 'same_connection': True})
+        return value
+
+    def test_recorded_peer_certificate_matches_the_quote(self):
+        lines = verify_evidence(self.evidence(self.TLS['peer_spki_sha256']), self.record, self.TLS_REPORT, **VERIFIERS)
+        self.assertTrue(any(l.startswith('7h') and 'PASS' in l for l in lines), lines)
+
+    def test_a_different_recorded_certificate_fails(self):
+        with self.assertRaises(VerificationError):
+            verify_evidence(self.evidence('00' * 32), self.record, self.TLS_REPORT, **VERIFIERS)
+
+    def test_without_the_report_it_is_only_recorded(self):
+        lines = verify_evidence(self.evidence(self.TLS['peer_spki_sha256']), self.record, None, **VERIFIERS)
+        self.assertTrue(any(l.startswith('7h') and 'NOT CHECKED' in l for l in lines), lines)
+
+    def test_old_evidence_says_not_recorded(self):
+        lines = verify_evidence(evidence_for(self.record), self.record, REPORT_BYTES, **VERIFIERS)
+        self.assertTrue(any(l.startswith('7h') and 'NOT RECORDED' in l for l in lines), lines)

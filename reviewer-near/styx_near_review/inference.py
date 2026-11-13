@@ -142,8 +142,15 @@ def verify_attestation(att, nonce, *, quote_verifier=verify_quote, gpu_verifier=
     names.append('TDX debug mode off')
     _, address = signer_bytes(att)
     require(len(quote.report_data) == 64, 'quote report_data is not 64 bytes')
-    require(quote.report_data[:32] == address.ljust(32, b'\0'), 'quote does not bind the signing address')
-    names.append('quote report_data binds the signing address')
+    fingerprint = att.get('tls_cert_fingerprint')
+    if fingerprint:
+        # With TLS binding the first half is SHA-256(signer bytes || raw SPKI fingerprint).
+        bound = hashlib.sha256(address + hex_bytes(fingerprint, 32, 'TLS certificate fingerprint')).digest()
+        require(quote.report_data[:32] == bound, 'quote does not bind the signing address and TLS fingerprint')
+        names.append('quote report_data binds the signing address and the TLS certificate fingerprint')
+    else:
+        require(quote.report_data[:32] == address.ljust(32, b'\0'), 'quote does not bind the signing address')
+        names.append('quote report_data binds the signing address')
     require(quote.report_data[32:] == bytes.fromhex(nonce), 'quote does not embed our nonce')
     names.append('quote report_data embeds our nonce')
     info = att.get('info') if isinstance(att.get('info'), dict) else {}
@@ -164,8 +171,11 @@ def verify_attestation(att, nonce, *, quote_verifier=verify_quote, gpu_verifier=
     return names
 
 
-def verify_report(report, nonce, **verifiers):
+def verify_report(report, nonce, peer_spki_sha256=None, **verifiers):
     """Verifies the gateway report and every model candidate. Raises if the gateway or no model verifies.
+
+    With `peer_spki_sha256` (the SPKI hash of the gateway certificate observed on the same TLS connection
+    that returned this report), also requires the quote-bound gateway fingerprint to equal it.
 
     Returns {(algo, address): label} for each verified signer. A model candidate that fails is left out,
     so nothing it signs is accepted; the failure is listed in the returned `rejected` list.
@@ -175,6 +185,11 @@ def verify_report(report, nonce, **verifiers):
     gateway = report.get('gateway_attestation')
     for check in verify_attestation(gateway, nonce, **verifiers):
         names.append('gateway: ' + check)
+    if peer_spki_sha256 is not None:
+        attested = str(gateway.get('tls_cert_fingerprint') or '').lower()
+        require(attested, 'gateway report has no TLS certificate fingerprint; request include_tls_fingerprint=true')
+        require(attested == peer_spki_sha256.lower(), 'the gateway certificate on this connection is not the attested one')
+        names.append('gateway: the TLS certificate on this connection is the one the quote binds')
     algo, address = signer_bytes(gateway)
     signers[(algo, address.hex())] = 'gateway'
     candidates = report.get('model_attestations')
@@ -257,4 +272,16 @@ def verify_evidence(evidence, record, report_bytes=None, **verifiers):
                      'that the holder of that address signed these hashes')
     else:
         lines.append('7g every completion signer is an attested signer in the report: PASS')
+    binding = attestation.get('tls_binding')
+    if not isinstance(binding, dict):
+        tls_line = ('7h TLS connection bound to the attested gateway: NOT RECORDED in this evidence')
+    elif report_bytes is None:
+        tls_line = ('7h TLS connection bound to the attested gateway: RECORDED by the runner, NOT CHECKED (no --attestation file)')
+    else:
+        attested = str(json.loads(report_bytes).get('gateway_attestation', {}).get('tls_cert_fingerprint') or '').lower()
+        require(attested and str(binding.get('peer_spki_sha256', '')).lower() == attested,
+                'recorded TLS peer certificate is not the fingerprint the gateway quote binds')
+        tls_line = ('7h TLS connection bound to the attested gateway: PASS (the runner saw the quote-bound certificate '
+                     'on the connection it used; this cannot be re-observed after the fact)')
+    lines.append(tls_line)
     return lines

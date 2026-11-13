@@ -131,7 +131,7 @@ class ScriptedClient(NearAI):
                       'signature_kind': 'provider_tee', 'signed_text': 'x', 'verified': True}
 
 
-PROPOSE = ('styx_propose_payment', {'recipient': 'vendor-a.testnet', 'amount': '25000000', 'invoice_name': 'inv.txt', 'invoice_reference': 'INV-1'})
+PROPOSE = ('styx_propose_payment', {'recipient': 'vendor-a.testnet', 'amount_usdc': '25', 'amount': '25000000', 'invoice_name': 'inv.txt', 'invoice_reference': 'INV-1'})
 SUBMIT = ('styx_submit_payment', {'payment_id': PAYMENT_ID})
 
 
@@ -197,3 +197,68 @@ class RunnerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ---- TLS binding to the gateway (fixture recorded live over one connection, 13 Nov 2026) ----------
+
+TLS_REPORT_BYTES = (FIXTURES / 'attestation-report-tls.json').read_bytes()
+TLS = json.loads((FIXTURES / 'tls-binding.json').read_text())
+
+
+class FakeBoundSession(nearai.TLSBoundSession):
+    """A TLSBoundSession whose connection is the recorded one: same peer SPKI, recorded report."""
+    def __init__(self, peer=TLS['peer_spki_sha256']):
+        super().__init__('https://cloud-api.near.ai')
+        self.peer, self.sent = peer, []
+
+    def connect(self):
+        self.peer_spki_sha256 = self.peer
+        return self.peer
+
+    def _send(self, method, path, body, headers):
+        self.sent.append((method, path, headers))
+        return 200, TLS_REPORT_BYTES
+
+
+class TLSBindingTests(unittest.TestCase):
+    def client(self, peer=TLS['peer_spki_sha256']):
+        return NearAI(MODEL, api_key='test-key', verifiers=VERIFIERS, session=FakeBoundSession(peer))
+
+    def test_report_is_bound_to_the_certificate_on_the_connection(self):
+        client = self.client()
+        with mock.patch.object(nearai.secrets, 'token_hex', return_value=TLS['nonce']):
+            pre = client.preflight()
+        self.assertEqual(pre.tls['peer_spki_sha256'], TLS['peer_spki_sha256'])
+        self.assertTrue(any('TLS certificate on this connection' in c for c in pre.checks))
+        self.assertTrue(any('TLS certificate fingerprint' in c for c in pre.checks))
+        method, path, headers = client.http.sent[0]
+        self.assertIn('include_tls_fingerprint=true', path)
+        self.assertNotIn('Authorization', headers)  # no API key before the gateway is verified
+        self.assertEqual(client.http.pinned, TLS['peer_spki_sha256'])
+
+    def test_another_certificate_on_the_connection_is_refused(self):
+        client = self.client(peer='00' * 32)
+        with mock.patch.object(nearai.secrets, 'token_hex', return_value=TLS['nonce']):
+            with self.assertRaisesRegex(InferenceError, 'not the attested one'):
+                client.preflight()
+
+    def test_quote_must_bind_the_fingerprint_it_reports(self):
+        report = json.loads(TLS_REPORT_BYTES)
+        report['gateway_attestation']['tls_cert_fingerprint'] = 'ff' * 32
+        with self.assertRaisesRegex(Exception, 'TLS fingerprint'):
+            verify_report(report, TLS['nonce'], peer_spki_sha256='ff' * 32, **VERIFIERS)
+
+    def test_a_reconnect_must_present_the_attested_key(self):
+        session = nearai.TLSBoundSession('https://cloud-api.near.ai')
+        session.pin('aa' * 32)
+        fake = mock.Mock(sock=mock.Mock(getpeercert=mock.Mock(return_value=b'der')))
+        with mock.patch.object(nearai.http.client, 'HTTPSConnection', return_value=fake), \
+             mock.patch.object(nearai, 'spki_sha256', return_value='bb' * 32):
+            with self.assertRaisesRegex(InferenceError, 'other than the attested one'):
+                session.connect()
+
+    def test_evidence_records_the_binding(self):
+        pre = Preflight(TLS['nonce'], 'u', TLS_REPORT_BYTES, {}, ['c'], [], {'peer_spki_sha256': TLS['peer_spki_sha256'], 'host': 'h', 'same_connection': True})
+        from styx_near_ai.runner import Evidence
+        doc = Evidence(tempfile.mkdtemp(), MODEL, pre, b'invoice').document('0x' + 'ab' * 32)
+        self.assertEqual(doc['attestation']['tls_binding']['peer_spki_sha256'], TLS['peer_spki_sha256'])
