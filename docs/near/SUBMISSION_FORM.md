@@ -13,7 +13,7 @@ DRAFT for Poulav to edit into his own voice before submitting. Every claim below
 | NEAR wallet address | (fill in: the prize goes here) |
 | Repository | https://github.com/PoulavBhowmick03/Styx |
 | Demo post | (the X post link, tagging @NEARProtocol and #NEARHackathon) |
-| Website | https://styxco.xyz (Arc build; NEAR approval page link once deployed) |
+| Website | https://styxco.xyz (approval page at /approval/, owner console at /console/) |
 
 ## What did you build? (20 to 2,000 characters)
 

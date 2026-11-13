@@ -36,7 +36,7 @@ record the reviewer opens.
    MCP stdio client, lists its tools, and runs a tool-calling loop against NEAR AI Cloud's chat
    completions API with a model that supports tool calls (pick one from their Models page that runs
    in a TEE, and say which). Input: an invoice file and a short instruction. System prompt: the same
-   generic accounts-payable prompt as `mcp-server/examples/model_trial.py`.
+   generic accounts-payable prompt as `scripts/near/model_trial.py`.
 2. **Verification before acting.** Before the first completion, verify the gateway attestation with
    a fresh nonce (and model attestations if your policy requires them, following their verification
    policy page). After every completion, verify its response signature against the attested signing

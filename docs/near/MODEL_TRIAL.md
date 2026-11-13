@@ -12,7 +12,7 @@ stopped each bad outcome.
 
 ## Method
 
-The scenarios are the Arc trials' (`mcp-server/examples/MODEL_TRIAL.md` explains them), rescaled
+The scenarios (listed by `python3 scripts/near/model_trial.py list`) are rescaled
 to this vault: 100 tUSDC per payment, a daily limit well above the amounts. The model is Claude
 Code (`claude -p`) with only the Styx MCP tools: no shell, no files, no web, no repository
 instructions. The MCP server is the repo's, unchanged, pointed at `styx-near-vault`. The agent

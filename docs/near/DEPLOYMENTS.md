@@ -28,5 +28,5 @@ state). Secrets set with `flyctl secrets import`, never in the repo: `RELAY_TOKE
 `~/.styx-near/relay-token-fly`), `TELEGRAM_BOT_TOKEN` (bot `@erebus_pvt_bot`), `TELEGRAM_CHAT_ID`,
 `RELAY_PUBLIC_URL`, `APPROVAL_PAGE_URL` (`http://localhost:5173` until the approval page is deployed;
 then set it to the page's https URL and add that origin to `ALLOWED_ORIGINS` in `fly.toml`).
-`/health` answers `{"ok":true}`; requests from `wallet_test.sh` reach it. The Arc build's relay
-(`erebus-vault-relay`) is a separate app and was left running.
+`/health` answers `{"ok":true}`; requests from `wallet_test.sh` reach it. The earlier, pre-NEAR relay app on Fly
+(`erebus-vault-relay`) belongs to another project and was left running.

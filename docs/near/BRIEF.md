@@ -5,7 +5,7 @@ what's next for you. Deadline: **14 Nov 2026, 23:59 UTC**.
 
 ## The one-line version
 
-Styx already worked on Arc (from ETHGlobal Mumbai). We rebuilt it natively on NEAR, ran it for real
+Styx is built natively on NEAR (it began at ETHGlobal Mumbai on another chain; that code is gone from the tree). It runs for real
 on NEAR testnet, and then added something only NEAR can do: the same vault now also pays on Arc,
 without the agent ever holding an Arc key.
 

@@ -25,7 +25,7 @@ The same thing as Styx on Arc, native to NEAR:
   payment. The contract rebuilds the NEP-413 payload, hashes it, and verifies ed25519 against
   the approver's registered public key. Nonce is single-use; authorization expires.
 - MCP tools (Python) that propose, request approval and submit payments through a NEAR
-  signer. Same tool names and flow as the Arc build.
+  signer. Same tool names and flow as the MCP server's existing seam.
 - Approval page: NEAR wallet-selector, shows the payment read back from the chain, signs
   NEP-413, posts the signature to the relay.
 - Attacks A1 to A6 as real testnet transactions, all must fail for the named reason.
@@ -111,7 +111,7 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
   exactly what A2 should show.
 - Approvers identified by ed25519 public key, registered by the owner, so verification does
   not need to look up the approver account's keys on chain.
-- Day = block timestamp (ns) / 86400 s, UTC calendar day, same as the Arc build.
+- Day = block timestamp (ns) / 86400 s, UTC calendar day, same day boundary as before.
 
 ## Notes for the agent side (step 2, not started)
 
@@ -119,7 +119,7 @@ Contract and signing commits need Poulav's review before they are trusted; mark 
   request on stdin (`method` in version, propose, request_approval, submit, status,
   export_record) and prints one JSON response (`status: ok` with only the fields
   `VaultSeam._public_fields` allows, or `status: error` with a `KNOWN_CODES` code). See
-  `sdk/py/src/styx/_vault.py` and `sdk/evm/src/arc_vault/v2/service.rs` for the field names.
+  `sdk/py/src/styx/_vault.py` for the field names.
 - Crate scaffold is in `sdk/near` (binary `styx-near-vault`, deps near-api 0.8, near-crypto 0.38).
   near-api: `Contract(id).call_function(name, json).read_only().fetch_from(&network)` for views,
   `.transaction().with_signer(vault_id, Signer::from_secret_key(sk))` then `.send_to(&network)`

@@ -1,121 +1,170 @@
-# Codex task: NEAR approval page and relay for Styx
+I ran your validation workflow from start to finish. These were the inputs:
+- the Don'ts list (90 items) and the nine sample proposals from the Drive folder
+- the official rules
+- the revised SOW
+- Raven for rules, technical claims and competitors
 
-You are working in the Styx repo (`/Users/odinson/Developer/Styx-near`, branch `main`). Read
-`docs/near/PLAN.md`, `README.md`, `contracts/near/styx-vault/src/lib.rs` (the contract you are
-signing for) and `relay/src/relay.ts` plus `owner-page/src/approval-v2.ts` (the EVM versions you
-are mirroring) before writing anything. Do not modify `contracts/`, `sdk/`, `mcp-server/`,
-`relay/` or `owner-page/`: another engineer is working there. Put your work in two new folders,
-`relay-near/` and `approval-page-near/`, each with its own `package.json`, tests, and README.
-Commit small conventional commits to `main` and push after each. Never commit keys or `.env`.
+The SOW is my own draft, so this is partly a self-review.
 
-## What the pieces do
+1. New proposal verdict
 
-An agent proposes a payment over its per-payment limit. The agent's CLI writes a **pending file**
-and posts it to the relay. The approver opens the approval page, which fetches the request from
-the relay, shows the payment read back from the chain, asks their NEAR wallet to sign a NEP-413
-message, and posts the signature back. The agent's CLI fetches the signature and submits
-`pay_with_exception`. The vault verifies the signature itself: the relay and page have no
-authority, so they must be honest about what they show, and nothing more.
+PROJECT: Sidereal: Fixed-Rate Rollover
+VERDICT: NEEDS REVISION
 
-## Pending file (`styx-near-pending/1`), posted by the agent as `{"pending": <this>}`
+Reason
+- The scope is clean and concrete: one new contract on testnet, three entry points, proof by transaction hash, and a budget that is engineering time only.
+- It isn't ready to submit, for three reasons:
+  - the novelty case is crowded
+  - there's no evidence that real users want it
+  - required fields are still empty
 
-```json
-{
-  "schema": "styx-near-pending/1",
-  "network": "testnet",
-  "rpcUrl": "https://test.rpc.fastnear.com",
-  "vault": "vault.styx-owner-c87a.testnet",
-  "token": "usdc.styx-owner-c87a.testnet",
-  "payment": {
-    "payment_id": "<string>",
-    "agent": "ed25519:<base58>",
-    "token": "usdc.styx-owner-c87a.testnet",
-    "recipient": "vendor.testnet",
-    "amount": "150000000",
-    "evidence_commitment": "<base64 32 bytes>",
-    "policy_version": 1,
-    "recipient_version": 1,
-    "valid_until": "<unix seconds as string>"
-  },
-  "authorization": {
-    "payment_hash": "<base64 32 bytes>",
-    "signer": "ed25519:<base58, the approver's public key>",
-    "signer_version": 1,
-    "approval_nonce": "<base64 32 bytes>",
-    "authorization_expiry": "<unix seconds as string>",
-    "callback_url": null
-  },
-  "message": "<the exact string the vault's exception_message view returns for this authorization>",
-  "invoiceReference": "<free text, show it>",
-  "perPaymentLimit": "100000000",
-  "exceededRule": "perPaymentLimit"
-}
-```
+Rules check
+- Official SDF rules: no formal violations.
+  - Deliverables are concrete and relevant to Stellar (§5).
+  - The sprint is 30 days or less, and $4,500 is within the "typically $1,000–$5,000" range (§6).
+  - The yield is on USDC, so the SCF ban on promoting yield on XLM doesn't apply.
+  - No prohibited category (gambling and similar).
+  - Sources: official rules and the SCF submission rules they pull in.
+- Official requirement not met yet: §7 asks you to name the Chapter Lead who helped. It's still [TEAM: confirm].
+- Don'ts the draft follows:
+  - Budget is clean: no hosting, RPC, audit, liquidity or contingency lines, and no past work (#1–21).
+  - Testnet only (#36).
+  - Uses Soroban's built-in authorization (#50) and Stellar Wallets Kit (#53).
+  - Rollover is triggered by the user, with no keeper (#65).
+  - No optional deliverables (#67).
+  - It's contract work (#59) and new work (#70/#71).
 
-`payment` and `authorization` are exactly the JSON the contract methods take. Amounts are USDC
-base units with six decimals.
+Gaps
+- Duplicate or false-gap risk (#56/#57) is high.
+  - Spectra is live on mainnet with Blend-USDC fixed-rate markets and an order book.
+  - Spield was funded through the same chapter.
+  - Principal has $116K and a router in its funded scope.
+- The router could read as a trivial integration (#61). It only combines contracts you already have.
+- No key-management model (#41). The V2 vault, tokenizer and order book each have one admin key. Spield's approved SOW documented multisig admins plus a 24-hour upgrade timelock; yours documents nothing.
+- Public claims contradict the SOW. The site and READMEs still say "live on mainnet" (#36/#38/#72), and the SOW links the site as its demo.
+- The repo mentions RWAs as a future yield source at ARCHITECTURE.md:27 (#78).
+- The demo video appears as Week 4 work (#17). Say explicitly that it isn't billed.
+- No proof of the problem. No named users or integrators.
+- Empty fields: contact, dates, XLM wallet, video, legal note.
 
-## What the page must do
+Strengths
+- Testing record: about 230 tests against Spield's claimed ~120.
+- Build and audit trail: reproducible builds in CI, deployment records, and an internal review with each fix tracked to a test.
+- What Spield doesn't have (checked against Spield's own SOW):
+  - Order book: Spield's SOW mentions none.
+  - Maturities: Spield is a "single-maturity USDC product", with several maturities left as future scope; you deploy a second maturity in D2.
+  - Router: Spield has no router contract.
+  - Rollover: Spield never mentions it.
+- Lock, exit and roll as single calls that contracts can make: Raven found nothing like this anywhere on Stellar, though not finding it doesn't prove nobody has it.
 
-1. Load the request by id from the relay (`GET /requests/:id`), no auth: the id is a 32-byte
-   random token, and a request holds nothing secret.
-2. **Read back from the chain, not from the file**: call the vault's views over `rpcUrl`
-   (`get_vault`, `get_agent {agent}`, `get_recipient {recipient}`, `get_approver {approver}`,
-   `payment_hash {payment}`, `exception_message {authorization}`) and show the limits, the
-   recipient's allowed state, whether the signer is a current approver and its version, and check
-   that `payment_hash` and `message` match the file. If anything differs, say so and do not offer
-   to sign.
-3. Show the payment plainly: amount, recipient, agent key, the per-payment limit it exceeds, the
-   daily limit that still applies, expiry.
-4. Sign with `@near-wallet-selector` (`signMessage` per NEP-413) using
-   `message` = the file's `message`, `nonce` = the 32 bytes of `approval_nonce` decoded from
-   base64, `recipient` = the vault account id, and `callbackUrl` only if the chosen wallet needs
-   a redirect (MyNearWallet). Whatever `callbackUrl` was actually included in the signed payload
-   must be reported back verbatim, because the contract rebuilds the payload with it.
-5. After signing, check locally that `publicKey` equals `authorization.signer`. If it does not,
-   tell the approver which key the wallet used so the owner can register it with `set_approver`,
-   and do not post.
-6. Post the signature to the relay.
+Budget
+- Arithmetic checks out: 80 + 25 + 45 = 150 hours, and $2,400 + $750 + $1,350 = $4,500.
+- Rate compared with the samples: $30/hour, against roughly $15.6/hour for approved Spield. Celerity used $30/hour too and was rejected, but for other reasons.
+- Effort is plausible for two people over 30 days.
 
-## Signature file (`styx-near-signature/1`), what the page posts and the agent fetches
+Security (checked against the official docs through Raven)
+- Confirmed:
+  - require_auth works for contract-account callers.
+  - The router can move the user's USDC under the user's own authorization, as a nested call.
+  - Archived entries restore automatically from Protocol 23 on, so the note about restoring the retired V1 market's entries needs updating.
+- Risk: roll might not fit in one transaction. The docs point to Stellar Lab for live network limits, and mainnet values weren't read. Measure it by simulation in week1.
+- Risk: funds pass through the router briefly. Assert that it ends every call with a zero balance.
+- Risk: prices can move between quote and trade. Always set min_pt_out and deadline from a fresh quote.
+- Risk: a frontend could pass in fake market addresses. The SDK should take markets only from committed deployment manifests.
 
-```json
-{
-  "schema": "styx-near-signature/1",
-  "paymentId": "<payment.payment_id>",
-  "accountId": "<the signer's NEAR account>",
-  "publicKey": "ed25519:<base58>",
-  "signature": "<base64, 64 bytes>",
-  "nonce": "<base64, must equal approval_nonce>",
-  "callbackUrl": null
-}
-```
+Feedback, in priority order
+1. Name 2–3 integrators. Raven found good candidates:
+   - DeFindex: $150K SCF, vaults for fintechs.
+   - Pods/Deframe: $125K SCF, a yield API for wallets and fintechs.
+   - Zebec: runs enterprise payroll on Stellar.
+2. Fix the mainnet wording on the site and in the READMEs.
+3. Add a 3–4 line key-management model.
+4. Lead with rollover and the integrator use case, and confirm Spectra has no rollover.
+5. Fill the empty fields.
 
-## Relay (`relay-near/`), Node + TypeScript, no database, in-memory with a JSON file fallback
+Approval estimate (subjective, not an official or statistical probability; confidence low)
 
-- `POST /requests` (bearer token from `RELAY_TOKEN`): body `{pending}`. Validate the schema, that
-  `authorization_expiry` is in the future and at most 24 h away, `exceededRule`, and that
-  `amount > perPaymentLimit`. Return `{requestId, alerted: false}`. `requestId` is 32 random bytes
-  base64url.
-- `GET /requests/:id`: returns the pending file and `{status: "pending" | "signed" | "expired"}`.
-- `POST /requests/:id/signature`: body is the signature file. Verify the NEP-413 signature
-  yourself before storing (sha256 over borsh(u32 2147484061) + borsh(Payload{message, nonce,
-  recipient, callbackUrl?}), ed25519 against `publicKey`; use `borsh` and `tweetnacl` or
-  `@noble/ed25519`), check `publicKey == authorization.signer` and `nonce == approval_nonce`.
-  First valid signature stands; a second is 409.
-- `GET /requests/:id/signature` (bearer token): `{status: "pending"}`, `{status: "signed",
-  signature: <file>}`, or 410 once expired.
-- Optional, only if time allows: a Telegram alert like `relay/src/relay.ts` does.
-- Tests with the real NEP-413 construction: sign with a known key in the test and assert the
-  relay accepts it, and that a wrong nonce, wrong key, or wrong message is refused.
+┌──────────────────────────────────┬──────────┬───────────┐
+│             Version              │ Approval │ Rejection │
+├──────────────────────────────────┼──────────┼───────────┤
+│ As it stands, with empty fields  │ 10–20%   │ 80–90%    │
+├──────────────────────────────────┼──────────┼───────────┤
+│ After fixes 2–5, no named users  │ 25–40%   │ 60–75%    │
+├──────────────────────────────────┼──────────┼───────────┤
+│ With 2 or more named integrators │ 40–55%   │ 45–60%    │
+└──────────────────────────────────┴──────────┴───────────┘
 
-## Hosting
+2. Historical comparison
 
-The page should build to static files (Vite) so it can be deployed on Vercel next to the
-existing `owner-page`. Take the relay URL and request id from the query string:
-`/?relay=https://...&request=<id>`.
+The nine samples, judged from their text alone. Outcomes come only from the Drive folder names, and none has validator feedback attached.
 
-## Report back
+Approved
+- Spield (Jul8)
+  - Blind estimate: 40–60%.
+  - Today it would break #36/#38 (mainnet before audit) and #70/#71 (hardening, UI overhaul).
+  - Calibration: the closest analogue to Sidereal, and the reason #57 is a risk.
+- StelloFi (Jul8)
+  - Blind estimate: 15–35%.
+  - Its objective, deliverables and budget describe three different pieces of work; it reads partly as a retrospective; and it bills past work and contingency.
+  - Calibration: an approval I didn't predict. Weak guidance.
+- Cyphras (Mar31)
+  - Blind estimate: 45–65%.
+  - Breaks #14, #52 and #67, and contradicts itself on scope.
+  - Calibration: an early 2026 bar.
+- Verivyx (May4)
+  - Blind estimate: 35–55%.
+  - The PDF is the post-sprint completion version, not what was submitted.
+  - Calibration: limited value.
+- Salapi (Jun23)
+  - Blind estimate: 20–40%.
+  - Bills $1,300 for company setup and payment-provider activation, and doesn't explain wallet custody.
+  - Calibration: approved where today's list would reject.
+- Lumen Liquid (Apr10)
+  - Blind estimate: 20–40%.
+  - Offers "up to 1000x" leverage and counts architecture design as a deliverable.
+  - Calibration: the clearest sign the bar has risen.
 
-When done, write `docs/near/APPROVAL_PAGE.md`: how to run both locally, what was tested, what
-was not. Claim only what a test shows.
+Rejected
+- Miras (Jul2)
+  - Blind estimate: 50–70%.
+  - Clean and coherent, yet rejected; the reason isn't visible in the text.
+  - Calibration: other factors matter, so don't over-fit.
+- Dike (Jul9)
+  - Blind estimate: 0–10%.
+  - The only confirmed formal violation in the set: betting markets, which fall under the SCF gambling ban.
+- Celerity v12 (Aug10)
+  - Blind estimate: 10–25%.
+  - Its deliverables are a self-review, outreach and pitch materials, and the core cash-out is mocked.
+
+Patterns across the set (small, hand-picked sample)
+- A prohibited category is the one reliable rejection signal.
+- Deliverables that aren't builds get rejected.
+- Approvals ran from March to July; rejections from July to August.
+- At least four of the six approved samples would likely fail today's list. The bar has tightened, which is an inference since the list is undated.
+
+3. Evidence and uncertainty
+
+Sources checked
+- Program rules: the official rules and SCF Handbook, plus the Don'ts doc and the Drive samples.
+- Raven:
+  - Scout: Spectra, Principal, XCCY, Etherfuse, DeFindex, Pods
+  - Principal's SCF #45 submission
+  - Spectra's Certora report
+  - the Stellar docs on authorization, state archival and resource limits
+
+Not verified
+- Whether Spectra offers rollover on Stellar, and whether its core Stellar contracts were audited.
+- The date of Etherfuse's Principal Token page, and whether a USD version exists.
+- Whether DeFindex or Pods already offer fixed rates.
+- What Spield has shipped since July; its repo returns404.
+- Mainnet resource limits.
+- Whether the BUDS Act applies.
+
+Missing or conflicting
+- No validator feedback for any sample.
+- Versions don't match what was submitted for Verivyx, StelloFi and Cyphras.
+- Six samples have blank chapter or contact fields, probably redacted, so I didn't count that against them.
+- The Don'ts list is undated.
+- Raven has no record of Sidereal at all.
+
+The repo copy of the validation report is now out of date against this run. I can rewrite it with these results and push it to sidereal-tech/instawards.
