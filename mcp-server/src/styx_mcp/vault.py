@@ -1,7 +1,7 @@
 """Agent payment tools over ``styx-vault``. Enabled only by ``STYX_BACKEND=vault``.
 
 The agent's environment holds only the agent key. There are no policy, withdraw or signing tools:
-an exception is possible only with a signature the owner produced elsewhere.
+an exception is possible only with a signature an approver produced elsewhere.
 """
 
 from __future__ import annotations
@@ -29,6 +29,17 @@ _FORBIDDEN_VARIABLES = (
     "STYX_VAULT_OWNER_KEY", "STYX_VAULT_OWNER_KEY_FILE", "STYX_DISCLOSURE_KEY_FILE", "TELEGRAM_BOT_TOKEN",
 )
 _RELAY_UNAVAILABLE = "RELAY_UNAVAILABLE"
+_NEAR_KEY = r"ed25519:[1-9A-HJ-NP-Za-km-z]{43,44}"
+# What a model should do after each error code, so it never has to guess.
+_NEXT_FOR_ERROR = {
+    "OWNER_APPROVAL_REQUIRED": "Call styx_request_owner_approval with this payment_id, then wait for the approver's signature.",
+    "POLICY_LIMIT": "The vault refuses this payment under its rules. Do not split or retry it; report it to the owner.",
+    "POLICY_VERSION_CHANGED": "The owner changed the rules since this proposal. Propose the payment again from the invoice.",
+    "PAYMENT_ALREADY_SETTLED": "Already paid. Call styx_payment_status for the transaction; do not propose it again.",
+    "VERIFICATION_UNAVAILABLE": "Not unpaid: retry styx_submit_payment with the same payment_id later.",
+    "RELAY_UNAVAILABLE": "Try the same tool again later with the same payment_id.",
+    "INVALID_REQUEST": "Fix the request as the message says and call the same tool again.",
+}
 # Models do not know the current time, and a guessed deadline fails the payment.
 _DEFAULT_PAYMENT_SECONDS = 3600
 # USDC has six decimals on every chain the vault pays on.
@@ -100,12 +111,21 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         "USDC as the invoice writes it (30 means 30 USDC), and amount in base units (1 USDC is 1000000, so "
         "30 USDC is 30000000). They must agree or the proposal is refused. "
         "On-chain rules enforce the limits, not these tools. "
-        "A payment over the per-payment limit needs the owner's signature; request it and wait. "
+        "A payment over the per-payment limit needs the signature of an approver the owner registered on the "
+        "vault (the tools say 'owner approval' for it); request it and wait. Every result carries next_action: "
+        "the one thing to do next. "
         "You cannot approve an exception, change policy or withdraw. "
         "Never retry a failed or unknown payment under a new proposal: "
         "VERIFICATION_UNAVAILABLE and state 'unknown' never mean unpaid, so retry styx_submit_payment "
         "with the same payment_id."
     ))
+
+    def add_next(response: dict[str, Any]) -> dict[str, Any]:
+        """Errors also say what to do next, keyed by code, so a model need not guess."""
+        error = response.get("error")
+        if isinstance(error, dict) and "next_action" not in error and error.get("code") in _NEXT_FOR_ERROR:
+            error["next_action"] = _NEXT_FOR_ERROR[error["code"]]
+        return response
 
     async def call(method: str, **parameters: Any) -> dict[str, Any]:
         try:
@@ -144,22 +164,28 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         stem = payment_id.removeprefix("0x")[:12]
         record = Path(settings.artifact(f"relay-{stem}.txt"))
         if not record.exists():
-            return {"ok": False, "error": {"code": _INVALID, "message": "request the owner's approval first"}}
+            return {"ok": False, "error": {"code": _INVALID, "message": "request the approver's signature first",
+                                           "next_action": "Call styx_request_owner_approval with this payment_id."}}
         try:
             result = relay_call(f"/requests/{record.read_text()}/signature")
         except urllib.error.HTTPError as error:
             if error.code == 410:
-                return {"ok": True, "result": {"status": "expired"}}
+                return {"ok": True, "result": {"status": "expired", "next_action": (
+                    "The approval request expired unsigned. Call styx_request_owner_approval again with the "
+                    "same payment_id; do not propose a new payment.")}}
             return {"ok": False, "error": {"code": _RELAY_UNAVAILABLE, "message": "the relay refused this check"}}
         except (OSError, ValueError):
             return {"ok": False, "error": {"code": _RELAY_UNAVAILABLE, "message": "the relay could not be reached"}}
         if result.get("status") != "signed":
-            return {"ok": True, "result": {"status": "pending"}}
+            return {"ok": True, "result": {"status": "pending", "next_action": (
+                "Wait, then check again. The approver reviews and signs on their own device; asking again or "
+                "proposing again does not make it faster.")}}
         name = f"signature-{stem}.json"
         descriptor = os.open(settings.artifact(name), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "w") as output:
             json.dump(result.get("signature"), output)
-        return {"ok": True, "result": {"status": "signed", "signature_name": name}}
+        return {"ok": True, "result": {"status": "signed", "signature_name": name, "next_action": (
+            f"Call styx_submit_payment with payment_id {payment_id} and signature_name {name}.")}}
 
     @server.tool()
     async def styx_propose_payment(
@@ -182,18 +208,26 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             return invalid(VaultError(_INVALID, (
                 f"amounts disagree: amount_usdc {amount_usdc} USDC is {expected} base units, but amount is "
                 f"{amount}. Restate both from the invoice")))
-        return await call("propose", recipient=recipient, amount=amount, invoice_file=invoice,
-                          invoice_reference=invoice_reference,
-                          valid_until=valid_until if valid_until is not None else int(time.time()) + _DEFAULT_PAYMENT_SECONDS)
+        response = await call("propose", recipient=recipient, amount=amount, invoice_file=invoice,
+                              invoice_reference=invoice_reference,
+                              valid_until=valid_until if valid_until is not None else int(time.time()) + _DEFAULT_PAYMENT_SECONDS)
+        if response["ok"]:
+            response["result"]["summary"] = f"{amount_usdc} USDC ({amount} base units) to {recipient}"
+            response["result"]["next_action"] = (
+                "Over the per-payment limit: call styx_request_owner_approval with this payment_id, then wait for "
+                "the approver's signature." if response["result"].get("path") == "exception_required"
+                else "Within the limits: call styx_submit_payment with this payment_id.")
+        return add_next(response)
 
     @server.tool()
     async def styx_request_owner_approval(
         payment_id: str, authorization_expiry: int | None = None, signer: str | None = None,
     ) -> dict[str, Any]:
-        """Write the approval request the owner opens on their signing page. Moves no funds.
+        """Ask an approver to sign this exact payment; they review it on their signing page. Moves no funds.
 
         Leave authorization_expiry out unless you were given a time: it defaults to one hour from now.
-        On a v2 vault, signer names the approver who should sign. Leave it out to ask the owner.
+        signer names the approver: their NEAR public key (ed25519:...), or on an EVM v2 vault an address.
+        Leave it out to ask the vault's default approver.
         """
         # A registered agent asks whoever the vault's owner chose for it.
         if signer is None and is_v2 and settings.relay_url:
@@ -202,15 +236,17 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
                 signer = chosen.get("approver") if isinstance(chosen.get("approver"), str) else None
             except (OSError, ValueError):
                 signer = None  # Not registered, or the relay is down: the binary defaults to the owner.
-        if signer is not None and not is_v2:
-            return invalid(VaultError(_INVALID, "this vault only accepts the owner's signature"))
-        if signer is not None and not re.fullmatch(r"0x[0-9a-fA-F]{40}", signer, flags=re.ASCII):
-            return invalid(VaultError(_INVALID, "signer must be an address"))
+        near_signer = signer is not None and re.fullmatch(_NEAR_KEY, signer, flags=re.ASCII) is not None
+        if signer is not None and not near_signer and not is_v2:
+            return invalid(VaultError(_INVALID, "signer must be the approver's NEAR public key, ed25519:..."))
+        if signer is not None and not near_signer and not re.fullmatch(r"0x[0-9a-fA-F]{40}", signer, flags=re.ASCII):
+            return invalid(VaultError(_INVALID, "signer must be an address or a NEAR public key (ed25519:...)"))
+        tag = (signer[8:16] if near_signer else signer[2:10].lower()) if signer else None
         if authorization_expiry is None:
             authorization_expiry = int(time.time()) + _DEFAULT_PAYMENT_SECONDS
         stem = payment_id.removeprefix("0x")[:12]
         # A different approver needs a new file, because the CLI never overwrites one.
-        name = f"pending-{stem}-{signer[2:10].lower()}.json" if signer else f"pending-{stem}.json"
+        name = f"pending-{stem}-{tag}.json" if tag else f"pending-{stem}.json"
         try:
             pending = settings.artifact(name)
         except VaultError as error:
@@ -221,7 +257,7 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             attempt = 0
             while Path(pending).exists():
                 attempt += 1
-                name = f"pending-{payment_id.removeprefix('0x')[:32]}-{(signer or 'owner').removeprefix('0x').lower()}-{attempt}.json"
+                name = f"pending-{payment_id.removeprefix('0x')[:32]}-{tag or 'default'}-{attempt}.json"
                 try:
                     pending = settings.artifact(name)
                 except VaultError as error:
@@ -237,19 +273,31 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             response["result"]["pending_file"] = name
             if settings.relay_url:
                 response["result"].update(await asyncio.to_thread(send_to_relay, pending, stem))
-        return response
+                response["result"]["next_action"] = (
+                    "Call styx_check_owner_approval with this payment_id until status is signed. Do not propose again.")
+            else:
+                response["result"]["next_action"] = (
+                    f"Give the approver {name} to sign on their signing page, then pass their signature file to "
+                    "styx_submit_payment. Do not propose again.")
+        return add_next(response)
 
     @server.tool()
     async def styx_submit_payment(payment_id: str, signature_name: str | None = None) -> dict[str, Any]:
         """Submit a proposed payment, or reconcile an earlier attempt under the same ID.
 
-        Pass the owner's signature file name for an exception. A state of 'unknown' is not a failure.
+        Pass the approver's signature file name for an exception. A state of 'unknown' is not a failure.
         """
         try:
             signature = settings.artifact(signature_name) if signature_name is not None else None
         except VaultError as error:
             return invalid(error)
-        return await call("submit", payment_id=payment_id, signature_file=signature)
+        response = await call("submit", payment_id=payment_id, signature_file=signature)
+        if response["ok"]:
+            state = response["result"].get("state")
+            response["result"]["next_action"] = (
+                "Done: the payment settled on chain. Report tx_hash." if state == "settled" else
+                "Not a failure and not unpaid: retry styx_submit_payment with the same payment_id later.")
+        return add_next(response)
 
     @server.tool()
     async def styx_payment_status(payment_id: str) -> dict[str, Any]:
@@ -259,9 +307,9 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     if settings.relay_url:
         @server.tool()
         async def styx_check_owner_approval(payment_id: str) -> dict[str, Any]:
-            """Check whether the owner has signed. When signed, pass signature_name to styx_submit_payment.
+            """Check whether the approver has signed. When signed, pass signature_name to styx_submit_payment.
 
-            Pending means wait. Asking the owner again does not make approval arrive sooner.
+            Pending means wait. Asking again does not make approval arrive sooner.
             """
             try:
                 return await asyncio.to_thread(fetch_signature, payment_id)
