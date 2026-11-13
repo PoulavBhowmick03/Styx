@@ -146,6 +146,11 @@ $('#send').onclick=async()=>{
   const wallet=await selector.wallet();
   if(!(await wallet.getAccounts()).some(a=>a.accountId===active)) throw Error('Selected wallet account differs');
   if(selected.method==='storage_deposit' && await c.rpc.view(current.token,'storage_balance_of',{account_id:c.vault})) throw Error('Vault is already registered; refresh state');
+  // Funding sends the owner's own tokens: say so before the wallet fails on chain.
+  if(selected.method==='ft_transfer'){
+   const held=await c.rpc.view(current.token,'ft_balance_of',{account_id:active});
+   if(BigInt(held)<BigInt(String(selected.args.amount))) throw Error(`Your account holds ${amount(held)} of ${current.token}, less than ${amount(String(selected.args.amount))}.`+(c.network==='testnet' && current.token===TEST_TOKEN?' On testnet, use Mint tUSDC to fund the vault directly.':''));
+  }
   clearPlan();say('Waiting for wallet approval. Do not submit again while the outcome is unknown.');
   const callback=new URL(location.href);callback.searchParams.set('vault',c.vault);callback.searchParams.set('rpc',c.rpc.url);callback.searchParams.set('network',c.network);
   const result=await wallet.signAndSendTransaction({signerId:active,receiverId:selected.receiverId,actions:[{type:'FunctionCall',params:{methodName:selected.method,args:selected.args,gas:selected.gas,deposit:selected.deposit}}]});
