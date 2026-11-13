@@ -133,6 +133,26 @@ a payment the vault would reject.
 | Authorize one payment over the per-payment limit | No | Yes | No | No |
 | Open one sealed record | No | No | No | Yes |
 
+## What the agent's key can and cannot do
+
+The agent's key is a NEAR function-call access key on the vault account, installed by the vault when
+the owner calls `configure_agent`.
+
+- It can call five methods on the vault and nothing else: `pay`, `pay_with_exception`, `pay_evm`,
+  `pay_evm_with_exception` and `post_record`. NEAR rejects any other method (`MethodNameMismatch`),
+  any other contract (`ReceiverMismatch`), and any transfer of NEAR, new key or code change
+  (`RequiresFullAccess`) before a block includes the transaction. Each of these was sent with an
+  agent key on testnet: [`docs/near/TRY_PAGE.md`](docs/near/TRY_PAGE.md).
+- It spends the vault's NEAR on gas, up to an allowance of 0.25 NEAR. At the measured costs
+  ([`docs/near/COSTS.md`](docs/near/COSTS.md)) that is about 300 payments on NEAR or 150 on an EVM
+  chain. When the allowance cannot cover a transaction, NEAR refuses it (`NotEnoughAllowance`) and
+  the agent stops paying.
+- The owner gives it a new allowance by disabling and enabling the agent: the vault deletes the key
+  and adds it again. Setting the policy of an agent that is already enabled does not touch the key.
+  This refill follows from the contract's code and has not been run on testnet yet.
+- A vault made by the factory has no other key. Its owner changes rules through the contract's owner
+  methods, signed by the owner's own account.
+
 ## What has run on testnet
 
 All in [`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md), every transaction re-read from the RPC:
@@ -173,6 +193,8 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
   wrong amount within the limits, unless the invoice states the USDC figure: then the MCP tools refuse
   a proposal whose USDC amount is that figure divided by a million (unit-tested; not re-run with a
   live model).
+- A vault made by the factory has no access key of its own, so nobody can replace its code, and the
+  NEAR it holds for storage and gas cannot be taken out again: `withdraw` moves tokens only.
 - The owner console's pause and withdraw have not been used with a real wallet yet. Creating a vault,
   funding it, setting limits, a recipient, an approver and an agent have, and so has the approval page
   (`docs/near/TESTNET_RUN.md`).
