@@ -134,6 +134,10 @@ Live: vault `vault.styx-owner-c87a.testnet`, Chain Signatures vault `vault-v2.st
 (EVM address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet` (our test token, not Circle's
 USDC), relay `https://styx-relay-near.fly.dev`.
 
+What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault account and keeps
+143 bytes of state; the approver pays nothing. Measured per action, with who pays each, in
+[`docs/near/COSTS.md`](docs/near/COSTS.md).
+
 ## Repository
 
 | Piece | Where |
