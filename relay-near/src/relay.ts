@@ -6,16 +6,20 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { pendingSchema, signatureSchema, signingBytes, type Pending, type Signature } from './protocol';
 import type { Notify } from './telegram';
+import type { Links } from './links';
 export class RelayError extends Error { constructor(public status:number,message:string){super(message);} }
-const fail=(status:number,message:string):never=>{throw new RelayError(status,message);};
+export const fail=(status:number,message:string):never=>{throw new RelayError(status,message);};
+// NEP-413: the wallet signs sha256 of the Borsh payload with the ed25519 key.
+export function nep413Valid(payload:Uint8Array,signature:string,publicKey:string):boolean {
+ return nacl.sign.detached.verify(createHash('sha256').update(payload).digest(),Buffer.from(signature,'base64'),bs58.decode(publicKey.slice(8)));
+}
 type Entry={pending:Pending;signature?:Signature};
 export function verify(p:Pending,input:unknown):Signature {
  const parsed=signatureSchema.safeParse(input);
  if(!parsed.success) return fail(400,'invalid signature file');
  const s=parsed.data;
  if(s.paymentId!==p.payment.payment_id || s.publicKey!==p.authorization.signer || s.nonce!==p.authorization.approval_nonce) return fail(403,'signature does not match request');
- const digest=createHash('sha256').update(signingBytes(p,s.callbackUrl)).digest();
- if(!nacl.sign.detached.verify(digest,Buffer.from(s.signature,'base64'),bs58.decode(s.publicKey.slice(8)))) return fail(403,'invalid NEP-413 signature');
+ if(!nep413Valid(signingBytes(p,s.callbackUrl),s.signature,s.publicKey)) return fail(403,'invalid NEP-413 signature');
  return s;
 }
 export class Relay {
@@ -47,7 +51,8 @@ export class Relay {
  sign(id:string,input:unknown){const e=this.find(id);if(this.expired(e)) fail(410,'expired');if(e.signature) fail(409,'already signed');const signature=verify(e.pending,input);const next=new Map(this.entries);next.set(id,{...e,signature});this.save(next);return {status:'signed'};}
  signature(id:string,token?:string){this.auth(token);const e=this.find(id);if(this.expired(e)) fail(410,'expired');return e.signature?{status:'signed',signature:e.signature}:{status:'pending'};}
 }
-export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify){return createServer(async(req,res)=>{
+export type Telegram={links:Links;linked:(chatId:string,publicKey:string,accountId:string)=>Promise<unknown>};
+export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify, telegram?:Telegram){return createServer(async(req,res)=>{
  const origin=req.headers.origin;
  res.setHeader('Vary','Origin');
  if(origin && !allowedOrigins.includes(origin)){res.writeHead(403).end();return;}
@@ -66,6 +71,12 @@ export function server(relay:Relay, allowedOrigins:string[] = [], notify?:Notify
    // A failed alert leaves the request valid; the agent reports alerted:false and can ask again.
    const alerted=notify?await notify(relay.pending(created.requestId).pending,created.requestId):false;
    result={...created,alerted};
+  }
+  // Public like the signature post: the one-time code and the NEP-413 signature are the authority.
+  else if(path==='/links' && req.method==='POST' && telegram){
+   const {chatId,publicKey,accountId}=telegram.links.link(body);
+   await telegram.linked(chatId,publicKey,accountId);
+   result={linked:true,publicKey};
   }
   else if(match && req.method==='GET') result=match[2]?relay.signature(match[1],token):relay.pending(match[1]);
   else if(match?.[2] && req.method==='POST') result=relay.sign(match[1],body);

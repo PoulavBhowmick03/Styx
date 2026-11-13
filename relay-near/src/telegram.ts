@@ -32,24 +32,96 @@ export function alertText(p: Pending, link: string): string {
   ].join('\n');
 }
 
-export function telegramNotifier(options: {
-  botToken: string; chatId: string; pageUrl: string; relayUrl: string;
-  apiBase?: string; fetch?: typeof fetch; timeoutMs?: number;
+type Api = { botToken: string; apiBase?: string; fetch?: typeof fetch; timeoutMs?: number };
+
+// One Bot API call. Errors can contain the URL, which contains the bot token, so nothing is logged.
+async function call(api: Api, method: string, body: Record<string, unknown>, timeoutMs = api.timeoutMs ?? 10_000): Promise<{ ok?: boolean; result?: unknown } | undefined> {
+  try {
+    const response = await (api.fetch ?? fetch)(`${api.apiBase ?? 'https://api.telegram.org'}/bot${api.botToken}/${method}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+    });
+    return (await response.json()) as { ok?: boolean; result?: unknown };
+  } catch { return undefined; }
+}
+
+const page = (pageUrl: string, relayUrl: string, param: string, value: string) =>
+  `${pageUrl.replace(/\/$/, '')}/?relay=${encodeURIComponent(relayUrl)}&${param}=${value}`;
+const button = (link: string, text: string) => link.startsWith('https://') ? { reply_markup: { inline_keyboard: [[{ text, url: link }]] } } : {};
+const send = (api: Api, chatId: string, text: string, extra: Record<string, unknown> = {}) =>
+  call(api, 'sendMessage', { chat_id: chatId, text, link_preview_options: { is_disabled: true }, ...extra }).then(r => r?.ok === true);
+
+// Alerts go to the chats linked to the approver key the request asks to sign. With none linked,
+// they go to the optional fallback chat (TELEGRAM_CHAT_ID), so a single-owner setup keeps working.
+export function telegramNotifier(options: Api & {
+  chatId?: string; chats?: (publicKey: string) => string[]; pageUrl: string; relayUrl: string;
 }): Notify {
-  const send = options.fetch ?? fetch;
-  const base = options.apiBase ?? 'https://api.telegram.org';
   return async (pending, requestId) => {
-    const link = `${options.pageUrl.replace(/\/$/, '')}/?relay=${encodeURIComponent(options.relayUrl)}&request=${requestId}`;
-    const body: Record<string, unknown> = { chat_id: options.chatId, text: alertText(pending, link), link_preview_options: { is_disabled: true } };
-    if (link.startsWith('https://')) body.reply_markup = { inline_keyboard: [[{ text: 'Review and sign with Meteor', url: link }]] };
-    try {
-      const response = await send(`${base}/bot${options.botToken}/sendMessage`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-        signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
-      });
-      return ((await response.json()) as { ok?: boolean }).ok === true;
-    } catch {
-      return false; // errors can contain the URL, which contains the bot token, so nothing is logged
+    const link = page(options.pageUrl, options.relayUrl, 'request', requestId);
+    const linked = options.chats?.(pending.authorization.signer) ?? [];
+    const to = linked.length ? linked : options.chatId ? [options.chatId] : [];
+    const sent = await Promise.all(to.map(chat => send(options, chat, alertText(pending, link), button(link, 'Review and sign with Meteor'))));
+    return sent.some(Boolean);
+  };
+}
+
+type Chats = {
+  create(chatId: string): string; unlink(chatId: string): number; keysFor(chatId: string): string[];
+  offset: number; setOffset(offset: number): void;
+};
+type Update = { update_id: number; message?: { text?: string; chat?: { id?: number; type?: string } } };
+
+export const HELP = [
+  'Styx sends you approval alerts: when an agent asks to pay over its limit and your NEAR key is the approver asked to sign.',
+  '',
+  '/start: link your NEAR wallet to this chat',
+  '/status: the keys linked to this chat',
+  '/unlink: stop all alerts to this chat',
+].join('\n');
+
+export function telegramBot(options: Api & { pageUrl: string; relayUrl: string; links: Chats; retryMs?: number }) {
+  const { links } = options;
+  let running = false;
+  async function handle(update: Update) {
+    const chat = update.message?.chat;
+    // Private chats only: in a group, anyone present could follow the link and see the alerts.
+    if (chat?.type !== 'private' || typeof chat.id !== 'number') return;
+    const chatId = String(chat.id), command = (update.message?.text ?? '').trim().split(/[\s@]/)[0];
+    if (command === '/start') {
+      const link = page(options.pageUrl, options.relayUrl, 'link', links.create(chatId));
+      await send(options, chatId, [
+        'Link your NEAR wallet to get Styx approval alerts in this chat.',
+        '',
+        'Open the link and sign the link message in Meteor Wallet. It proves you hold the key and cannot move funds. The link works once and expires in 15 minutes.',
+        'On a phone, copy the link and open it in the Meteor app\'s browser.',
+        '',
+        link,
+      ].join('\n'), button(link, 'Link my NEAR wallet'));
+    } else if (command === '/status') {
+      const keys = links.keysFor(chatId);
+      await send(options, chatId, keys.length ? `This chat gets alerts for:\n${keys.join('\n')}` : 'No key is linked to this chat. Send /start to link one.');
+    } else if (command === '/unlink') {
+      const n = links.unlink(chatId);
+      await send(options, chatId, n ? `Unlinked ${n} key${n === 1 ? '' : 's'}. This chat gets no more Styx alerts.` : 'No key was linked to this chat.');
+    } else {
+      await send(options, chatId, HELP);
     }
+  }
+  async function poll() {
+    while (running) {
+      const r = await call(options, 'getUpdates', { offset: links.offset, timeout: 25, allowed_updates: ['message'] }, 35_000);
+      if (!r?.ok || !Array.isArray(r.result)) { await new Promise(res => setTimeout(res, options.retryMs ?? 5_000)); continue; }
+      for (const update of r.result as Update[]) {
+        // Saved before handling: one failed reply must not make the relay answer the same message forever.
+        links.setOffset(update.update_id + 1);
+        await handle(update);
+      }
+    }
+  }
+  return {
+    handle,
+    start() { if (!running) { running = true; void poll(); } },
+    stop() { running = false; },
+    linked: (chatId: string, publicKey: string, accountId: string) =>
+      send(options, chatId, `Linked. This chat now gets Styx approval alerts for ${publicKey} (account ${accountId}, as your wallet reported it).\nSend /unlink to stop them.`),
   };
 }
