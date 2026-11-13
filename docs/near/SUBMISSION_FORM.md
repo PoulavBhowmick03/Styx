@@ -34,5 +34,6 @@ On testnet: payments inside the limits settled on NEAR, Arc and Base, exceptions
   withdraw, and NEAR enforces that at the access-key level.
 - Do not claim "secure", "audited", "solves" or prompt-injection prevention, and do not add
   disclaimers either. Say what ran.
-- The approval page has been used with a real wallet (Meteor app, `TESTNET_RUN.md`). The owner console's
-  wallet writes were fixed on 13 Nov 2026 (Buffer, Connect before Read); record them only once a real-wallet run passes.
+- Real wallets ran the whole flow on 13 Nov 2026 (`TESTNET_RUN.md`): vault created and configured from
+  the console in Meteor, agent payments, the alert in the approver's own Telegram, approval signed on a phone.
+  Pause and withdraw from the console have not been used with a real wallet.

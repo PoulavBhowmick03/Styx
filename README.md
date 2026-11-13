@@ -166,8 +166,8 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
   attested.
 - A model that gets both the USDC and the base-unit amount wrong in the same way still pays the
   wrong amount within the limits.
-- The owner console has not yet been used with a real wallet; see `docs/near/WALLET_TEST.md`. The
-  approval page has: one NEAR exception signed in the Meteor app and settled
+- The owner console's pause and withdraw have not been used with a real wallet yet. Creating a vault,
+  funding it, setting limits, a recipient, an approver and an agent have, and so has the approval page
   (`docs/near/TESTNET_RUN.md`).
 
 ## License

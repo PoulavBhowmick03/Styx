@@ -49,8 +49,22 @@ The owner's calls here were signed from the CLI keychain.
 From a browser wallet: `odinson03.testnet`, in Meteor Wallet (Brave), used the console's "Create a
 vault" form. `create_vault({name: "testme123"})`
 [GV49ihs4…](https://testnet.nearblocks.io/txns/GV49ihs42qUCTF9NVbCdE5fh9knvcqLBRVbeTcTF11fS) returned
-`"testme123.styx-vaults.testnet"`, owned by `odinson03.testnet`, and the owner then registered it with
-the token from the console.
+`"testme123.styx-vaults.testnet"`, owned by `odinson03.testnet`. The whole run, with real wallets:
+
+| Step | Who, with what | Transaction | Result |
+| --- | --- | --- | --- |
+| Create the vault | owner, Meteor in Brave, console "Create a vault" | [GV49ihs4…](https://testnet.nearblocks.io/txns/GV49ihs42qUCTF9NVbCdE5fh9knvcqLBRVbeTcTF11fS) | vault owned by `odinson03.testnet`, no access keys |
+| Register with the token, mint 22 tUSDC | owner, console | (indexer lag) | `storage_balance_of` set; vault balance read 22 tUSDC in the console |
+| Daily limit 500; allow vendor-a; approver `mA3qig…` | owner, console | [BnJuEPop…](https://testnet.nearblocks.io/txns/BnJuEPopVnx7uL9zx9b7bXC1WtYved6AZnZArcfgfRz7), [AWHt7szW…](https://testnet.nearblocks.io/txns/AWHt7szWwVSHJf34B3CmBfrP7MRvk8Urezqc9fFXj4Ga), [B89wVNU3…](https://testnet.nearblocks.io/txns/B89wVNU3z2sQW96WFLcNRVj1SJjjTu319fTEf9rAheRw) | read back from the chain as set |
+| Configure the agent: 10 per payment, 100 daily | owner, console | (indexer lag) | `get_agent` read back version 1, enabled |
+| Agent pays 5 tUSDC | agent's function-call key | [FRRfMHn5…](https://testnet.nearblocks.io/txns/FRRfMHn5nbQx9qNf4LZuBLKoQi3TUKLfts8FEfX6Vi4W) | `pay`, 5 tUSDC to vendor-a, no exception |
+| Agent asks 15 tUSDC | agent's key | | refused: `OWNER_APPROVAL_REQUIRED` |
+| Alert | hosted relay, no fallback chat | | `telegram alert sent`: reached the approver's chat only through the key linked with `/start` |
+| Approver signs on the phone | `poulav.testnet`, Meteor app | [8yZgpTSz…](https://testnet.nearblocks.io/txns/8yZgpTSzHfbhrQFvMTpdUqaPTLWoEygg983WaK9XYFJw) | `pay_with_exception`, 15 tUSDC to vendor-a, exception true, signer `ed25519:mA3qig…` |
+
+Three console bugs showed up only with the real wallet and were fixed during the run: Connect did
+nothing before Read vault (`d173b4e`), the wallet code needed a global `Buffer` (`a406668`), and
+"Fund from owner wallet" let the wallet fail when the owner held no tokens (`f076725`).
 
 ## A sealed record for a reviewer (`export_record`)
 
@@ -193,4 +207,3 @@ chat, so this run does not by itself show per-key routing; `relay-near/src/links
 
 ## Not yet run
 
-- The owner console with a real wallet.
