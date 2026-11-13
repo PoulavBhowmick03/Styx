@@ -9,7 +9,7 @@ its own cap.**
 Built for the NEAR Hackathon (tracks: AI Security & Defense, Agent Economy, Autonomous Business).
 Styx began at ETHGlobal Mumbai (5 to 7 Nov 2026) on another chain. That code was removed from this
 repository's tree on 13 Nov 2026 and is only in its git history; everything in the tree is the NEAR
-build, started on 12 Nov 2026 (HACKATHON.md Q-002).
+build, started on 12 Nov 2026 ([HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-002).
 
 ## The problem
 
@@ -53,7 +53,7 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
    NEAR CLI and the relay; `scripts/near/model_trial.py` puts a real model in the agent's seat. See
    [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md) for what Sonnet and Haiku did.
 4. **With the agent's model in a NEAR AI Cloud TEE.** Set `NEARAI_API_KEY` (a funded NEAR AI Cloud
-   key; HACKATHON.md Q-000 explains the free credits), run step 2 so you have a vault and a
+   key; [HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-000 explains the free credits), run step 2 so you have a vault and a
    `demo.env`, then `cd agent-near-ai && STYX_NEAR_DEMO_ENV=<that demo.env> uv run styx-near-ai-agent <invoice file>`.
    You should see `attestation verified: 14 checks`, then the payment settle, and an
    `inference-<id>.json` evidence file. Details: [`docs/near/NEAR_AI.md`](docs/near/NEAR_AI.md).

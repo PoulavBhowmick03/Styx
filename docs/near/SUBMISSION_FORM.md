@@ -9,8 +9,8 @@ DRAFT for Poulav to edit into his own voice before submitting. Every claim below
 | Team lead | (fill in) |
 | Email | (fill in) |
 | Team size | (fill in) |
-| Tracks | AI Security & Defense (primary), Agent Economy, Autonomous Business |
-| NEAR wallet address | (fill in: the prize goes here) |
+| Tracks | `security` (AI Security & Defense, primary), `agents` (Agent Economy), `business` (Autonomous Business) |
+| NEAR wallet address | `odinson03.near` (mainnet; the prize is paid here) |
 | Repository | https://github.com/PoulavBhowmick03/Styx |
 | Demo post | (the X post link, tagging @NEARProtocol and #NEARHackathon) |
 | Website | https://styxco.xyz (approval page at /approval/, owner console at /console/) |

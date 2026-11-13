@@ -1,8 +1,7 @@
 # Styx on NEAR (NEAR Hackathon)
 
 Plan and status: `docs/near/PLAN.md`. Everything that ran: `docs/near/TESTNET_RUN.md`.
-Deadline: 14 Nov 2026, 23:59 UTC. Official rules: `HACKATHON.md` (git-ignored copy) and
-https://nearhackathon.com/HACKATHON.md.
+Deadline: 14 Nov 2026, 23:59 UTC. Official rules: https://nearhackathon.com/HACKATHON.md.
 
 Poulav reviews all contract and signing code.
 No keys in the repo.
