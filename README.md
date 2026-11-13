@@ -73,6 +73,9 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
    22+ for the relay. `scripts/near/model_trial.py` then puts a real model in the agent's seat (it
    needs an authenticated `claude` CLI); see [`docs/near/MODEL_TRIAL.md`](docs/near/MODEL_TRIAL.md)
    for what Sonnet and Haiku did.
+   **Give Claude Code the tools for your own vault:** `scripts/near/mcp_config.sh` prints the
+   `claude mcp add` command for your quickstart vault (or any `demo.env`), with a private invoices
+   folder; then ask Claude to pay an invoice you put there.
    **As the reviewer, with your own key:** `scripts/near/reviewer_quickstart.sh` makes your X25519
    key, pays 5 tUSDC from your vault, seals that payment's record to your key, and verifies it
    against the chain with your RPC. You should see checks 1 to 5 `PASS`.
