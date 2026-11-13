@@ -10,8 +10,9 @@ retained in sessionStorage and requires the same tab. Callback URLs are reported
 for signing. The relay cryptographically checks them. The agent must copy signature.callbackUrl
 into authorization.callback_url when it submits pay_with_exception.
 
-Chain reads use the supplied RPC and one finalized block. Confirm that RPC, vault and token yourself:
-a hostile RPC can fabricate view results. Invoice text is unverified. Six-decimal formatting does not
+Chain reads use the page's own RPC per network (`PAGE_RPC` in src/review.ts), never the RPC named in
+the request, and one finalized block. The page still trusts that RPC's answers: it is not a light client.
+Confirm the vault and token yourself. Invoice text is unverified. Six-decimal formatting does not
 prove a token is USDC. Daily remaining spend, nonce use and settlement are enforced by the contract.
 See ../docs/near/APPROVAL_PAGE.md for tested scope and limitations.
 
