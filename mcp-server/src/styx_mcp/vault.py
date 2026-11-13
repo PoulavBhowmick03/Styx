@@ -31,6 +31,7 @@ _FORBIDDEN_VARIABLES = (
 )
 _RELAY_UNAVAILABLE = "RELAY_UNAVAILABLE"
 _NEAR_KEY = r"ed25519:[1-9A-HJ-NP-Za-km-z]{43,44}"
+_ABSOLUTE_PATH = re.compile(r"(?:/[\w.\-]+)+/([\w.\-]+)")
 # What a model should do after each error code, so it never has to guess.
 _NEXT_FOR_ERROR = {
     "OWNER_APPROVAL_REQUIRED": "Call styx_request_owner_approval with this payment_id, then wait for the approver's signature.",
@@ -152,6 +153,9 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     def add_next(response: dict[str, Any]) -> dict[str, Any]:
         """Errors also say what to do next, keyed by code, so a model need not guess."""
         error = response.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            # The model sees file names inside its vault directory, never absolute paths.
+            error["message"] = _ABSOLUTE_PATH.sub(r"\1", error["message"])
         if isinstance(error, dict) and "next_action" not in error:
             message = str(error.get("message", ""))
             hint = next((h for prefix, h in _NEXT_FOR_MESSAGE if message.startswith(prefix)), None)
@@ -226,6 +230,9 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     ) -> dict[str, Any]:
         """Journal a new payment from an invoice file in the vault directory. Moves no funds.
 
+        invoice_name is the invoice's file name in that directory, for example "inv-1001.txt": not the
+        vendor's name and not a path.
+
         amount_usdc is the amount in USDC as the invoice states it ("30" for 30 USDC, "0.5" for half).
         amount is the same amount in base units, 1 USDC = 1000000 ("30000000" for 30 USDC). Both are
         required and must agree; a mismatch is refused so a unit mistake cannot pay the wrong amount.
@@ -266,13 +273,6 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         signer names the approver: their NEAR public key (ed25519:...), or on an EVM v2 vault an address.
         Leave it out to ask the vault's default approver.
         """
-        # A registered agent asks whoever the vault's owner chose for it.
-        if signer is None and is_v2 and settings.relay_url:
-            try:
-                chosen = await asyncio.to_thread(relay_call, "/agents/me")
-                signer = chosen.get("approver") if isinstance(chosen.get("approver"), str) else None
-            except (OSError, ValueError):
-                signer = None  # Not registered, or the relay is down: the binary defaults to the owner.
         near_signer = signer is not None and re.fullmatch(_NEAR_KEY, signer, flags=re.ASCII) is not None
         if signer is not None and not near_signer and not is_v2:
             return invalid(VaultError(_INVALID, "signer must be the approver's NEAR public key, ed25519:..."))
@@ -311,7 +311,11 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             if settings.relay_url:
                 response["result"].update(await asyncio.to_thread(send_to_relay, pending, stem))
                 response["result"]["next_action"] = (
-                    "Call styx_check_owner_approval with this payment_id until status is signed. Do not propose again.")
+                    "Call styx_check_owner_approval with this payment_id until status is signed. Do not propose again."
+                    if response["result"].get("owner_alerted") else
+                    "The request is waiting, but the approver was not alerted (they may not have linked their Telegram, "
+                    "or the relay is down). Tell your user an approval is needed, then call styx_check_owner_approval "
+                    "with this payment_id. Do not propose again.")
             else:
                 response["result"]["next_action"] = (
                     f"Give the approver {name} to sign on their signing page, then pass their signature file to "
@@ -339,7 +343,14 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
     @server.tool()
     async def styx_payment_status(payment_id: str) -> dict[str, Any]:
         """Read a payment's state from the chain: settled, not_settled, or unavailable."""
-        return await call("status", payment_id=payment_id)
+        response = await call("status", payment_id=payment_id)
+        if response["ok"]:
+            state = response["result"].get("state")
+            response["result"]["next_action"] = (
+                "Done: it settled on chain. Report tx_hash." if state == "settled" else
+                "Not paid yet. If it was proposed and not submitted, call styx_submit_payment with this payment_id; "
+                "do not propose it again.")
+        return add_next(response)
 
     if settings.relay_url:
         @server.tool()
