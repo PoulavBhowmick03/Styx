@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import re
+from decimal import Decimal, InvalidOperation
 import stat
 import time
 import urllib.error
@@ -52,6 +53,27 @@ _DEFAULT_PAYMENT_SECONDS = 3600
 # USDC has six decimals on every chain the vault pays on.
 _USDC_DECIMALS = 6
 _USDC_AMOUNT = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]{1,6})?")
+
+
+_INVOICE_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d+)?|(?<![\w.])\d+(?:\.\d+)?")
+
+
+def _units_mistake(invoice: Path, amount_usdc: str) -> str | None:
+    """Catches the one units error the dual amount cannot: both fields agree, but amount_usdc is the
+    invoice's USDC figure divided by a million (base units read as USDC). Only refuses when the
+    stated amount is not in the invoice and a million times it is."""
+    try:
+        text = invoice.read_text(errors="replace")[:65536]
+        stated = Decimal(amount_usdc.strip())
+    except (OSError, InvalidOperation):
+        return None
+    numbers = {Decimal(n.replace(",", "")) for n in _INVOICE_NUMBER.findall(text)}
+    if stated in numbers or stated * 1_000_000 not in numbers:
+        return None
+    figure = format((stated * 1_000_000).normalize(), "f")
+    return (f"amount_usdc {amount_usdc} is not in the invoice, but {figure} is: that looks like base units read as USDC. "
+            f"If the invoice asks for {figure} USDC, propose amount_usdc {figure} and amount "
+            f"{int(stated * 1_000_000 * 1_000_000)}.")
 
 
 def usdc_to_base_units(amount_usdc: str) -> int:
@@ -214,6 +236,9 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             expected = usdc_to_base_units(amount_usdc)
         except VaultError as error:
             return invalid(error)
+        units_mistake = _units_mistake(Path(invoice), amount_usdc)
+        if units_mistake:
+            return invalid(VaultError(_INVALID, units_mistake))
         if amount.strip() != str(expected):
             return invalid(VaultError(_INVALID, (
                 f"amounts disagree: amount_usdc {amount_usdc} USDC is {expected} base units, but amount is "
@@ -223,6 +248,8 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
                               valid_until=valid_until if valid_until is not None else int(time.time()) + _DEFAULT_PAYMENT_SECONDS)
         if response["ok"]:
             response["result"]["summary"] = f"{amount_usdc} USDC ({amount} base units) to {recipient}"
+            response["result"]["check"] = (f"This pays {amount_usdc} USDC. If that is not the amount the invoice asks for, "
+                                           "do not submit it: propose again with the invoice's amount.")
             response["result"]["next_action"] = (
                 "Over the per-payment limit: call styx_request_owner_approval with this payment_id, then wait for "
                 "the approver's signature." if response["result"].get("path") == "exception_required"

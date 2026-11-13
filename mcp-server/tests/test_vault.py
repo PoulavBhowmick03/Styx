@@ -333,3 +333,20 @@ def test_a_near_approver_key_is_accepted_on_any_vault_and_names_its_file(tmp_pat
     run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(script)}, body)
     sent = [json.loads(line) for line in capture.read_text().splitlines() if json.loads(line)["method"] == "request_approval"]
     assert [request.get("signer") for request in sent] == [approver]
+
+
+def test_a_base_units_figure_read_as_usdc_is_refused_and_honest_amounts_pass(tmp_path):
+    from styx_mcp.vault import _units_mistake
+    invoice = tmp_path / "inv.txt"
+    invoice.write_text("Invoice INV-1001\nVendor A\nAmount due: 25 USDC\nDue 30 Nov\n")
+    message = _units_mistake(invoice, "0.000025")
+    assert message and "propose amount_usdc 25 and amount 25000000" in message
+    for honest in ("25", "25.0", "10", "0.5"):
+        assert _units_mistake(invoice, honest) is None, honest
+    invoice.write_text("Total 1,250.50 USDC")
+    assert _units_mistake(invoice, "0.0012505") is not None
+    assert _units_mistake(invoice, "1250.50") is None
+    # An invoice that states both figures is left to the model: nothing to refuse.
+    invoice.write_text("25 USDC (0.000025 if you misread units)")
+    assert _units_mistake(invoice, "0.000025") is None
+    assert _units_mistake(tmp_path / "missing.txt", "0.000025") is None
