@@ -215,6 +215,10 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
             return {"ok": False, "error": {"code": _RELAY_UNAVAILABLE, "message": "the relay refused this check"}}
         except (OSError, ValueError):
             return {"ok": False, "error": {"code": _RELAY_UNAVAILABLE, "message": "the relay could not be reached"}}
+        if result.get("status") == "declined":
+            return {"ok": True, "result": {"status": "declined", "next_action": (
+                "The approver declined this payment. Do not submit it, ask again or propose it again. Tell your "
+                "user it was declined.")}}
         if result.get("status") != "signed":
             return {"ok": True, "result": {"status": "pending", "next_action": (
                 "Wait, then check again. The approver reviews and signs on their own device; asking again or "
@@ -362,8 +366,8 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         async def styx_check_owner_approval(payment_id: str, wait_seconds: int = 0) -> dict[str, Any]:
             """Check whether the approver has signed. When signed, pass signature_name to styx_submit_payment.
 
-            With wait_seconds (up to 600), keep checking and return as soon as the approver signs, the request
-            expires or fails, or the wait ends with status pending. Asking again does not make approval sooner.
+            With wait_seconds (up to 600), keep checking and return as soon as the approver signs or declines,
+            the request expires or fails, or the wait ends with status pending. Declined is final: do not pay.
             """
             deadline = time.monotonic() + max(0, min(int(wait_seconds), _MAX_WAIT_SECONDS))
             try:

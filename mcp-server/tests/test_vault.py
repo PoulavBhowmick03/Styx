@@ -371,3 +371,37 @@ def test_check_owner_approval_waits_for_the_signature(tmp_path):
         assert run_session(env, once)["result"]["status"] == "pending"
     finally:
         relay.shutdown()
+
+
+def test_a_declined_request_is_a_final_no(tmp_path):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Relay(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            data = json.dumps({"status": "declined"}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    relay = ThreadingHTTPServer(("127.0.0.1", 0), Relay)
+    threading.Thread(target=relay.serve_forever, daemon=True).start()
+    try:
+        vault_dir = private_dir(tmp_path / "vault")
+        payment_id = "0x" + "cd" * 32
+        (vault_dir / f"relay-{payment_id[2:14]}.txt").write_text("r" * 43)
+        env = {"STYX_VAULT_DIR": str(vault_dir), "STYX_VAULT_CLI": str(scripted_binary(tmp_path, {})),
+               "STYX_VAULT_RELAY_URL": f"http://127.0.0.1:{relay.server_address[1]}", "STYX_VAULT_RELAY_TOKEN": "t"}
+
+        async def body(session):
+            return result(await session.call_tool("styx_check_owner_approval", {"payment_id": payment_id, "wait_seconds": 60}))
+
+        reply = run_session(env, body)
+        assert reply["ok"] and reply["result"]["status"] == "declined"
+        assert "Do not submit" in reply["result"]["next_action"]
+        assert not list(vault_dir.glob("signature-*"))
+    finally:
+        relay.shutdown()
