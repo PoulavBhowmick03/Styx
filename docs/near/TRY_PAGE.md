@@ -56,3 +56,19 @@ moment (the page retries a nonce another transaction took, which has only been r
 transaction bytes with an encoding written out by hand and verifies the signature; `verdict.test.ts`
 reads the real replies above. The signing code is `src/near.ts` (about 100 lines) and is for
 Poulav's review like any other.
+
+## Live on styxco.xyz/try (13 Nov 2026)
+
+`try.styx-vaults.testnet`, created through the factory
+([2is1oAdm…](https://testnet.nearblocks.io/txns/2is1oAdmAmhRgdddNf3BW54rg8XWhyrxuxNDCb7h9pNJ)), owner
+`styx-user-3b3f74.testnet`, agent `ed25519:4CSJ7XA9…` at 1 tUSDC per payment and 20 per day, one
+allowed recipient (vendor-a). Clicked on the deployed page in a browser:
+
+| Button | Result |
+| --- | --- |
+| Pay inside the limit | paid, [Dq9HaC7k…](https://testnet.nearblocks.io/txns/Dq9HaC7ksn8H9yUjNewpq64MqXj493jY62KvAD6EzQLk) |
+| Pay over the limit | the vault: `PerPaymentLimitExceeded` |
+| Pay a stranger | the vault: `RecipientNotAllowed`, [EdASC7jx…](https://testnet.nearblocks.io/txns/EdASC7jxczZYXJLnt9V5a3DMD2KfjfiWQfW8Uqpfag3H) |
+| Raise my own limit | NEAR: `MethodNameMismatch`, no transaction |
+| Send the vault's NEAR | NEAR: `RequiresFullAccess`, no transaction |
+

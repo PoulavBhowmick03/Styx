@@ -3,7 +3,7 @@
 **Contract-level spending caps and signed approvals for AI agents on NEAR, so an agent can't raise
 its own cap.**
 
-[Open the app](https://styxco.xyz) · [Approval page](https://styxco.xyz/approval/) ·
+[Try the agent's key, no wallet needed](https://styxco.xyz/try/) · [Open the app](https://styxco.xyz) · [Approval page](https://styxco.xyz/approval/) ·
 [Owner console](https://styxco.xyz/console/) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
 
 Built for the NEAR Hackathon (tracks: AI Security & Defense, Agent Economy, Autonomous Business).
