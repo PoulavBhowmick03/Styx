@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0a09">
+<title>Styx: spending limits an agent cannot raise</title>
+<meta name="description" content="Contract-level spending caps and signed approvals for AI agents on NEAR. The agent's key cannot change its own limits; going over one needs the approver's signature over that exact payment.">
+<link rel="icon" href="/styx-logo.png">
+<link rel="stylesheet" href="/styx.css">
+</head>
+<body class="landing">
+<div class="wrap">
+<header class="top">
+  <a class="brand" href="/"><img src="/styx-logo.png" alt="Styx" width="600" height="237"></a>
+  <nav class="topnav" aria-label="Sections">
+    <a href="#rules">Rules</a>
+    <a href="#how">How it works</a>
+    <a href="#roles">Roles</a>
+    <a href="#start">Start</a>
+  </nav>
+  <span class="net">NEAR testnet</span>
+</header>
+
+<div class="hero">
+  <h1>Spending limits an agent <em>cannot raise.</em></h1>
+  <p class="lede">The agent is a NEAR function-call key on a vault you fund. It can pay within your rules, and NEAR itself refuses its calls to anything else. <strong>Going over a limit needs your approver's signature over that exact payment.</strong></p>
+  <div class="cta">
+    <a class="button" href="#start">Open the app</a>
+    <a class="textlink" href="https://github.com/PoulavBhowmick03/Styx/blob/main/docs/near/TESTNET_RUN.md">Every testnet transaction</a>
+    <a class="textlink" href="https://github.com/PoulavBhowmick03/Styx">Source code</a>
+  </div>
+</div>
+
+<div class="band" id="rules">
+  <div class="side"><span class="kicker"><b>01</b>The rules</span></div>
+  <div class="main">
+    <h2>The agent can pay. It cannot change the rules.</h2>
+    <p class="sub">Each line below ran on NEAR testnet with the agent's own key. Follow a line to its transaction.</p>
+    <div class="term">
+      <div class="term-bar"><span>vault.styx-owner-c87a.testnet / agent key</span><span>NEAR testnet</span></div>
+      <div class="lines">
+        <a class="ln" href="https://testnet.nearblocks.io/txns/PFqEYiLsGKn4XVkpXdD3jDuKNTK7RUTUsmZBknkDgtx"><span class="p">agent</span><span class="cmd">pay 60 tUSDC to vendor-a</span><span class="res ok">PAID, within limit</span></a>
+        <a class="ln" href="https://testnet.nearblocks.io/txns/6B4LpFXjFDUoNZ5mjrejMbMH8USwQ5w1TsgbvWgXxq9C"><span class="p">agent</span><span class="cmd">pay 100.000001 tUSDC, no signature</span><span class="res bad">REFUSED by the vault</span></a>
+        <div class="ln"><span class="p">agent</span><span class="cmd">configure_agent: raise its own limit</span><span class="res bad">REJECTED by NEAR, key not allowed</span></div>
+        <div class="ln"><span class="p">agent</span><span class="cmd">set_approver: name itself approver</span><span class="res bad">REJECTED by NEAR, key not allowed</span></div>
+        <a class="ln" href="https://testnet.nearblocks.io/txns/Eauk4L8MRK13NccLXDcxQseA7uDWacFBhfa9SZXGQ195"><span class="p">approver</span><span class="cmd">signs 120 tUSDC in Meteor on a phone</span><span class="res ok">PAID, with the signature</span></a>
+        <a class="ln" href="https://testnet.nearblocks.io/txns/GLi8PH5Khf1NE7i9CH6T7vmfJ3djQNU3CkjVkbPDBnRM"><span class="p">agent</span><span class="cmd">same signature, other recipient</span><span class="res bad">REFUSED by the vault</span></a>
+        <a class="ln" href="https://testnet.nearblocks.io/txns/AmddsZxVWEVpjuUCDeWc7JdpqXK8aNB1zFC9nTTN7hvu"><span class="p">agent</span><span class="cmd">replay the settled approval</span><span class="res bad">REFUSED by the vault</span></a>
+        <span class="caret" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="band" id="how">
+  <div class="side"><span class="kicker"><b>02</b>How it works</span></div>
+  <div class="main">
+    <h2>Four steps, each one checkable on the chain.</h2>
+    <ol class="steps4">
+      <li><h3>Fund the vault</h3><p>The owner funds a vault on NEAR and sets, per agent, who it may pay and the most it can pay per payment and per day.</p></li>
+      <li><h3>The agent pays</h3><p>Within the limits it pays on its own, on NEAR or, through Chain Signatures, in USDC on Arc and Base from the vault's one EVM address.</p></li>
+      <li><h3>The approver signs</h3><p>Over a limit, the request arrives in the approver's own Telegram chat. They review the payment, read back from the vault, and sign that exact payment in their NEAR wallet.</p></li>
+      <li><h3>A reviewer checks</h3><p>Each payment can carry a record sealed to one reviewer, who opens it with their own key and checks it against the chain with their own RPC.</p></li>
+    </ol>
+  </div>
+</div>
+
+<div class="band" id="roles">
+  <div class="side"><span class="kicker"><b>03</b>Who can do what</span></div>
+  <div class="main">
+    <h2>Four keys, four jobs.</h2>
+    <div class="roles">
+      <div class="role"><h3>Owner</h3><p class="what">Sets the rules.</p>
+        <p class="lab can">Can</p><ul><li>Set limits, recipients, approvers and EVM chains</li><li>Pause and withdraw</li></ul></div>
+      <div class="role"><h3>Approver</h3><p class="what">Signs exceptions.</p>
+        <p class="lab can">Can</p><ul><li>Authorize one payment over the limit</li><li>Get each request in their own Telegram</li></ul>
+        <p class="lab cannot">Cannot</p><ul><li>Change the rules</li></ul></div>
+      <div class="role"><h3>Agent</h3><p class="what">Pays within them.</p>
+        <p class="lab can">Can</p><ul><li>Pay allowed recipients within the limits</li></ul>
+        <p class="lab cannot">Cannot</p><ul><li>Change limits, recipients or approvers</li><li>Approve, pause or withdraw</li></ul></div>
+      <div class="role"><h3>Reviewer</h3><p class="what">Checks one record.</p>
+        <p class="lab can">Can</p><ul><li>Open one sealed record</li><li>Verify it against NEAR</li></ul>
+        <p class="lab cannot">Cannot</p><ul><li>Read any other record</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<div class="band" id="start">
+  <div class="side"><span class="kicker"><b>04</b>Start</span></div>
+  <div class="main">
+    <h2>Where are you headed?</h2>
+    <p class="sub">Approvers normally arrive from a Telegram alert that carries the request. Owners run their vault from the console with their NEAR wallet.</p>
+    <div class="paths">
+      <a class="path" href="/console/">
+        <strong>Run a vault</strong>
+        <span class="txt">Read any vault from the chain without a wallet. Connect the owner's wallet to change limits, recipients and approvers, pause or fund it.</span>
+        <span class="go">Owner console</span>
+      </a>
+      <a class="path" href="https://t.me/Styx_pvt_bot">
+        <strong>Approve payments</strong>
+        <span class="txt">Send /start to the Styx bot and sign once with your approver key. Requests that ask your key to sign then come to your Telegram.</span>
+        <span class="go">Open the bot</span>
+      </a>
+    </div>
+    <div class="links">
+      <a class="button secondary" href="https://github.com/PoulavBhowmick03/Styx#try-it">Run it yourself</a>
+      <a class="button secondary" href="https://testnet.nearblocks.io/address/vault.styx-owner-c87a.testnet">Demo vault on NEAR</a>
+      <a class="button secondary" href="https://github.com/PoulavBhowmick03/Styx/blob/main/docs/near/TESTNET_RUN.md">Testnet record</a>
+    </div>
+  </div>
+</div>
+
+<footer class="river">
+  <div class="ticker">
+    <div class="ticker-row a" aria-hidden="true"><div class="track"><span>Spending limits</span><span>Signed exceptions</span><span>Access-key rules</span><span>Chain Signatures</span><span>Checked against NEAR</span><span>Spending limits</span><span>Signed exceptions</span><span>Access-key rules</span><span>Chain Signatures</span><span>Checked against NEAR</span></div></div>
+    <div class="ticker-row b" aria-hidden="true"><div class="track"><span>Spending limits</span><span>Signed exceptions</span><span>Access-key rules</span><span>Chain Signatures</span><span>Checked against NEAR</span><span>Spending limits</span><span>Signed exceptions</span><span>Access-key rules</span><span>Chain Signatures</span><span>Checked against NEAR</span></div></div>
+  </div>
+  <div class="river-note">
+    <p>Built at the NEAR Hackathon. Test tokens on NEAR testnet, Arc testnet and Base Sepolia.</p>
+    <nav aria-label="Links"><a href="https://github.com/PoulavBhowmick03/Styx">Source</a><a href="/console/">Console</a><a href="https://t.me/Styx_pvt_bot">Telegram bot</a></nav>
+  </div>
+  <div class="mark-band">
+    <div class="mark" role="img" aria-label="STYX"><span aria-hidden="true">STYX</span></div>
+  </div>
+</footer>
+</div>
+<script src="/landing.js" defer></script>
+</body>
+</html>

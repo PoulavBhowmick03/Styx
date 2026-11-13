@@ -1,12 +1,26 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Styx · NEAR approval</title></head><body>
-<header><a class="brand" href="/">STYX <span>NEAR / APPROVAL</span></a></header>
-<main>
-<p class="eyebrow" id="eyebrow">APPROVAL REQUEST</p>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0a09">
+<title>Styx: approve a payment</title>
+<link rel="icon" href="/styx-logo.png">
+</head>
+<body>
+<div class="wrap">
+<header class="top"><a class="brand" href="/"><img src="/styx-logo.png" alt="Styx" width="600" height="237"></a><span class="net" id="net">NEAR testnet</span></header>
+<p class="kicker" id="eyebrow"><b>Approval</b>An agent asks to go over its limit</p>
 <h1>Review a payment</h1>
-<p class="lead" id="lead"></p>
-<p id="status" role="status">Loading request…</p>
-<dl id="summary" class="summary"></dl>
-<div class="actions"><button id="connect" class="secondary" hidden>Connect wallet</button><button id="sign" hidden>Sign approval</button></div>
+<p class="lede-sm" id="lead"></p>
+<div id="status" role="status">Loading request…</div>
+<section class="card" id="summary-card" hidden><dl class="facts" id="summary"></dl></section>
+<button id="connect" class="secondary" hidden>Connect wallet</button>
+<button id="sign" hidden>Sign approval</button>
 <details id="more" hidden><summary>All details</summary><pre id="details"></pre></details>
-<footer id="footer">Nothing is paid unless you sign this exact payment in your NEAR wallet. The vault checks the signature itself.</footer>
-</main><script type="module" src="/src/main.ts"></script></body></html>
+<p class="note foot" id="footer">Nothing is paid unless you sign this exact payment in your NEAR wallet. The vault checks the signature itself.</p>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

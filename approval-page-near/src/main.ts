@@ -9,15 +9,16 @@ import { Buffer, pendingSchema, signatureFile, isEvmPending } from './protocol';
 import { review, rpcView, usdc, destinationDetails } from './review';
 import { linkFlow } from './link';
 import { summary, text, showDetails, shortKey, amount, chainName } from './ui';
-import './style.css';
+import '../../site/styx.css';
 const status=document.querySelector('#status')!, details=document.querySelector('#details')!;
 const connect=document.querySelector<HTMLButtonElement>('#connect')!,sign=document.querySelector<HTMLButtonElement>('#sign')!;
-const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);status.classList.add('error');};
+const error=(e:unknown)=>{status.textContent=e instanceof Error?e.message:String(e);status.className='error';};
 async function main(){
  const query=new URLSearchParams(location.search),id=query.get('request'),relay=new URL(query.get('relay')??import.meta.env.VITE_DEFAULT_RELAY??'');
  const code=query.get('link');
  if(code!==null){if(!['https:','http:'].includes(relay.protocol)) throw new Error('Invalid relay');return linkFlow(code,relay,{title:document.querySelector('h1')!,status,details,connect,sign},error);}
- if(!id || !/^[A-Za-z0-9_-]{43}$/.test(id) || !['https:','http:'].includes(relay.protocol)) throw new Error('Invalid relay or request');
+ if(!id && code===null){status.textContent='Open the link in your Telegram alert to review a request. To get alerts, send /start to the Styx bot.';text('lead','This page shows one payment an agent asks to make over its limit, read back from the vault, for the approver to sign.');return;}
+ if(!id || !/^[A-Za-z0-9_-]{43}$/.test(id) || !['https:','http:'].includes(relay.protocol)) throw new Error('This link is incomplete. Open it again from the Telegram alert.');
  const endpoint=new URL(`/requests/${id}`,relay).toString();
  const response=await fetch(endpoint);if(!response.ok) throw new Error('Cannot load request');
  const data=await response.json(),p=pendingSchema.parse(data.pending);
@@ -35,13 +36,13 @@ async function main(){
  text('lead','An agent asks to pay over its per-payment limit. Check the payment, then sign it in your wallet.');
  summary([['Amount',amount(usdc(p.payment.amount)),true],['To',p.payment.recipient],['On',chainName(p.chainId)],['Per-payment limit',amount(usdc(facts.agent.per_payment_limit))],['Vault',p.vault],['Approver',shortKey(p.authorization.signer)],['Expires',new Date(Number(p.authorization.authorization_expiry)*1000).toLocaleString()]]);
  showDetails([`Network: ${p.network}`,`RPC (supplied by agent): ${p.rpcUrl}`,`Vault: ${p.vault}`,...destinationDetails(p,facts),`Amount: ${usdc(p.payment.amount)}`,`Agent: ${p.payment.agent}`,`Per-payment limit: ${usdc(facts.agent.per_payment_limit)}`,`Agent daily limit: ${usdc(facts.agent.daily_limit)}`,`Vault daily limit: ${usdc(facts.vault.vault_daily_limit)}`,`Daily spending still applies; remaining balance is not checked here.`,`Approver: ${p.authorization.signer} — enabled: ${facts.approver.enabled}, version: ${facts.approver.version}`,`Authorization expires: ${new Date(Number(p.authorization.authorization_expiry)*1000).toISOString()}`,`Payment expires: ${new Date(Number(p.payment.valid_until)*1000).toISOString()}`,`Invoice reference (unverified): ${p.invoiceReference}`,`Message:\n${p.message}`].join('\n\n'));
- if(data.status==='signed'){status.textContent='Already signed. The agent can submit the payment.';return;}
+ if(data.status==='signed'){status.textContent='Already signed. The agent can submit the payment.';status.className='done';return;}
  if(data.status!=='pending') throw new Error(`Request is ${data.status}`);
  const post=async(result:{accountId:string;publicKey:string;signature:string},callback:string|null)=>{
   await check();const file=signatureFile(p,result,callback);
   const r=await fetch(endpoint+'/signature',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(file)});
   if(!r.ok) throw new Error(`Relay refused signature (${r.status})`);
-  sessionStorage.removeItem('styx-near-sign');status.textContent='Signature delivered. The agent can submit the payment.';sign.hidden=true;
+  sessionStorage.removeItem('styx-near-sign');status.textContent='Signature delivered. The agent can submit the payment.';status.className='done';sign.hidden=true;
  };
  const fragment=new URLSearchParams(location.hash.slice(1));
  if(fragment.has('signature')){

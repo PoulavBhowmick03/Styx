@@ -18,7 +18,7 @@ export async function linkFlow(code: string, relay: URL, el: Elements, error: (e
   if (!linkCode.safeParse(code).success) throw new Error('Invalid link. Send /start to the Styx bot for a new one.');
   document.title = 'Styx: link Telegram alerts';
   el.title.textContent = 'Link your wallet to Telegram';
-  text('eyebrow', 'TELEGRAM ALERTS');
+  document.querySelector('#eyebrow')!.replaceChildren(Object.assign(document.createElement('b'), { textContent: 'Telegram' }), 'Alerts for your approver key');
   text('lead', 'Sign a message so Styx sends approval alerts for your key to your Telegram chat. It is not a transaction and cannot move funds or approve a payment.');
   text('footer', 'Alerts come only for payments that ask this key to approve. Send /unlink to the bot to stop them.');
   summary([['Relay', relay.host], ['Network', NETWORK], ['Link expires', '15 minutes after /start']]);
@@ -37,7 +37,7 @@ export async function linkFlow(code: string, relay: URL, el: Elements, error: (e
       const body = linkSchema.parse({ schema: 'styx-near-telegram-link/1', code, accountId: result.accountId, publicKey: result.publicKey, signature: result.signature });
       const r = await fetch(new URL('/links', relay), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error(`Relay refused the link (${r.status}): ${((await r.json().catch(() => ({}))) as { error?: string }).error ?? ''}`);
-      el.status.classList.remove('error'); el.status.textContent = `Linked. Telegram alerts for ${result.publicKey} will come to your chat. Send /unlink to the bot to stop them.`;
+      el.status.className = 'done'; el.status.textContent = `Linked. Telegram alerts for ${result.publicKey} will come to your chat. Send /unlink to the bot to stop them.`;
       el.sign.hidden = true; el.connect.hidden = true;
     } catch (e) { error(e); } finally { el.sign.disabled = false; }
   };

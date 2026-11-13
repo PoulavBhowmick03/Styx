@@ -1,8 +1,9 @@
 // Summary rows and page text. textContent only: nothing from a request is parsed as HTML.
 export function summary(rows: [label: string, value: string, big?: boolean][]) {
+  (document.querySelector('#summary-card') as HTMLElement).hidden = false;
   document.querySelector('#summary')!.replaceChildren(...rows.map(([label, value, big]) => {
     const row = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd');
-    if (big) row.className = 'big';
+    row.className = 'row'; dd.className = big ? 'key' : 'value';
     dt.textContent = label; dd.textContent = value; row.append(dt, dd);
     return row;
   }));
