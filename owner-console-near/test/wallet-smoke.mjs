@@ -52,6 +52,8 @@ try{
    // Guided setup: the rules step sends several vault calls as one transaction, one approval.
    await page.locator('#setup-steps button',{hasText:'Set the rules'}).click();
    const setup=page.locator('#setup-form');
+   await setup.getByRole('button',{name:'Team'}).click();
+   assert.equal(await setup.locator('input[name="per_payment_limit"]').inputValue(),'50');
    await setup.locator('input[name="limit"]').fill('500');
    await setup.locator('input[name="recipient"]').fill('vendor-a.styx-owner-c87a.testnet');
    await setup.locator('input[name="agent"]').fill('');
@@ -64,8 +66,19 @@ try{
    assert.equal(batch.receiverId,fixture.vault);
    assert.deepEqual(batch.actions.map(a=>[a.params.methodName,a.params.gas]),[['set_vault_daily_limit','30000000000000'],['set_recipient','30000000000000']]);
    assert.match(await page.locator('#setup-form').textContent(),/Styx_pvt_bot/);
+   // With the indexer down, name the approver by hand; then every rule is done and the ready screen shows the hand-off.
+   await page.locator('#lookup select').selectOption('approver');
+   await page.locator('#lookup input').fill(fixture.known.approver);
+   await page.locator('#lookup button').click();
+   await page.locator('#setup-form').getByText('This vault is ready').waitFor();
+   const ready=await page.locator('#setup-form').textContent();
+   assert.match(ready,/Hand the agent its key/);assert.doesNotMatch(ready,/private_key/);
+   const [file]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Download agent settings'}).click()]);
+   assert.equal(file.suggestedFilename(),`styx-agent-${fixture.vault}.env`);
+   const env=readFileSync(await file.path(),'utf8');
+   assert.match(env,new RegExp(`^STYX_NEAR_APPROVER=${fixture.known.approver}$`,'m'));assert.doesNotMatch(env,/private/);
   }
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction. No real wallet or transaction.');
+ console.log('PASS: non-owner write guards; mocked owner pause preview, exact wallet call, finality and chain state reread; setup rules batched into one transaction, presets and agent hand-off shown. No real wallet or transaction.');
 }finally{await browser.close();}

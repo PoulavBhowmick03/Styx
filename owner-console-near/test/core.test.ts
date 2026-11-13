@@ -83,3 +83,21 @@ describe('funds before signing',()=>{
  it('passes when the deposit and gas fit',()=>expect(fundsProblem(view('10'),(4n*10n**24n).toString(),'a.testnet')).toBeNull());
  it('explains a shortfall in NEAR',()=>expect(fundsProblem(view('3'),(4n*10n**24n).toString(),'a.testnet')).toMatch(/^a\.testnet has 2\.99\d* NEAR to spend; this needs 4 NEAR/));
 });
+
+import { agentEnv,agentSetupCommands,agentEnvName,PRESETS } from '../src/core';
+describe('agent hand-off',()=>{
+ const vault='styx-demo-2917.styx-vaults.testnet',approver=live.known.approver;
+ it('writes the four settings mcp_config.sh reads, and no key material',()=>{
+  const env=agentEnv(vault,approver);
+  expect(env).toContain(`STYX_NEAR_VAULT=${vault}`);expect(env).toContain(`STYX_NEAR_APPROVER=${approver}`);
+  expect(env).toContain(`STYX_NEAR_AGENT_KEY_FILE=$HOME/.styx-near-agent/${vault}/agent.json`);
+  expect(env).not.toMatch(/private|secret|ed25519:[1-9A-HJ-NP-Za-km-z]{80,}/);
+ });
+ it('refuses a bad approver or vault',()=>{expect(()=>agentEnv(vault,'nope')).toThrow();expect(()=>agentEnv('Bad Vault',approver)).toThrow();});
+ it('moves the downloads into a private folder, then runs mcp_config.sh',()=>{
+  const cmds=agentSetupCommands(vault,'styx-agent-x-1234.json');
+  expect(cmds.split('\n')).toHaveLength(4);expect(cmds).toContain('chmod 600');expect(cmds).toContain(agentEnvName(vault));expect(cmds).toMatch(/^mkdir -p -m 700/);
+  expect(()=>agentSetupCommands(vault,'../../etc/passwd')).toThrow();
+ });
+ it('presets keep the agent day inside the vault day',()=>{for(const p of PRESETS) expect(Number(p.values.daily_limit)).toBeLessThanOrEqual(Number(p.values.limit));});
+});

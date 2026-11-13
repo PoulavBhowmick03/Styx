@@ -185,3 +185,30 @@ export function fundsProblem(view:{amount:string;storage_usage:number},deposit:s
  const free=spendable(view),need=BigInt(deposit)+BigInt(GAS_RESERVE);
  return free>=need?null:`${who} has ${amountNear(free.toString())} NEAR to spend; this needs ${amountNear(deposit)} NEAR plus about 0.05 for gas.`;
 }
+
+// ---- Handing the agent its key: settings for scripts/near/mcp_config.sh, never the key itself ----
+// The env file names where the key file will live; the key stays in the file the browser downloaded.
+export const agentHome=(vault:string)=>`$HOME/.styx-near-agent/${account(vault)}`;
+export function agentEnv(vault:string,approver:string):string{
+ const home=agentHome(vault);
+ return ['# Styx agent settings for scripts/near/mcp_config.sh. No key material: only where the key file lives.',
+  `STYX_NEAR_VAULT=${account(vault)}`,`STYX_NEAR_AGENT_KEY_FILE=${home}/agent.json`,`STYX_NEAR_STATE_ROOT=${home}/state`,
+  `STYX_NEAR_APPROVER=${publicKey(approver)}`,''].join('\n');
+}
+export const agentEnvName=(vault:string)=>`styx-agent-${account(vault)}.env`;
+// Run from the repo root. Assumes the browser saved both files to ~/Downloads.
+export function agentSetupCommands(vault:string,keyFile:string):string{
+ if(!/^styx-agent-[a-z0-9._-]+\.json$/.test(keyFile)) throw Error('Unexpected key file name');
+ const home=agentHome(vault);
+ return [`mkdir -p -m 700 "${home}/state"`,
+  `mv ~/Downloads/${keyFile} "${home}/agent.json" && chmod 600 "${home}/agent.json"`,
+  `mv ~/Downloads/${agentEnvName(vault)} "${home}/demo.env"`,
+  `scripts/near/mcp_config.sh "${home}/demo.env"`].join('\n');
+}
+
+// ---- Starting points for the rules step (amounts in tokens) ----
+export const PRESETS:{name:string;note:string;values:Record<string,string>}[]=[
+ {name:'Cautious',note:'5 a payment, 20 a day',values:{limit:'50',per_payment_limit:'5',daily_limit:'20'}},
+ {name:'Personal agent',note:'10 a payment, 100 a day',values:{limit:'500',per_payment_limit:'10',daily_limit:'100'}},
+ {name:'Team',note:'50 a payment, 500 a day',values:{limit:'2000',per_payment_limit:'50',daily_limit:'500'}},
+];

@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -207,7 +207,7 @@ function generateAgentKey():string{
  const pair=nacl.sign.keyPair(),pk='ed25519:'+bs58.encode(pair.publicKey);
  const keyFile={account_id:context.vault,public_key:pk,private_key:'ed25519:'+bs58.encode(pair.secretKey)};
  const url=URL.createObjectURL(new Blob([JSON.stringify(keyFile,null,2)+'\n'],{type:'application/json'}));
- const link=document.createElement('a');link.href=url;link.download=`styx-agent-${context.vault}-${crypto.randomUUID()}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);pair.secretKey.fill(0);
+ const link=document.createElement('a');link.href=url;lastAgentFile=`styx-agent-${context.vault}-${crypto.randomUUID()}.json`;link.download=lastAgentFile;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);pair.secretKey.fill(0);
  return pk;
 }
 $('#generate').onclick=()=>{
@@ -309,7 +309,33 @@ function telegramNote(){
  box.append(el('p',`Your approver links their wallet to Telegram once: send /start to @${BOT}, open the link it replies with, and sign the link message in their NEAR wallet. After that, every request over the per-payment limit reaches their phone.`),link);
  return box;
 }
-let setupChoice:number|undefined;
+let setupChoice:number|undefined,lastAgentFile:string|undefined;
+function download(name:string,text:string){
+ const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function copyBlock(text:string){
+ const wrap=document.createElement('div');wrap.className='copy-block';const pre=el('pre',text);
+ const b=el('button','Copy') as HTMLButtonElement;b.type='button';b.className='secondary';b.onclick=async()=>{try{await navigator.clipboard.writeText(text);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1500);}catch{b.textContent='Select and copy';}};
+ wrap.append(pre,b);return wrap;
+}
+// After setup: give the agent its key without ever showing the key. The env file holds paths only.
+function agentHandoff(){
+ const box=document.createElement('div');box.className='setup-note';const vault=context!.vault;
+ box.append(el('h4','Hand the agent its key'));
+ const approver=[...known.approvers][0];
+ if(!approver){box.append(el('p','Add an approver first: the agent\'s settings name who it asks for exceptions.'));return box;}
+ box.append(el('p','Download the settings (vault, approver, and where the key file will live; no key material). From the Styx repo, these commands move both downloads into a private folder and print the claude mcp add line for your agent.'));
+ const dl=el('button','Download agent settings') as HTMLButtonElement;dl.type='button';dl.className='secondary';dl.onclick=()=>download(agentEnvName(vault),agentEnv(vault,approver));box.append(dl);
+ if(lastAgentFile) box.append(copyBlock(agentSetupCommands(vault,lastAgentFile)));
+ else box.append(el('p','This visit did not generate the key, so move them by hand: the agent key file to $HOME/.styx-near-agent/'+vault+'/agent.json (chmod 600), the settings file to demo.env beside it, and a state folder there (mkdir -m 700). Then run scripts/near/mcp_config.sh on that demo.env.'));
+ return box;
+}
+function presetBar(form:HTMLFormElement){
+ const bar=document.createElement('div');bar.className='presets';bar.append(el('span','Start from'));
+ for(const p of PRESETS){const b=el('button',p.name) as HTMLButtonElement;b.type='button';b.className='secondary';b.title=p.note;
+  b.onclick=()=>{for(const [k,v] of Object.entries(p.values)){const i=form.elements.namedItem(k) as HTMLInputElement|null;if(i && !(k==='limit' && rulesDone.limit()))i.value=v;}bar.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));};bar.append(b);}
+ return bar;
+}
 function renderSetup(){
  const section=$('#setup');
  if(!context || !facts || connected!==facts.info.owner){section.hidden=true;return;}
@@ -324,12 +350,13 @@ function renderSetup(){
  }));
  const form=$<HTMLFormElement>('#setup-form');
  if(current<0){
-  form.replaceChildren(el('h3','This vault is ready'),el('p','The agent can pay allowed recipients within its limits. Give it the downloaded key file and the vault name. Payments over the per-payment limit go to your approver.'),telegramNote());
+  form.replaceChildren(el('h3','This vault is ready'),el('p','The agent can pay allowed recipients within its limits. Payments over the per-payment limit go to your approver.'),agentHandoff(),telegramNote());
   return;
  }
  const step=steps[current],values=step.defaults();
  const fund=testToken()?'mints test tUSDC':'moves your tokens';
  form.replaceChildren(el('p',`Step ${current+1} of ${steps.length} · one wallet approval${state[current]?' · already done':''}`),el('h3',step.title),el('p',step.why.replace('{fund}',fund)));
+ if(step.fields.includes('per_payment_limit')) form.append(presetBar(form));
  for(const field of step.fields){
   const label=fieldInput(field,values[field]??'');
   if(step.optional){const input=label.querySelector('input');if(input)input.required=false;}
