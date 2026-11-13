@@ -44,9 +44,13 @@ A new faucet account, `styx-user-3b3f74.testnet`, standing in for a new owner:
 | Agent pays 5 tUSDC; record sealed to a fresh reviewer key (`reviewer_quickstart.sh`) | [2LwVpjjx…](https://testnet.nearblocks.io/txns/2LwVpjjxJuAWrBhBzdNzhF73TY6tkEGjBEbLE6ASfhu4), record [4A37JiTx…](https://testnet.nearblocks.io/txns/4A37JiTxfnCTeCpgk4RzgtDUXaDCbhSF72FpAq7qNCTS) | settled; reviewer checks 1 to 5 PASS |
 | Agent asks 15 tUSDC through the MCP tools (`mcp_quickstart.sh`): refused, then the test approver signs through a local relay | [GWTcjDwP…](https://testnet.nearblocks.io/txns/GWTcjDwP8Fs8eXQ3k6CkqLakvqAh8vbGjn3T8b4tC3UE) | `OWNER_APPROVAL_REQUIRED`, then settled |
 
-The owner's calls here were signed from the CLI keychain. The console's "Create a vault" form was
-tested headlessly (name rules, taken names, wallet prompt); a creation signed from a browser wallet
-is not yet recorded.
+The owner's calls here were signed from the CLI keychain.
+
+From a browser wallet: `odinson03.testnet`, in Meteor Wallet (Brave), used the console's "Create a
+vault" form. `create_vault({name: "testme123"})`
+[GV49ihs4…](https://testnet.nearblocks.io/txns/GV49ihs42qUCTF9NVbCdE5fh9knvcqLBRVbeTcTF11fS) returned
+`"testme123.styx-vaults.testnet"`, owned by `odinson03.testnet`, and the owner then registered it with
+the token from the console.
 
 ## A sealed record for a reviewer (`export_record`)
 
