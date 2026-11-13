@@ -421,6 +421,7 @@ impl Contract {
             .get(&payment_id)
             .copied()
             .unwrap_or_else(|| env::panic_str("UnknownPayment"));
+        require!(payer(&payment_id).as_ref() == Some(&agent), "NotPayer");
         require!(!self.records.contains_key(&payment_id), "RecordAlreadyPosted");
         self.records.insert(payment_id.clone(), agent.clone());
         emit(
@@ -478,6 +479,8 @@ impl Contract {
                 // The token refused the transfer (unregistered recipient, insufficient balance).
                 // Undo everything `execute` committed so the payment can be retried or dropped.
                 self.consumed_payments.remove(&payment.payment_id);
+                clear_payer(&payment.payment_id);
+                self.records.remove(&payment.payment_id);
                 let key = (payment.agent.clone(), day);
                 let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
                 self.spent_by_agent_day.insert(key, agent_spent.saturating_sub(payment.amount.0));
@@ -765,6 +768,7 @@ impl Contract {
         let transfer = self.transfer_for(&payment, nonce, &fields);
         let sighash = env::keccak256_array(&transfer.signing_payload());
         self.consumed_payments.insert(payment.payment_id.clone(), hash_evm_payment(&payment, &chain.token));
+        set_payer(&payment.payment_id, &payment.agent);
         let key = (payment.agent.clone(), day);
         let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
         self.spent_by_agent_day.insert(key, agent_spent + payment.amount.0);
@@ -799,6 +803,8 @@ impl Contract {
     /// Undoes what a payment committed: the payment id, both day counters, the approval nonce.
     fn rollback(&mut self, payment_id: &str, agent: &PublicKey, amount: u128, day: u64, exception: Option<ExceptionAuthorization>) {
         self.consumed_payments.remove(payment_id);
+        clear_payer(payment_id);
+        self.records.remove(payment_id);
         let key = (agent.clone(), day);
         let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
         self.spent_by_agent_day.insert(key, agent_spent.saturating_sub(amount));
@@ -851,6 +857,7 @@ impl Contract {
     ) -> Promise {
         let hash = hash_payment(&payment);
         self.consumed_payments.insert(payment.payment_id.clone(), hash);
+        set_payer(&payment.payment_id, &payment.agent);
         let key = (payment.agent.clone(), day);
         let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
         self.spent_by_agent_day.insert(key, agent_spent + payment.amount.0);
@@ -904,6 +911,27 @@ fn build_exception_message(vault: &AccountId, a: &ExceptionAuthorization) -> Str
         a.signer_version,
         a.authorization_expiry.0
     )
+}
+
+// Who paid each payment, written when it is consumed and removed when it rolls back, so only that
+// agent can post its record. A raw storage prefix rather than a new field: the root state layout,
+// and so existing deployments, stay as they are. No other key starts with these bytes.
+const PAYER_PREFIX: &[u8] = b"payer:";
+
+fn payer_key(payment_id: &str) -> Vec<u8> {
+    [PAYER_PREFIX, payment_id.as_bytes()].concat()
+}
+
+fn set_payer(payment_id: &str, agent: &PublicKey) {
+    env::storage_write(&payer_key(payment_id), &near_sdk::borsh::to_vec(agent).expect("borsh"));
+}
+
+fn payer(payment_id: &str) -> Option<PublicKey> {
+    env::storage_read(&payer_key(payment_id)).map(|b| near_sdk::borsh::from_slice(&b).expect("payer"))
+}
+
+fn clear_payer(payment_id: &str) {
+    env::storage_remove(&payer_key(payment_id));
 }
 
 fn hash_evm_payment(p: &EvmPayment, token: &str) -> [u8; 32] {

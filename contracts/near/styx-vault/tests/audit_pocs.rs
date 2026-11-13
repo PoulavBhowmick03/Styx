@@ -301,25 +301,27 @@ fn vm_old_callback_reverts_owner_nonce_resync() {
     w.c.on_evm_signed(p, 1, 0, fields(), None, None, Ok(sig));
     assert_eq!(w.c.evm_nonce(ARC), 1);
 }
+// Fixed: only the agent that paid can post the record, and a rolled-back payment frees its slot.
 #[test]
-fn vm_other_agent_can_claim_record_and_claim_survives_rollback() {
+fn vm_only_the_paying_agent_posts_the_record_and_rollback_frees_it() {
     let mut w = setup();
     let p = payment(&w, "record-race", 60);
     context(vault(), w.agent.clone(), DAY);
     drop(w.c.pay(p.clone()));
     context(vault(), w.other.clone(), DAY);
-    w.c.post_record("record-race".into(), Base64VecU8(vec![1]));
-    assert!(get_logs()[0].contains(&format!("\"agent\":\"{}\"", w.other)));
+    let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        w.c.post_record("record-race".into(), Base64VecU8(vec![1]))
+    }));
+    assert!(error.is_err());
     context(vault(), w.agent.clone(), DAY);
+    w.c.post_record("record-race".into(), Base64VecU8(vec![2]));
     assert!(!w
         .c
         .on_transfer(p.clone(), 1, None, None, Err(PromiseError::Failed)));
     drop(w.c.pay(p.clone()));
     assert!(w.c.on_transfer(p, 1, None, None, Ok(())));
-    let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        w.c.post_record("record-race".into(), Base64VecU8(vec![2]))
-    }));
-    assert!(error.is_err());
+    w.c.post_record("record-race".into(), Base64VecU8(vec![3]));
+    assert!(get_logs().iter().any(|l| l.contains("record_sealed") && l.contains(&format!("\"agent\":\"{}\"", w.agent))));
 }
 fn independent_nep413(c: &Contract, a: &ExceptionAuthorization, recipient: &str) -> [u8; 32] {
     let message = c.exception_message(a.clone());
