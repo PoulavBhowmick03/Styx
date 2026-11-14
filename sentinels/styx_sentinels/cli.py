@@ -9,6 +9,7 @@
   styx-sentinels names    --vault V [--out FILE]           a names file for the console's Import names
   styx-sentinels add      --vault V --kind K [--params J]  add a sentinel: built-in, or a plug-in from plugins.toml
   styx-sentinels label    --vault V MEMBER TIME catch|false_alarm
+  styx-sentinels import-labels --vault V FILE              the owner's verdicts from the console, by pause transaction
   styx-sentinels mark-attack --vault V START END [LABEL]
 
 The swarm's state lives in ~/.styx-near/sentinels/<vault>/ (state.json, lineage.jsonl), keys in
@@ -130,7 +131,7 @@ def run_service(a) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="styx-sentinels", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "quickstart", "run", "status", "names", "label", "mark-attack", "add"):
+    for name in ("init", "quickstart", "run", "status", "names", "label", "import-labels", "mark-attack", "add"):
         s = sub.add_parser(name)
         s.add_argument("--vault", required=True)
         s.add_argument("--network", default="testnet", choices=["testnet", "mainnet"])
@@ -154,6 +155,7 @@ def main(argv=None) -> int:
     sub.choices["names"].add_argument("--out", help="where to write it (default: styx-names-<vault>.json here)")
     sub.choices["add"].add_argument("--kind", required=True, help="burst, concentration, judge, or a plug-in listed in plugins.toml")
     sub.choices["add"].add_argument("--params", help="JSON params; default: the kind's defaults")
+    sub.choices["import-labels"].add_argument("file", help="the console's Download labels for the swarm file")
     sub.choices["label"].add_argument("member")
     sub.choices["label"].add_argument("time", type=float)
     sub.choices["label"].add_argument("outcome", choices=["catch", "false_alarm"])
@@ -254,11 +256,18 @@ def main(argv=None) -> int:
             return 1
         swarm.spawn(a.kind, params)
         swarm.save()
+    if a.cmd == "import-labels":
+        try:
+            done = swarm.import_pause_labels(Path(a.file).expanduser().read_text())
+        except (OSError, ValueError) as error:
+            print(f"Cannot import: {error}")
+            return 1
+        print(f"Applied {done} of the owner's verdicts from the console.")
     if a.cmd == "label":
         swarm.label(a.member, a.time, a.outcome)
     if a.cmd == "mark-attack":
         swarm.mark_attack(a.start, a.end, a.label)
-    if a.cmd in ("init", "status", "label", "mark-attack", "add"):
+    if a.cmd in ("init", "status", "label", "import-labels", "mark-attack", "add"):
         for m in swarm.members:
             print(f"{m.id:18} {m.status:8} score {m.score:+d} ({m.catches} caught, {m.false_alarms} false)  {m.public_key}")
         pending = swarm.pending()

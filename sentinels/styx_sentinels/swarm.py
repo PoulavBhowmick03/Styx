@@ -315,6 +315,23 @@ class Swarm:
                 self.review()
         self.save()
 
+    def import_pause_labels(self, text: str) -> int:
+        """The console's verdict file: {"vault", "pause_labels": [{"tx", "outcome"}]}. Each verdict is
+        matched to this swarm's pause by its transaction hash. Returns how many were applied."""
+        data = json.loads(text)
+        if not isinstance(data, dict) or data.get("vault") != self.vault or not isinstance(data.get("pause_labels"), list):
+            raise ValueError(f"not a labels file for {self.vault}")
+        done = 0
+        for entry in data["pause_labels"]:
+            if not isinstance(entry, dict) or entry.get("outcome") not in ("catch", "false_alarm"):
+                continue
+            for m in self.members:
+                for p in m.pauses:
+                    if p.tx and p.tx == entry.get("tx") and p.outcome != entry["outcome"]:
+                        self.label(m.id, p.time, entry["outcome"])
+                        done += 1
+        return done
+
     def label(self, member_id: str, pause_time: float, outcome: str) -> None:
         assert outcome in ("catch", "false_alarm")
         for m in self.members:

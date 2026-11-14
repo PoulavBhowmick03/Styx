@@ -240,3 +240,21 @@ def test_a_model_reply_with_no_content_is_a_clear_error_not_a_crash():
         assert False
     except RuntimeError as e:
         assert "no answer (finish_reason length)" in str(e)
+
+
+def test_the_consoles_verdicts_reach_the_parent_by_pause_transaction(tmp_path):
+    clock = Clock(1000)
+    s = swarm(tmp_path, clock)
+    for i in range(5):
+        clock.t = 1000 + 8 * i
+        s.cycle(Batch(payments=[pay(i, 1000 + 8 * i)]))
+    burst = s.members[0]
+    tx = burst.pauses[0].tx
+    file = json.dumps({"vault": VAULT, "pause_labels": [{"tx": tx, "outcome": "false_alarm"}, {"tx": "unknown", "outcome": "catch"},
+                                                         {"tx": tx, "outcome": "nonsense"}]})
+    assert s.import_pause_labels(file) == 1
+    assert burst.pauses[0].outcome == "false_alarm" and burst.score == -2 and burst.status == "retired"
+    assert s.import_pause_labels(file) == 0  # already applied
+    import pytest
+    with pytest.raises(ValueError):
+        s.import_pause_labels(json.dumps({"vault": "other.testnet", "pause_labels": []}))
