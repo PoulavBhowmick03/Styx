@@ -355,6 +355,12 @@ export function paymentsCsv(rows:EventRow[],names:Labels):string{
 // allowance), or deletes it. A sentinel cannot pay, unpause or change a rule; only the owner unpauses.
 export const SENTINEL_VERSION=3;
 export const MAX_SENTINELS=8;
+// The command that protects a vault with sentinels: no key material in it, the runner makes its own keys.
+export function sentinelQuickstart(vault:string):string{
+ return ['git clone https://github.com/PoulavBhowmick03/Styx && cd Styx',
+  'cargo build --release --manifest-path sdk/near/Cargo.toml',
+  `uv run --project sentinels styx-sentinels quickstart --vault ${account(vault)} --cli sdk/near/target/release/styx-near-vault`].join('\n');
+}
 export function sentinelKeys(keys:{keys:{public_key:string;access_key:{permission:any}}[]}):string[]{
  return keys.keys.filter(k=>{const m=typeof k.access_key.permission==='object'?k.access_key.permission.FunctionCall?.method_names:undefined;return Array.isArray(m) && m.length===1 && m[0]==='sentinel_pause';}).map(k=>k.public_key);
 }

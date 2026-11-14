@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,type EventRow } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,type EventRow } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -276,5 +276,17 @@ describe('sentinels',()=>{
   const eight=Array.from({length:8},(_,i)=>`k${i}`);
   expect(()=>sentinelChanges([{key:K,enabled:true}],eight)).toThrow('at most 8');
   expect(sentinelChanges([{key:'k0',enabled:false},{key:K,enabled:true}],eight).todo).toHaveLength(2);
+ });
+});
+
+describe('getting sentinels',()=>{
+ it('gives the commands for the loaded vault, with no key in them',()=>{
+  const cmd=sentinelQuickstart('lambda.styx-vaults.testnet');
+  expect(cmd).toContain('styx-sentinels quickstart --vault lambda.styx-vaults.testnet');
+  expect(cmd).toContain('cargo build --release --manifest-path sdk/near/Cargo.toml');
+  expect(cmd.split('\n')).toHaveLength(3);
+  expect(cmd).not.toMatch(/ed25519:|NEARAI_API_KEY=/);
+  expect(()=>sentinelQuickstart('bad; rm -rf /')).toThrow();
+  expect(()=>sentinelQuickstart('Lambda.styx-vaults.testnet')).toThrow();
  });
 });

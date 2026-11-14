@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -523,12 +523,13 @@ function sentinelPreview(changes:SentinelChange[]){
 const named_=(k:string)=>named(k,names);
 function renderSentinels(){
  const list=$('#sentinel-list'),status=$('#sentinel-status'),add=$<HTMLFormElement>('#sentinel-add'),pausedBox=$('#sentinel-paused');
- list.replaceChildren();pausedBox.replaceChildren();add.hidden=true;$('#sentinel-count').textContent='';
+ list.replaceChildren();pausedBox.replaceChildren();add.hidden=true;$('#sentinel-count').textContent='';$('#sentinel-get').hidden=true;
  if(!context || !facts){status.textContent='Read a vault to see its sentinels.';return;}
  if(facts.info.contract_version<SENTINEL_VERSION){status.textContent=`This vault runs contract version ${facts.info.contract_version}. Sentinels need version ${SENTINEL_VERSION}: create a new vault to use them.`;return;}
  if(sentinels===null){status.textContent='The sentinel list is unavailable from this RPC right now.';return;}
  // Keys on chain allowed only sentinel_pause; the contract's list is the authority, the access keys confirm it.
  const onChain=new Set(sentinelKeys(facts.keys));
+ $('#sentinel-get').hidden=false;$('#sentinel-get-cmd').textContent=sentinelQuickstart(context.vault);
  $('#sentinel-count').textContent=`${sentinels.length} of ${MAX_SENTINELS}`;
  status.textContent=sentinels.length?'Each key below may only pause this vault.':'No sentinels yet. Install keys from styx-sentinels init, or paste them below.';
  if(facts.info.paused){
@@ -552,6 +553,7 @@ function renderSentinels(){
  }));
  document.querySelectorAll<HTMLButtonElement>('#sentinels [data-write]').forEach(button=>button.disabled=!canWrite()||busy);
 }
+$('#sentinel-get-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#sentinel-get-cmd').textContent??'');toast('ok','Copied','Paste it in a terminal.');}catch{toast('error','Could not copy','Select the commands and copy them by hand.');}};
 $<HTMLFormElement>('#sentinel-add').onsubmit=e=>{e.preventDefault();try{
  const keys=parseSentinelKeys(readForm($<HTMLFormElement>('#sentinel-add')).keys??'');
  if(!keys.length) throw Error('Paste at least one sentinel public key');
