@@ -137,6 +137,7 @@ a payment the vault would reject.
 | --- | --- | --- | --- | --- |
 | Set limits, recipients, approvers, EVM chains | Yes | No | No (NEAR rejects the key) | No |
 | Pause, withdraw | Yes | No | No | No |
+| Pause only (a sentinel's key, contract version 3) | Installs and removes sentinels; unpauses | No | No | No |
 | Pay within limits, on NEAR or an enabled EVM chain | No | No | Yes | No |
 | Authorize one payment over the per-payment limit | No | Yes | No | No |
 | Open one sealed record | No | No | No | Yes |
@@ -158,8 +159,20 @@ the owner calls `configure_agent`.
 - The owner gives it a new allowance by disabling and enabling the agent: the vault deletes the key
   and adds it again. Setting the policy of an agent that is already enabled does not touch the key.
   This refill follows from the contract's code and has not been run on testnet yet.
-- A vault made by the factory has no other key. Its owner changes rules through the contract's owner
-  methods, signed by the owner's own account.
+- A vault made by the factory has no other key, except the sentinel keys its owner installs (below).
+  Its owner changes rules through the contract's owner methods, signed by the owner's own account.
+
+## Sentinels: watchers that can only pause
+
+A hijacked agent can drain a vault in small payments that each pass every limit. Sentinels are
+watcher agents (a burst rule, a concentration rule, and a judge model on NEAR AI Cloud). Each one
+reads the vault's payments and holds its own key, which NEAR allows to call only `sentinel_pause`:
+it cannot pay, unpause, withdraw or change a rule. A parent scores them: a pause during a marked
+attack is a catch, and a pause the owner reverses is a false alarm. It retires the noisy ones and
+spawns their next generation, and logs every decision. The owner console's Sentinels panel installs
+and removes their keys and shows each pause's reason. How it works, what is tested, and the drain
+demo: [`docs/near/SENTINELS.md`](docs/near/SENTINELS.md). Try the rehearsal with
+`uv run --project sentinels styx-sentinels rehearse`.
 
 ## What has run on testnet
 
@@ -187,6 +200,7 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 | MCP server with the agent's payment tools, and its Python seam | [`mcp-server`](mcp-server), [`sdk/py`](sdk/py) |
 | Approval page, owner console, relay | [`approval-page-near`](approval-page-near), [`owner-console-near`](owner-console-near), [`relay-near`](relay-near) |
 | NEAR AI Cloud agent runner, reviewer | [`agent-near-ai`](agent-near-ai), [`reviewer-near`](reviewer-near) |
+| Sentinel swarm (runner, parent, live page) | [`sentinels`](sentinels), [`sentinels-ui`](sentinels-ui) |
 | Quickstart, demos, attacks, model trials | [`scripts/near`](scripts/near) |
 | Plans, run records, submission drafts | [`docs/near`](docs/near) |
 
