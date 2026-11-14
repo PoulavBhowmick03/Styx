@@ -298,9 +298,11 @@ $('#payments-csv').onclick=()=>{
  toast('ok',`Exported ${n} payment${n===1?'':'s'}`,'From the indexed window shown on this page; older payments may be missing.');
 };
 $('#labels-export').onclick=()=>{if(!context){toast('error','Read a vault first');return;}download(`styx-names-${context.vault}.json`,labelsFile(context.vault,names));};
-$<HTMLInputElement>('#labels-import').onchange=async e=>{const input=e.target as HTMLInputElement,file=input.files?.[0];input.value='';if(!file) return;
- try{if(!context) throw Error('Read a vault first');const add=parseLabels(await file.text(),context.vault);names={...names,...add};saveLabels();await refreshKnown();renderPayments();toast('ok',`Imported ${Object.keys(add).length} names`);}
- catch(err){toast('error','Cannot import names',err instanceof Error?err.message:String(err));}};
+async function importNames(e:Event){const input=e.target as HTMLInputElement,file=input.files?.[0];input.value='';if(!file) return;
+ try{if(!context) throw Error('Read a vault first');const add=parseLabels(await file.text(),context.vault);names={...names,...add};saveLabels();await refreshKnown();renderPayments();renderSentinels();toast('ok',`Imported ${Object.keys(add).length} names`);}
+ catch(err){toast('error','Cannot import names',err instanceof Error?err.message:String(err));}}
+$<HTMLInputElement>('#labels-import').onchange=importNames;
+$<HTMLInputElement>('#sentinel-names-import').onchange=importNames;
 $('#disconnect').onclick=async()=>{try{await (await selector?.wallet())?.signOut();connected='';clearPlan();role();}catch(e){fail(e);}};
 async function load(){
  if(busy) return;clearPlan();facts=undefined;connected='';selector=undefined;unsubscribe?.();role();
@@ -523,12 +525,14 @@ function sentinelPreview(changes:SentinelChange[]){
 const named_=(k:string)=>named(k,names);
 function renderSentinels(){
  const list=$('#sentinel-list'),status=$('#sentinel-status'),add=$<HTMLFormElement>('#sentinel-add'),pausedBox=$('#sentinel-paused');
- list.replaceChildren();pausedBox.replaceChildren();add.hidden=true;$('#sentinel-count').textContent='';$('#sentinel-get').hidden=true;
+ list.replaceChildren();pausedBox.replaceChildren();add.hidden=true;$('#sentinel-count').textContent='';$('#sentinel-get').hidden=true;$('#sentinel-names').hidden=true;
  if(!context || !facts){status.textContent='Read a vault to see its sentinels.';return;}
  if(facts.info.contract_version<SENTINEL_VERSION){status.textContent=`This vault runs contract version ${facts.info.contract_version}. Sentinels need version ${SENTINEL_VERSION}: create a new vault to use them.`;return;}
  if(sentinels===null){status.textContent='The sentinel list is unavailable from this RPC right now.';return;}
  // Keys on chain allowed only sentinel_pause; the contract's list is the authority, the access keys confirm it.
  const onChain=new Set(sentinelKeys(facts.keys));
+ const unnamed=sentinels.filter(k=>!names[k]).length;
+ $('#sentinel-names').hidden=false;$('#sentinel-names-hint').textContent=unnamed?`${unnamed} of these keys ${unnamed===1?'has':'have'} no name here. A swarm names its keys: run styx-sentinels names --vault ${context.vault} and import the file.`:'Every key here has a name.';
  $('#sentinel-get').hidden=false;$('#sentinel-get-cmd').textContent=sentinelQuickstart(context.vault);
  $('#sentinel-count').textContent=`${sentinels.length} of ${MAX_SENTINELS}`;
  status.textContent=sentinels.length?'Each key below may only pause this vault.':'No sentinels yet. Install keys from styx-sentinels init, or paste them below.';

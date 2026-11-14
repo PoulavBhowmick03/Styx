@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,type EventRow } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,type EventRow } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -288,5 +288,10 @@ describe('getting sentinels',()=>{
   expect(cmd).not.toMatch(/ed25519:|NEARAI_API_KEY=/);
   expect(()=>sentinelQuickstart('bad; rm -rf /')).toThrow();
   expect(()=>sentinelQuickstart('Lambda.styx-vaults.testnet')).toThrow();
+ });
+ it('accepts the names file styx-sentinels names writes',()=>{
+  const file=JSON.stringify({vault:'lambda.styx-vaults.testnet',labels:{'ed25519:Cg1uVkD8hQymZyN9GzKWMsr49P2wjaQp9tLLbDVu5Xaw':'burst-g1','ed25519:999SwGbAyfw8rgCy4oSTzkEu1apfAc5xDkekc2YBoGgq':'concentration-g1'}},null,2)+'\n';
+  expect(Object.values(parseLabels(file,'lambda.styx-vaults.testnet')).sort()).toEqual(['burst-g1','concentration-g1']);
+  expect(()=>parseLabels(file,'other.styx-vaults.testnet')).toThrow();
  });
 });
