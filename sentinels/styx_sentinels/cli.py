@@ -3,7 +3,7 @@
   styx-sentinels init     --vault V [--no-judge]           spawn the swarm, write keys, print enable links
   styx-sentinels quickstart --vault V [--cli PATH]         init, print the one link, wait for the keys, then run
   styx-sentinels run      --vault V --cli PATH [--dry-run] watch the vault block by block, pause it when a sentinel asks
-  styx-sentinels serve    [--root DIR] [--port 8791]       sentinels as a service: many vaults, an HTTP API
+  styx-sentinels serve    [--root DIR] [--port 8795]       sentinels as a service: many vaults, an HTTP API
   styx-sentinels rehearse                                  the whole lifecycle on simulated payments
   styx-sentinels status   --vault V                        members, scores, owner actions
   styx-sentinels names    --vault V [--out FILE]           a names file for the console's Import names
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
     v = sub.add_parser("serve", help="watch many vaults; owners register theirs over HTTP")
     v.add_argument("--root", help="state and keys (default ~/.styx-near/sentinels-service)")
     v.add_argument("--host", default="127.0.0.1")
-    v.add_argument("--port", type=int, default=8791)
+    v.add_argument("--port", type=int, default=8795, help="8790 and 8791 are the swarm and rehearsal pages")
     v.add_argument("--cap", type=int, default=20, help="most vaults this service will watch")
     v.add_argument("--network", default="testnet", choices=["testnet", "mainnet"])
     v.add_argument("--cli", default="styx-near-vault", help="the Styx agent CLI that signs sentinel_pause")

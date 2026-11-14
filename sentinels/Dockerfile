@@ -20,5 +20,5 @@ COPY --from=cli /src/sdk/near/target/release/styx-near-vault /usr/local/bin/styx
 RUN useradd --create-home styx && mkdir -p /data && chown styx /data
 USER styx
 ENV STYX_SENTINEL_SERVICE_ROOT=/data/sentinels-service PYTHONUNBUFFERED=1
-EXPOSE 8791
-CMD ["styx-sentinels", "serve", "--host", "0.0.0.0", "--port", "8791", "--allow-origin", "https://styxco.xyz"]
+EXPOSE 8795
+CMD ["styx-sentinels", "serve", "--host", "0.0.0.0", "--port", "8795", "--allow-origin", "https://styxco.xyz"]
