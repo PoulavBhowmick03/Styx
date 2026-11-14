@@ -1,17 +1,40 @@
 # Styx
 
-**Contract-level spending caps and signed approvals for AI agents on NEAR, so an agent can't raise
-its own cap, and watcher agents that can only pause the vault when a drain starts.**
+**A NEAR vault that pays an AI agent's payments under limits the agent's key can't touch, a velocity
+cap in the contract that stops a drain of small payments, and a self-selecting swarm of watcher
+agents whose NEAR keys can only pause the vault.**
 
 [Try the agent's key, no wallet needed](https://styxco.xyz/try/) · [Open the app](https://styxco.xyz) · [Approval page](https://styxco.xyz/approval/) ·
 [Owner console](https://styxco.xyz/console/) · [Pause proof](https://styxco.xyz/proof/?vault=lambda.styx-vaults.testnet&network=testnet) · [Demo video](https://x.com/ishitaaaaw/status/2121588328910975470) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
 
-Built for the NEAR Hackathon (tracks: AI Security & Defense, Agent Economy, Autonomous Business).
+Built for the NEAR Hackathon (tracks: AI Security & Defense, Swarms, Agent Economy, Autonomous Business).
 Styx began at ETHGlobal Mumbai (5 to 7 Nov 2026) on another chain. That code was removed from this
 repository's tree on 13 Nov 2026 and is only in its git history; everything in the tree is the NEAR
 build, started on 12 Nov 2026 ([HACKATHON.md](https://nearhackathon.com/HACKATHON.md) Q-002). Everything done
 during the hackathon, against the last pre-hackathon commit:
-[`a0e4fb2...main`](https://github.com/PoulavBhowmick03/Styx/compare/a0e4fb2...main) (Q-003).
+[`a0e4fb2...main`](https://github.com/PoulavBhowmick03/Styx/compare/a0e4fb2...main) (Q-003). The
+same boundary is tagged: `pre-hackathon` (`a0e4fb2`) and `hackathon-submission` (the submitted commit).
+
+## See it work in two minutes, without a wallet
+
+1. **The agent's key is refused by NEAR itself.** At [styxco.xyz/try](https://styxco.xyz/try/), send
+   calls with a real agent key: `pay` works, and every owner method (raise its limit, pause,
+   withdraw) is rejected by the network before the contract runs.
+2. **A sentinel paused a live drain.** [styxco.xyz/proof](https://styxco.xyz/proof/?vault=lambda.styx-vaults.testnet&network=testnet)
+   reads `lambda.styx-vaults.testnet`'s receipts. It shows each pause, its reason, the payments before
+   it, and the seconds from the last payment to the pause.
+3. **The velocity cap refused a drain.** In [the console](https://styxco.xyz/console/?vault=velocity.styx-vaults.testnet&network=testnet),
+   `velocity.styx-vaults.testnet` reads "At most 4 payments in any 5 min". Its drain's 5th payment
+   failed on chain with `VelocityLimit`
+   ([`47D6Szb4…`](https://testnet.nearblocks.io/txns/47D6Szb4xDoL8LpeV4ancCisZyvVY8awgyLyjT9RWVEQ)).
+4. **The swarm evolving, offline:** `uv run --project sentinels styx-sentinels rehearse`. On simulated
+   payments, a sentinel is retired after a false alarm, its child gets looser, two missed leaks make
+   the next generation stricter, and that generation catches the drain. The page opens on
+   `127.0.0.1:8790`.
+5. **Every test, one command:** `scripts/verify.sh` runs the contract (unit, audit reproductions,
+   NEAR sandbox), the factory, the agent CLI, the MCP server, the sentinels runner, the console (with
+   browser smokes), the swarm page, the relay and the approval page. It needs no keys and no testnet
+   account.
 
 ## Using Styx, step by step
 
@@ -316,11 +339,14 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 
 - Sentinels watch only while something runs them: the owner's own machine, or the hosted testnet
   service at `styx-sentinels-near.fly.dev`. If neither is running, nothing pauses the vault on their
-  behalf. The velocity limit, once set, holds on chain either way.
+  behalf. The velocity limit is the always-on part: a circuit breaker in the contract itself, so a
+  drain is capped even when no sentinel is watching. Sentinels add what a fixed rule can't: they
+  adapt, catch slower patterns, and are selected by their record.
 - The burst sentinel pauses after the payment that crosses its threshold, so that many payments
   settle first (5 in the testnet comparison).
 - A reverted or never-broadcast EVM transfer still counts against the daily limit: the vault charges
-  its counters when it signs.
+  its counters when it signs. This fails closed: the vault can't see an EVM chain's outcome, so a
+  failure can only leave the agent under its limit, never over it.
 - One EVM signature request is in flight at a time, across all chains.
 - The agent runtime (MCP server, CLI, key) runs outside any TEE; only the model's inference is
   attested.

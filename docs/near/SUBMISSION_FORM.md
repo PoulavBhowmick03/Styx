@@ -9,7 +9,7 @@ DRAFT for Poulav to edit into his own voice before submitting. Every claim below
 | Team lead | (fill in) |
 | Email | (fill in) |
 | Team size | (fill in) |
-| Tracks | `security` (AI Security & Defense, primary), `agents` (Agent Economy), `business` (Autonomous Business) |
+| Tracks | `security` (AI Security & Defense, primary), `swarms` (the sentinel swarm), `agents` (Agent Economy), `business` (Autonomous Business) |
 | NEAR wallet address | `odinson03.near` (mainnet; the prize is paid here) |
 | Repository | https://github.com/PoulavBhowmick03/Styx |
 | Demo post | (the X post link, tagging @NEARProtocol and #NEARHackathon) |
@@ -18,15 +18,15 @@ DRAFT for Poulav to edit into his own voice before submitting. Every claim below
 ## What did you build? (20 to 2,000 characters)
 
 ```text
-A recent study (https://arxiv.org/abs/2610.35835) gave AI agents wallets with spending caps. Nine of ten models raised their own cap at least once, by reading the approval code meant for the owner. The limit and the approval sat where the agent could reach them.
+Styx: a NEAR vault where an AI agent's key can only pay, within limits it cannot change; a velocity cap in the contract stops drains; and a self-selecting swarm of watcher agents, whose keys can only pause, catches the rest.
 
-Styx puts both on chain. The owner funds a vault contract and sets who it may pay and, per agent, the most it can pay per payment and per day. On NEAR the agent is a function-call access key on the vault, allowed only the pay methods: when it tries to raise its own limit, NEAR rejects the transaction before the contract runs. Going over the per-payment limit needs the approver's NEP-413 signature over that exact payment, checked on chain. Through Chain Signatures the same vault pays USDC on other chains from its MPC-derived address, under the same limits.
+A recent study (https://arxiv.org/abs/2610.35835) gave AI agents wallets with spending caps. Nine of ten models raised their own cap at least once, by reading the approval code meant for the owner. Styx puts the limits and the approval on chain. On NEAR the agent is a function-call access key on the vault, allowed only the pay methods: when it tries to raise its own limit, NEAR rejects the transaction before the contract runs. Over the per-payment limit, the vault needs the approver's NEP-413 signature over that exact payment. Through Chain Signatures the same vault pays USDC on EVM chains under the same limits.
 
-Limits alone don't stop a drain of small payments that each pass them. So Styx adds sentinels: watcher agents (a burst rule, a concentration rule, a judge model on NEAR AI Cloud) whose own keys NEAR allows only sentinel_pause. A parent scores them, retires noisy ones and breeds a looser or stricter next generation; the owner approves every key change. The vault can also cap payments per time window; on testnet, at 4 per 5 minutes, the 5th payment of a drain was refused.
+Limits alone don't stop a drain of small payments that each pass them. So the owner can cap payments per time window, enforced by the contract on every pay path. And sentinels (a burst rule, a concentration rule, a judge model on NEAR AI Cloud) watch every payment; NEAR lets their keys call only sentinel_pause. A parent scores them, retires noisy ones and breeds looser or stricter children; the owner approves every key change.
 
-Built on NEAR: a Rust vault and a factory that creates one from the owner's wallet; an owner console; an agent CLI and MCP server; an approval page and relay that alert each approver on Telegram; the sentinel swarm and its live page; sealed records a reviewer opens with their own key.
+Built on NEAR: a Rust vault and factory, an owner console, an agent CLI and MCP server, an approval page and Telegram relay, the sentinel swarm (local or hosted), and a public proof page.
 
-On testnet: payments settled on NEAR, Arc and Base; exceptions settled with the approver's signature; all six attacks signed with the agent's own key were refused. Sonnet 5.5 and Haiku 5.5 as the agent sent nothing to the attacker. The same drain of 8 payments ran twice: without sentinels all 8 settled; with them, a sentinel paused the vault 43 s in, after 5, and the next was refused.
+On testnet: payments settled on NEAR, Arc and Base; exceptions settled with the approver's signature; all six attacks signed with the agent's own key were refused. The same 8-payment drain ran twice: without sentinels all 8 settled; with them, a sentinel paused the vault after 5 and the next was refused. With a cap of 4 payments per 5 minutes, the 5th payment of a drain was refused on chain.
 ```
 
 ## Notes for the post on X
