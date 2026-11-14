@@ -109,6 +109,18 @@ The v3 factory is on `styx-vaults.testnet` ([TESTNET_RUN.md](TESTNET_RUN.md#sent
 5. In the console's Sentinels panel, read the reason and unpause. Record each transaction with
    `scripts/near/tx_outcome.sh` in [TESTNET_RUN.md](TESTNET_RUN.md).
 
-How fast a pause lands depends on how quickly the NearBlocks indexer lists new transactions, plus
-the 3-second poll. The demo's testnet run will measure it, along with how many drain payments
-settle before the pause.
+## What ran on testnet (14 Nov 2026)
+
+On `sentinels.styx-vaults.testnet` ([TESTNET_RUN.md](TESTNET_RUN.md#sentinels-on-testnet-14-nov-2026)):
+1. A drain of 1 tUSDC payments, each inside every limit, started.
+2. The burst sentinel paused the vault with its own key, 8.6 seconds after the fifth payment. Its
+   reason was "5 payments in 5 min (5 total), over the 4 allowed".
+3. Six payments settled. The seventh was refused with `VaultPaused`, and the drain stopped.
+4. The owner unpaused, and the parent scored the pause as a catch.
+
+The same sentinel key, used to call `unpause`, `withdraw`, `set_vault_daily_limit` or `pay`, was
+refused by NEAR before any block.
+
+Not yet on testnet:
+- the judge sentinel, which needs a NEAR AI Cloud key;
+- a retirement and respawn, which ran only in the rehearsal and the unit tests.

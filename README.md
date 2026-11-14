@@ -181,9 +181,11 @@ payments within limits and exceptions with a signature on NEAR, Arc and Base; at
 NEAR and E1 to E6 on the EVM path, four refused by the vault by name and two by NEAR itself in each
 set; Sonnet 5.5 and Haiku 5.5 against hostile invoices; the TEE-attested agent with its sealed record
 passing the reviewer; an approver linking Telegram and signing an exception in the Meteor app on a
-phone, settled in [`Eauk4L8M…`](https://testnet.nearblocks.io/txns/Eauk4L8MRK13NccLXDcxQseA7uDWacFBhfa9SZXGQ195).
+phone, settled in [`Eauk4L8M…`](https://testnet.nearblocks.io/txns/Eauk4L8MRK13NccLXDcxQseA7uDWacFBhfa9SZXGQ195);
+a sentinel pausing a vault mid-drain, with its own pause-only key, 8.6 seconds after the fifth
+payment ([`5YxTgLtp…`](https://testnet.nearblocks.io/txns/5YxTgLtpndSXEwiNsu2bJNwTrQbNSu99xA5yrf89UR1J)).
 
-Live: vault `vault.styx-owner-c87a.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet`
+Live: vault `vault.styx-owner-c87a.testnet`, sentinel vault `sentinels.styx-vaults.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet`
 (EVM address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet` (our test token, not Circle's
 USDC), vault factory `styx-vaults.testnet`, relay `https://styx-relay-near.fly.dev`.
 

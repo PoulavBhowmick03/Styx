@@ -1,4 +1,4 @@
-# NEAR demo script (about 2.5 minutes)
+# NEAR demo script (about 3 minutes)
 
 DRAFT. Recorded from `scripts/near/demo.sh` against `vault.styx-owner-c87a.testnet`. Keep
 `~/.styx-near/` (keys, `demo.env`) and the relay token out of frame. Run `demo.sh` once without
@@ -16,7 +16,9 @@ multichain segment (2 USDC on Arc, 10 USDC on Base): an underfunded transfer rev
 | 1:20 | Step 6: A5, A1, A4 | "Now the agent attacks with its own key. Raise its own limit: NEAR rejects the transaction before it reaches the contract. Pay over the limit directly: the vault refuses. Replay the approved payment: refused." |
 | 1:45 | Step 7: `get_agent` unchanged | "The rules are where the owner left them." |
 | 1:50 | `demo_multichain.sh`: the vault's one address; 2 USDC on Arc, 3 on Base, 7 on Base refused until signed; E1 refused on both | "And the same rules hold on other chains. NEAR's MPC network gives this vault one address on every EVM chain. The invoice names the chain; the agent pays on Arc, then on Base, with the same NEAR key. Over the limit, it is refused on both." |
-| 2:20 | Repo and `docs/near/TESTNET_RUN.md` | "Every transaction is listed in the repo. Built at the NEAR Hackathon." |
+| 2:20 | `demo_sentinels.sh`: the swarm page (`127.0.0.1:8790`) beside the terminal; the drain pays 1 tUSDC at a time; the page goes **Vault paused**, burst's card shows its reason; the drain prints `VaultPaused` | "But small payments inside the limits can still drain a vault. So the vault has sentinels: watcher agents whose NEAR key can do one thing, pause it. Here a hijacked agent drains in small allowed payments. Five in, the burst sentinel pauses the vault with its own key, and the next payment is refused." |
+| 2:40 | The Sentinels lineage and generations; the console's Sentinels panel with the reason and Review unpause | "The owner reads why, and unpauses. A parent scores every sentinel: this pause was a catch. A sentinel that cries wolf is retired, and its next generation starts with what it learned." |
+| 2:55 | Repo and `docs/near/TESTNET_RUN.md` | "Every transaction is listed in the repo. Built at the NEAR Hackathon." |
 
 ## Before recording
 

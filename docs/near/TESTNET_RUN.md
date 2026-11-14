@@ -228,3 +228,58 @@ Finalized RPC reads matched both local build hashes:
 The CLI release build also passed. This verifies deployment of the factory and its embedded
 sentinel vault code. Existing vaults keep their prior code. No fresh sentinel vault, key setup,
 or live drain/pause demo was run in this step; those remain for the owner and task B runner.
+
+## Sentinels on testnet (14 Nov 2026)
+
+A fresh version 3 vault, `sentinels.styx-vaults.testnet`, created from the v3 factory and set up by
+its owner `styx-owner-c87a.testnet` with the near CLI. Every transaction below was re-read with
+`scripts/near/tx_outcome.sh` through `https://test.rpc.fastnear.com`.
+
+**Setup**
+
+| Step | Transaction | Outcome |
+| --- | --- | --- |
+| `create_vault` (4.2 NEAR) | [`FDVShWPp…`](https://testnet.nearblocks.io/txns/FDVShWPpZ2NfwKZB8ugrx331DkZsGWAqmSgHQprMVTET) | every receipt succeeded |
+| `storage_deposit`, `mint` 100 tUSDC | [`3ucxHSSu…`](https://testnet.nearblocks.io/txns/3ucxHSSuhgkC7MjR7JoiSsWzUz6J7Uhnjv5Z2hp946Rj), [`EVSvq98s…`](https://testnet.nearblocks.io/txns/EVSvq98s15YKBYeqCsCc85JXnwA2jBMEY6EMYyX11CwF) | succeeded |
+| `set_vault_daily_limit` 500, `set_recipient` vendor-a | [`7zYc3Mok…`](https://testnet.nearblocks.io/txns/7zYc3MokcQR6YsUYP5Syrp7rEcXmhEGD13iwx77gEgg1), [`C633tWBs…`](https://testnet.nearblocks.io/txns/C633tWBso7PackNaW1mYNxXCj3uBwbbyaTTRhBX7gwPy) | succeeded |
+| `configure_agent` (10 a payment, 100 a day) | [`CJCUy5Q4…`](https://testnet.nearblocks.io/txns/CJCUy5Q4Q6QjzXnsCFNmPKZjDW8iVsv7KLNc9zUABaDJ) | every receipt succeeded |
+| `set_sentinel` burst-g1, concentration-g1, judge-g1 | [`9hbh2C9Q…`](https://testnet.nearblocks.io/txns/9hbh2C9Q2nJAJYe5wAC6pXVPv5f36qBu85azQWwuHJfw), [`2HHXu596…`](https://testnet.nearblocks.io/txns/2HHXu5965pxaXWo2QyW1UnakRBpP5JHs53YEkycSAP6q), [`C4PkUJKv…`](https://testnet.nearblocks.io/txns/C4PkUJKvkff3qEfuUcRHbGfiYQDaJGk9Szfi5fzyjxmh) | every receipt succeeded |
+
+After the three `set_sentinel` calls the vault's access-key list held three keys allowed only
+`sentinel_pause`, each with a 0.05 NEAR allowance, beside the agent's key (the six pay methods and
+`post_record`, 0.25 NEAR).
+
+**What a sentinel's key cannot do.** Signed with the judge sentinel's key, as the vault account:
+`unpause`, `withdraw`, `set_vault_daily_limit` and `pay` were each refused by NEAR ("Transaction
+method name <…> isn't allowed by the access key"), and a 1 NEAR transfer was refused for exceeding
+the key's 0.05 NEAR allowance. None reached a block.
+
+**Two failed runs, two fixes.**
+1. `rpc.testnet.near.org` answered 429 (retry after 600 s) after four drain payments. The demo and
+   `drain_attack.sh` now use FastNEAR's testnet RPC, and the watcher lists transactions through
+   FastNEAR's transaction API (NearBlocks as fallback).
+2. The burst sentinel fired at the fifth payment ("8 payments in 5 min (8 total), over the 4
+   allowed"), but NEAR refused its pause: the CLI signed with 100 Tgas, priced at 0.1009 NEAR worst
+   case, over the key's 0.05 NEAR allowance. The CLI now signs `sentinel_pause` with 20 Tgas.
+   NEEDS POULAV'S REVIEW (commit `90399ca`). Eleven drain payments of 1 tUSDC settled in that run before it was stopped by hand (four in the first).
+
+**The run** (third attempt, `scripts/near/demo_sentinels.sh 20 1`, after both fixes). The swarm
+watched the vault, read every key with `get_sentinels`, and `drain_attack.sh` started paying
+`vendor-a` 1 tUSDC at a time, each payment inside every limit:
+
+| Block | What | Transaction |
+| --- | --- | --- |
+| 277633320 | drain payment 1 | [`Huswt3yL…`](https://testnet.nearblocks.io/txns/Huswt3yLha3cp7G5CUGxnYSY1kuHKLFkkGeCfLkPctQM) |
+| | payments 2 to 4 | [`AoP2tgqU…`](https://testnet.nearblocks.io/txns/AoP2tgqUaoyzJJJdgGM3HeABZFAs6ewTRpSUwx72MYTA), [`Cbd1NpSb…`](https://testnet.nearblocks.io/txns/Cbd1NpSb3LWG9dPvjSNPpq3LdvN6RBtpMt88J3NaYDga), [`GKJ7usm4…`](https://testnet.nearblocks.io/txns/GKJ7usm4PrNt9NX2eH9UZVG15P53jdgA5YxLxaUEfdmn) |
+| 277633381 | payment 5 | [`4cGmffAY…`](https://testnet.nearblocks.io/txns/4cGmffAYioiwuNwoAu1xr8CmJPmomwxHKTenaGYJvg2c) |
+| 277633395 | payment 6, already in flight | [`biMbghK5…`](https://testnet.nearblocks.io/txns/biMbghK5uBGxK6HJjRvdi1GuQW8b4qhhEFtt9nqhASt) |
+| 277633395 | **`sentinel_pause` by burst-g1**, signed with its own key | [`5YxTgLtp…`](https://testnet.nearblocks.io/txns/5YxTgLtpndSXEwiNsu2bJNwTrQbNSu99xA5yrf89UR1J) |
+| | payment 7: refused by the vault, `VaultPaused`; the drain stopped | none sent |
+| 277633438 | owner `unpause` | [`2CaaH4sW…`](https://testnet.nearblocks.io/txns/2CaaH4sWCQ4gcCP28T6YiPqiXHiyDnQnMJ7XxEffE2tv) |
+
+The pause's log: `sentinel_paused` with `sentinel` = burst-g1's key, `reason` "[burst-g1] 5 payments in
+5 min (5 total), over the 4 allowed", `vault_day_spent` 21000000. It burned 2.3 Tgas. It landed 8.6
+seconds after payment 5's block; six payments (6 tUSDC) settled, against the agent's 100 a day. The
+parent settled the pause as a **catch** (inside the drain's attack marker) and logged it in the
+lineage. The judge sentinel did not run (no NEAR AI key in this run). Retiring and respawning a
+sentinel ran only in the rehearsal and unit tests, not on testnet.
