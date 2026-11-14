@@ -36,3 +36,11 @@ next approver replaces the earlier request: a late signature from the first appr
 ```bash
 uv run pytest
 ```
+
+**A paused vault.** When a sentinel or the owner has paused the vault, every pay tool answers
+`POLICY_LIMIT` with who paused it (the sentinel's key, or the owner), when, and the sentinel's reason,
+read from the vault's own `sentinel_paused` log through FastNEAR's transaction API
+(`STYX_NEAR_VAULT`; `STYX_VAULT_INDEXER_URL` overrides the indexer). The reason is quoted as data and
+capped at 280 bytes, and `next_action` tells the agent to stop: no retries, no split payments; only the
+owner can unpause. Lookups are cached for 30 s; if the lookup fails, the refusal still says the vault
+is paused.

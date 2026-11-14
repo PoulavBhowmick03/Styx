@@ -171,12 +171,21 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
         "with the same payment_id."
     ))
 
+    from styx_mcp.pause import PauseLookup, explain
+    pause_lookup = PauseLookup(os.environ.get("STYX_NEAR_VAULT"), os.environ.get("STYX_NEAR_NETWORK", "testnet"),
+                               indexer=os.environ.get("STYX_VAULT_INDEXER_URL"))
+
     def add_next(response: dict[str, Any]) -> dict[str, Any]:
         """Errors also say what to do next, keyed by code, so a model need not guess."""
         error = response.get("error")
         if isinstance(error, dict) and isinstance(error.get("message"), str):
             # The model sees file names inside its vault directory, never absolute paths.
             error["message"] = _ABSOLUTE_PATH.sub(r"\1", error["message"])
+            if "VaultPaused" in error["message"]:
+                # A paused vault: say who paused it and why, and that only the owner can unpause.
+                pause, known = pause_lookup()
+                error["message"], error["next_action"] = explain(pause if known else None)
+                error["paused"] = {k: v for k, v in (pause or {}).items() if k in ("by", "sentinel", "reason", "tx", "at")} or {"by": "unknown"}
         if isinstance(error, dict) and "next_action" not in error:
             message = str(error.get("message", ""))
             hint = next((h for prefix, h in _NEXT_FOR_MESSAGE if message.startswith(prefix)), None)

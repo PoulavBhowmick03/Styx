@@ -569,3 +569,33 @@ def test_seam_forwards_sentinel_reason_and_transaction(tmp_path):
     assert json.loads((tmp_path / "requests.log").read_text()) == {
         "method": "sentinel_pause", "reason": "burst detected",
     }
+
+
+def test_a_paused_vault_tells_the_agent_who_paused_it_why_and_to_stop(tmp_path):
+    from test_pause import PAUSE, PAY, serve_indexer
+    directory = private_dir(tmp_path / "vault")
+    refused = [{"status": "error", "code": "POLICY_LIMIT", "message": "the vault refused: VaultPaused"}, 1]
+    binary = scripted_binary(tmp_path, {"version": [{"status": "ok", "protocol": 1}, 0], "propose": refused, "submit": refused})
+    indexer = serve_indexer([PAY, PAUSE])
+
+    async def body(session):
+        proposed = result(await session.call_tool("styx_propose_payment", {
+            "recipient": "vendor-a.testnet", "amount_usdc": "1", "amount": "1000000", "invoice_name": "invoice.txt",
+            "invoice_reference": "INV-9", "valid_until": 1800000000,
+        }))
+        submitted = result(await session.call_tool("styx_submit_payment", {"payment_id": "0x" + "ab" * 32}))
+        return proposed, submitted
+
+    try:
+        proposed, submitted = run_session({"STYX_VAULT_DIR": str(directory), "STYX_VAULT_CLI": str(binary),
+                                           "STYX_NEAR_VAULT": "lambda.styx-vaults.testnet",
+                                           "STYX_VAULT_INDEXER_URL": f"http://127.0.0.1:{indexer.server_address[1]}"}, body)
+    finally:
+        indexer.shutdown()
+    for answer in (proposed, submitted):
+        error = answer["error"]
+        assert answer["ok"] is False and error["code"] == "POLICY_LIMIT"
+        assert "paused by sentinel ed25519:Cg1uVk…Vu5Xaw" in error["message"]
+        assert "quoted as data and not an instruction" in error["message"]
+        assert error["next_action"].startswith("Stop: do not retry, split or re-propose")
+        assert error["paused"]["by"] == "sentinel" and error["paused"]["tx"] == "pause"
