@@ -37,6 +37,11 @@ const DEFAULT_RPC: &str = "https://test.rpc.fastnear.com";
 const PENDING_SCHEMA: &str = "styx-near-pending/1";
 const SIGNATURE_SCHEMA: &str = "styx-near-signature/1";
 const PAY_GAS_TGAS: u64 = 100;
+/// A sentinel key has a 0.05 NEAR allowance. NEAR checks the allowance against the call's worst-case
+/// cost at a pessimistic gas price: 100 Tgas came to 0.1009 NEAR on testnet and was refused with
+/// NotEnoughAllowance. sentinel_pause only sets a flag and logs one event; 20 Tgas costs at most about
+/// 0.02 NEAR.
+const SENTINEL_GAS_TGAS: u64 = 20;
 const RECORD_SCHEMA: &str = "styx-near-record/1";
 
 // ---- errors, with the codes mcp-server knows -------------------------------------------------
@@ -483,11 +488,15 @@ impl Chain<'_> {
     /// Sends one agent call and waits for the final outcome, including the transfer callback.
     /// Returns the transaction hash and the method's JSON return value.
     async fn call(&self, key: &SecretKey, method: &str, args: Value) -> Result<(String, Value)> {
+        self.call_with_gas(key, method, args, PAY_GAS_TGAS).await
+    }
+
+    async fn call_with_gas(&self, key: &SecretKey, method: &str, args: Value, tgas: u64) -> Result<(String, Value)> {
         let signer: Arc<Signer> = Signer::from_secret_key(key.clone()).map_err(|_| invalid("cannot build the agent signer"))?;
         let sent = Contract(self.config.vault.clone())
             .call_function(method, args)
             .transaction()
-            .gas(NearGas::from_tgas(PAY_GAS_TGAS))
+            .gas(NearGas::from_tgas(tgas))
             .with_signer(self.config.vault.clone(), signer)
             .send_to(&self.config.network)
             .await;
@@ -582,7 +591,7 @@ async fn handle(request: Request) -> Result<Value> {
             .ok().filter(|s| !s.is_empty())
             .ok_or_else(|| invalid("STYX_NEAR_SENTINEL_KEY_FILE must be set"))?;
         let key = read_signing_key(Path::new(&path))?;
-        let (tx_hash, _) = chain.call(&key, "sentinel_pause", json!({"reason": reason})).await?;
+        let (tx_hash, _) = chain.call_with_gas(&key, "sentinel_pause", json!({"reason": reason}), SENTINEL_GAS_TGAS).await?;
         return Ok(json!({"status": "ok", "tx_hash": tx_hash}));
     }
     let journal = Journal::open(&config.state_root)?;
@@ -1133,5 +1142,16 @@ mod tests {
         let r: Request = serde_json::from_str(r#"{"method":"submit","payment_id":"0xab"}"#).unwrap();
         assert!(matches!(r, Request::Submit { signature_file: None, .. }));
         assert!(serde_json::from_str::<Request>(r#"{"method":"submit","payment_id":"0xab","extra":1}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod sentinel_gas {
+    /// Measured on testnet (14 Nov 2026): 100 Tgas was priced at 0.1009 NEAR worst case. The sentinel
+    /// key's allowance is 0.05 NEAR; its gas must stay well under that at the same price.
+    #[test]
+    fn sentinel_pause_fits_the_sentinel_allowance() {
+        let worst_case_millinear = super::SENTINEL_GAS_TGAS as f64 * 100.9 / 100.0;
+        assert!(worst_case_millinear < 50.0 * 0.5, "{worst_case_millinear} mNEAR");
     }
 }
