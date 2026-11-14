@@ -38,3 +38,5 @@ artifacts/
 
 # Test reports
 *-results.xml
+
+*.egg-info/
