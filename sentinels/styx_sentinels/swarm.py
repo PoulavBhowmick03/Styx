@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .events import Batch, Payment, PauseEvent
+from .judge import summarize
 from .rules import Burst, Concentration, Verdict
 
 RETIRE_SCORE = -2
@@ -44,6 +45,7 @@ class Member:
     pauses: list[Pause] = field(default_factory=list)
     born: float = 0.0
     retired: float | None = None
+    verdicts: list[dict] = field(default_factory=list)  # a judge's recent answers, with what the client checked
 
     @property
     def catches(self) -> int:
@@ -257,6 +259,22 @@ class Swarm:
                     p.outcome = "false_alarm"
                     self.log("settled", member=m.id, pause_time=p.time, outcome="false_alarm", why="owner unpaused, no attack marked")
 
+    def record_verdict(self, m: Member, verdict: Verdict, now: float) -> dict | None:
+        """A judge answered: keep a short summary in the state and the full evidence in a file under the
+        swarm's home (evidence/<member>-<time>.json), served by the page at /api/evidence/<file>."""
+        evidence = verdict.evidence.get("model_evidence")
+        if not isinstance(evidence, dict) or not evidence:
+            return None
+        name = f"{m.id}-{int(now * 1000)}.json"
+        folder = self.home / "evidence"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_text(json.dumps({"member": m.id, "time": now, "pause": verdict.pause, "reason": verdict.reason,
+                                               "evidence": evidence}, indent=1, default=str))
+        entry = {"time": now, "pause": verdict.pause, "reason": verdict.reason, **summarize(evidence), "file": name}
+        m.verdicts.append(entry)
+        del m.verdicts[:-10]
+        return entry
+
     def watch(self) -> list[tuple[Member, Verdict]]:
         """Each active sentinel judges the history. The first that asks pauses the vault."""
         fired = []
@@ -272,6 +290,7 @@ class Swarm:
             except ValueError:
                 continue  # e.g. a judge with no model configured: it waits, it is not removed
             verdict = detector.judge(unreviewed, now, self.daily_limit)
+            entry = self.record_verdict(m, verdict, now) if m.kind == "judge" and getattr(detector, "fresh", False) else None
             if not verdict.pause:
                 continue
             try:
@@ -282,7 +301,9 @@ class Swarm:
             m.pauses.append(Pause(time=now, reason=verdict.reason, tx=tx))
             self.paused = True
             self.events.append({"type": "sentinel_pause_sent", "time": now, "tx": tx, "sentinel": m.id, "reason": verdict.reason})
-            self.log("pause", member=m.id, reason=verdict.reason, tx=tx, evidence={k: v for k, v in verdict.evidence.items() if k != "model_evidence"})
+            model = {"model": entry["model"], "verified": entry["verified"], "evidence_file": entry["file"]} if entry else {}
+            self.log("pause", member=m.id, reason=verdict.reason, tx=tx, **model,
+                     evidence={k: v for k, v in verdict.evidence.items() if k != "model_evidence"})
             fired.append((m, verdict))
             break  # one pause is enough
         return fired

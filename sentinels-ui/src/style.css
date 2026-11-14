@@ -52,3 +52,5 @@
 .empty { color: var(--fore-2); padding: 0.8rem 1rem; margin: 0; }
 .sign-all { display: inline-block; margin: 0.6rem 0 0.4rem; padding: 0.55rem 0.9rem; border: 1px solid var(--ember); border-radius: var(--radius); color: var(--fore); text-decoration: none; font-size: 0.86rem; }
 .sign-all:hover { background: var(--ember); color: var(--ground); }
+
+.verdicts{margin:.6rem 0 0}.verdict{border-top:1px solid var(--line,#8884);padding:.45rem 0}.verdict p{margin:.15rem 0}.ok-line{color:var(--ok,#1a7f4b)}.bad-line{color:var(--bad,#b42318)}

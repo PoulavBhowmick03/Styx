@@ -3,6 +3,7 @@ lineage), POST /api/label and /api/attack (the owner settles pauses). It never s
 from __future__ import annotations
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -46,6 +47,12 @@ def serve(swarm: Swarm, port: int, lock: threading.Lock, extra: Callable[[], dic
                     state["lineage"] = swarm.lineage()[-200:]
                     state.update(extra() if extra else {})
                 return self.send(200, json.dumps(state).encode(), "application/json")
+            named = re.fullmatch(r"/api/evidence/([A-Za-z0-9._-]+\.json)", self.path)
+            if named:  # a judge verdict's full evidence; the name cannot leave the evidence folder
+                file = swarm.home / "evidence" / named.group(1)
+                if file.is_file():
+                    return self.send(200, file.read_bytes(), "application/json")
+                return self.send(404, b"not found", "text/plain")
             found = static(self.path)
             if found:
                 return self.send(200, *found)

@@ -1,5 +1,5 @@
 // Pure rendering: state in, HTML out. Every value from the runner is escaped.
-import type { LineageEntry, Member, State } from './types';
+import type { LineageEntry, Member, State, Verdict } from './types';
 
 export const esc=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export const clock=(t:number)=>new Date(t*1000).toISOString().slice(11,19);
@@ -7,6 +7,27 @@ export const tokens=(base:number)=>(base/1e6).toLocaleString('en-US',{maximumFra
 const words=(s:string)=>s.replace(/_/g,' ');
 
 export function mode(s:State):string{return s.rehearsal?'Rehearsal: simulated payments':s.dry_run?'Dry run: pauses not sent':`Sentinels on ${s.network??'testnet'}`;}
+
+const short=(s:string,n=14)=>s.length>n+2?`${s.slice(0,n)}…`:s;
+
+/** What the judge answered and what the NEAR AI client checked, in words. The full evidence is a file the runner serves. */
+export function verdictBlock(v:Verdict):string{
+ const checked=v.verified
+  ?`Verified: the response signature was checked against the attested ${v.signature_kind==='gateway'?'gateway':'model'} signer${v.tls_bound?', on the TLS connection the attestation bound':''}.`
+  :'Not verified: this answer carries no checked signature.';
+ const checks=v.checks.length?`Checks run: ${v.checks.map(esc).join(', ')}.`:'';
+ return `<div class="verdict"><p class="meta">${clock(v.time)} · ${v.pause?'Asked to pause':'No pause'} · model ${esc(v.model)}</p>
+ <p>${esc(v.reason||'No reason given.')}</p>
+ <p class="meta ${v.verified?'ok-line':'bad-line'}">${esc(checked)}</p>
+ <p class="meta">Signer ${esc(short(v.signing_address,12))} · chat ${esc(short(v.chat_id,12))}. ${checks} <a href="./api/evidence/${esc(v.file)}" target="_blank" rel="noopener noreferrer">Full evidence (JSON)</a></p></div>`;
+}
+
+export function judgeBlock(m:Member):string{
+ if(m.kind!=='judge') return '';
+ const list=(m.verdicts??[]).slice(-3).reverse();
+ if(!list.length) return '<p class="meta quiet">The judge has not answered yet. It asks the model when a new payment lands.</p>';
+ return `<div class="verdicts"><p class="meta">Latest model verdicts</p>${list.map(verdictBlock).join('')}</div>`;
+}
 
 export function card(m:Member,firedId:string,paused:boolean):string{
  const last=m.pauses.at(-1),open=m.pauses.some(p=>p.outcome==='open');
@@ -20,6 +41,7 @@ export function card(m:Member,firedId:string,paused:boolean):string{
  <div class="health"><i style="width:${health}%" class="${m.score<0?'neg':''}"></i></div>
  <p class="meta">${esc(params)}</p>
  ${last?`<blockquote>${esc(last.reason)}<span class="meta">${clock(last.time)} · ${esc(words(last.outcome))}</span>${settle}</blockquote>`:'<p class="meta quiet">No pauses yet. Watching.</p>'}
+ ${judgeBlock(m)}
  ${m.notes.length?`<p class="meta note-line">Learned: ${esc(m.notes.at(-1))}</p>`:''}
  <p class="meta key">Key ${esc(m.public_key.slice(0,24))}…</p></article>`;
 }
@@ -44,7 +66,7 @@ export function line(e:LineageEntry):string{
  const who=`<b>${esc(e.member)}</b>`;
  switch(e.action){
   case 'spawn': return `${who} spawned${e.parent?` from ${esc(e.parent)}`:''}${e.notes?.length?`. Learned: ${esc(e.notes.at(-1))}`:''}`;
-  case 'pause': return `${who} paused the vault: ${esc(e.reason)}`;
+  case 'pause': return `${who} paused the vault: ${esc(e.reason)}${e.model?` (model ${esc(e.model)}, ${e.verified?'response signature verified':'not verified'}${e.evidence_file?`, <a href="./api/evidence/${esc(e.evidence_file)}" target="_blank" rel="noopener noreferrer">evidence</a>`:''})`:''}`;
   case 'retire': return `${who} retired at score ${e.score} after ${e.false_alarms} false alarm${e.false_alarms===1?'':'s'}`;
   case 'settled': return `${who}'s pause settled as <b>${esc(words(e.outcome??''))}</b>: ${esc(e.why)}`;
   case 'labelled': return `The owner marked ${who}'s pause <b>${esc(words(e.outcome??''))}</b>`;

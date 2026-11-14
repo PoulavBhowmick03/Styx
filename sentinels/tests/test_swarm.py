@@ -123,3 +123,46 @@ def test_after_the_owner_unpauses_the_same_payments_do_not_pause_again(tmp_path)
     clock.t = 1060
     s.cycle(Batch(pauses=[PauseEvent("unpaused", 1060, "U")]))
     assert not s.paused and len(s.pauser.calls) == 1  # no instant re-pause on what the owner reviewed
+
+
+EVIDENCE = {"model": "z-ai/test", "signature": {"verified": True, "signature_kind": "provider_tee", "signing_address": "0xabc",
+                                                  "chat_id": "chat-1", "signature": "SIG"},
+            "preflight": {"checks": ["gateway quote", "model quote"], "signers": ["ecdsa:abc:model"], "nonce": "N",
+                          "tls": {"peer_spki_sha256": "ff", "same_connection": True}}}
+
+
+def test_every_judge_verdict_keeps_a_summary_in_state_and_the_full_evidence_in_a_file(tmp_path):
+    answers = iter(['{"pause": false, "reason": "normal traffic"}', '{"pause": true, "reason": "drain"}'])
+    s = swarm(tmp_path, Clock(), completer=lambda m: (next(answers), EVIDENCE), kinds=(("judge", {"window": 20}),))
+    s.cycle(Batch(payments=[pay(1, 1000)]))
+    assert not s.paused
+    s.cycle(Batch(payments=[pay(2, 1010)]))
+    judge = s.members[0]
+    assert [v["pause"] for v in judge.verdicts] == [False, True]
+    v = judge.verdicts[-1]
+    assert (v["model"], v["verified"], v["signature_kind"], v["chat_id"], v["attested_signers"], v["tls_bound"]) == \
+        ("z-ai/test", True, "provider_tee", "chat-1", 1, True)
+    assert v["checks"] == ["gateway quote", "model quote"]
+    full = json.loads((s.home / "evidence" / v["file"]).read_text())
+    assert full["evidence"]["signature"]["signature"] == "SIG" and full["pause"] is True
+    pause = next(e for e in s.lineage() if e["action"] == "pause")
+    assert (pause["model"], pause["verified"], pause["evidence_file"]) == ("z-ai/test", True, v["file"])
+    assert "SIG" not in json.dumps(json.loads(s.state_file.read_text())["members"])  # state holds the summary only
+
+
+def test_the_judge_asks_the_model_once_per_new_payment_not_once_per_poll():
+    calls = []
+
+    def model(messages):
+        calls.append(1)
+        return '{"pause": false, "reason": "fine"}', EVIDENCE
+
+    j = Judge(complete=model)
+    history = [pay(1, 1000)]
+    j.judge(history, 1000, None)
+    assert j.fresh
+    j.judge(history, 1001, None)
+    j.judge(history, 1002, None)
+    assert len(calls) == 1 and not j.fresh
+    j.judge(history + [pay(2, 1010)], 1010, None)
+    assert len(calls) == 2 and j.fresh

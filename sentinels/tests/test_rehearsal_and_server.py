@@ -76,3 +76,31 @@ def test_init_spawns_the_swarm_with_private_keys_and_prints_the_enable_links(tmp
     keys = list((tmp_path / "home" / "keys" / "acme.styx-vaults.testnet").glob("*.json"))
     assert len(keys) == 2 and all((k.stat().st_mode & 0o777) == 0o600 for k in keys)
     assert main(["status", "--vault", "acme.styx-vaults.testnet"]) == 0
+
+
+def test_the_page_serves_a_verdicts_full_evidence_and_nothing_outside_the_folder(tmp_path):
+    import json as _json
+    import threading
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+    from styx_sentinels.pauser import DryRunPauser
+    from styx_sentinels.server import serve
+    from styx_sentinels.swarm import Swarm
+
+    s = Swarm("acme.styx-vaults.testnet", tmp_path / "swarm", DryRunPauser(), keygen=lambda n: ("ed25519:K", "/k"))
+    (s.home / "evidence").mkdir()
+    (s.home / "evidence" / "judge-g1-1.json").write_text('{"ok": true}')
+    (s.home / "secret.json").write_text('{"no": true}')
+    server = serve(s, 0, threading.Lock())
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        assert _json.loads(urllib.request.urlopen(base + "/api/evidence/judge-g1-1.json").read()) == {"ok": True}
+        for bad in ("/api/evidence/..%2Fsecret.json", "/api/evidence/secret.json", "/api/evidence/../secret.json"):
+            try:
+                urllib.request.urlopen(base + bad)
+                assert False, bad
+            except urllib.error.HTTPError as e:
+                assert e.code == 404
+    finally:
+        server.shutdown()

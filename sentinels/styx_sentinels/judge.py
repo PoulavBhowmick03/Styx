@@ -30,6 +30,9 @@ class Judge:
     notes: list[str] = field(default_factory=list)  # lessons from the parent, e.g. past false alarms
     kind: str = "judge"
     last_evidence: dict | None = None
+    fresh: bool = False  # True when the last judge() call asked the model; False when it reused the answer
+    _asked: tuple | None = field(default=None, repr=False)
+    _answer: Verdict | None = field(default=None, repr=False)
 
     def prompt(self, history: list[Payment], now: float, daily_limit: int | None) -> list[dict]:
         recent = history[-self.window:]
@@ -44,6 +47,13 @@ class Judge:
     def judge(self, history: list[Payment], now: float, daily_limit: int | None) -> Verdict:
         if not history:
             return Verdict(False)
+        # The answer depends on the payments, so ask again only when there is a new one: the swarm
+        # polls every second, and the model should not be called a second time for the same payments.
+        key = (len(history), history[-1].tx, history[-1].payment_id)
+        if key == self._asked and self._answer is not None:
+            self.fresh = False
+            return self._answer
+        self.fresh = False
         try:
             text, evidence = self.complete(self.prompt(history, now, daily_limit))
             self.last_evidence = evidence
@@ -52,7 +62,27 @@ class Judge:
             pause, reason = bool(answer.get("pause")), str(answer.get("reason", ""))[:200]
         except Exception:  # noqa: BLE001 (a judge that cannot answer stays quiet; the rules still watch)
             return Verdict(False)
-        return Verdict(pause, reason, {"model_evidence": evidence}) if pause else Verdict(False)
+        self._asked, self._answer, self.fresh = key, Verdict(pause, reason, {"model_evidence": evidence}), True
+        return self._answer
+
+
+def summarize(evidence: dict) -> dict:
+    """A short, plain-words summary of what the client checked, for the page and the lineage: the model,
+    whether the response signature verified against the attested signer, and which checks ran. The full
+    evidence stays in a file."""
+    sig = evidence.get("signature") if isinstance(evidence.get("signature"), dict) else {}
+    pre = evidence.get("preflight") if isinstance(evidence.get("preflight"), dict) else {}
+    tls = pre.get("tls") if isinstance(pre.get("tls"), dict) else None
+    return {
+        "model": str(evidence.get("model", ""))[:80],
+        "verified": sig.get("verified") is True,
+        "signature_kind": str(sig.get("signature_kind", ""))[:20],
+        "signing_address": str(sig.get("signing_address", ""))[:60],
+        "chat_id": str(sig.get("chat_id", ""))[:80],
+        "checks": [str(c)[:60] for c in pre.get("checks", [])][:12] if isinstance(pre.get("checks"), list) else [],
+        "attested_signers": len(pre.get("signers", [])) if isinstance(pre.get("signers"), list) else 0,
+        "tls_bound": bool(tls and tls.get("peer_spki_sha256")),
+    }
 
 
 class NearAICompleter:
@@ -70,4 +100,7 @@ class NearAICompleter:
             self.preflight = self.client.preflight()
         parsed, entry = self.client.complete({"model": self.model, "messages": messages, "temperature": 0}, self.preflight)
         text = parsed["choices"][0]["message"]["content"]
-        return text, {"model": self.model, "signature": entry}
+        pre = self.preflight
+        return text, {"model": self.model, "signature": entry, "preflight": {
+            "checks": [str(c) for c in pre.checks], "signers": [f"{algo}:{address}:{label}" for (algo, address), label in pre.signers.items()],
+            "rejected": len(pre.rejected), "nonce": pre.nonce, "url": pre.url, "tls": dict(pre.tls) if pre.tls else None}}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { card, esc, feed, generations, line, mode, ownerActions, timeline } from '../src/view';
+import { card, esc, feed, generations, judgeBlock, line, mode, ownerActions, timeline } from '../src/view';
 import type { Member } from '../src/types';
 
 const member=(over:Partial<Member>={}):Member=>({id:'burst-g1',kind:'burst',generation:1,params:{max_payments:4,window_seconds:300},public_key:'ed25519:KEY',status:'active',notes:[],pauses:[],score:0,catches:0,false_alarms:0,...over});
@@ -36,5 +36,17 @@ describe('swarm page',()=>{
   const html=timeline({events:[{type:'payment',time:10,tx:'a',recipient:'v.testnet',amount:2e6},{type:'sentinel_pause_sent',time:20,tx:'b',sentinel:'burst-g2'},{type:'unpaused',time:30,tx:'c'}],attack_windows:[[15,25,'drill']]});
   expect(html).toContain('class="bar"');expect(html).toContain('burst-g2 paused');expect(html).toContain('Owner unpaused');expect(html).toContain('class="band"');
   expect(generations([member(),member({id:'burst-g2',generation:2})])).toContain('<span class="then">then</span>');
+ });
+ it('shows each judge verdict with its model and what the client checked, in words, and escapes it',()=>{
+  const v={time:5,pause:false,reason:'<b>normal</b>',model:'z-ai/test',verified:true,signature_kind:'provider_tee',signing_address:'0xabcdef0123456789',chat_id:'chat-123456789012345',checks:['gateway quote','model quote'],attested_signers:1,tls_bound:true,file:'judge-g1-1.json'};
+  const html=judgeBlock(member({kind:'judge',id:'judge-g1',verdicts:[v]}));
+  expect(html).toContain('model z-ai/test');expect(html).toContain('Verified: the response signature was checked against the attested model signer');
+  expect(html).toContain('Checks run: gateway quote, model quote');expect(html).toContain('href="./api/evidence/judge-g1-1.json"');
+  expect(html).toContain('&lt;b&gt;normal');expect(html).not.toContain('<b>normal');
+  expect(judgeBlock(member({kind:'judge',verdicts:[{...v,verified:false}]}))).toContain('Not verified');
+  expect(judgeBlock(member({kind:'judge'}))).toContain('has not answered yet');
+  expect(judgeBlock(member())).toBe('');
+  expect(card(member({kind:'judge',verdicts:[v]}),'',false)).toContain('Latest model verdicts');
+  expect(line({time:0,action:'pause',member:'judge-g1',reason:'drain',model:'z-ai/test',verified:true,evidence_file:'f.json'})).toContain('model z-ai/test, response signature verified');
  });
 });
