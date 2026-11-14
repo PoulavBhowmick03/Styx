@@ -314,8 +314,9 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 
 ## Limits
 
-- Sentinels run on a machine the owner controls. While it is off or asleep, nothing pauses the vault
-  on their behalf. The velocity limit, once set, holds on chain either way.
+- Sentinels watch only while something runs them: the owner's own machine, or the hosted testnet
+  service at `styx-sentinels-near.fly.dev`. If neither is running, nothing pauses the vault on their
+  behalf. The velocity limit, once set, holds on chain either way.
 - The burst sentinel pauses after the payment that crosses its threshold, so that many payments
   settle first (5 in the testnet comparison).
 - A reverted or never-broadcast EVM transfer still counts against the daily limit: the vault charges
