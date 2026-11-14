@@ -223,3 +223,20 @@ def test_a_pause_records_how_long_after_the_newest_payment_it_was_decided(tmp_pa
         s.cycle(Batch(payments=[pay(i, 1000 + 8 * i)]))
     pause = next(e for e in s.lineage() if e["action"] == "pause")
     assert (pause["decided_after_s"], pause["payments_seen"]) == (3.0, 5)
+
+
+def test_a_model_reply_with_no_content_is_a_clear_error_not_a_crash():
+    from styx_sentinels.judge import NearAICompleter
+
+    class Client:
+        def complete(self, body, preflight):
+            assert body["max_tokens"] == 1200
+            return {"choices": [{"message": {"content": None}, "finish_reason": "length"}]}, {}
+
+    c = NearAICompleter.__new__(NearAICompleter)
+    c.client, c.model, c.preflight = Client(), "m", object()
+    try:
+        c([{"role": "user", "content": "x"}])
+        assert False
+    except RuntimeError as e:
+        assert "no answer (finish_reason length)" in str(e)

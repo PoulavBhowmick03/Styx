@@ -127,9 +127,13 @@ class NearAICompleter:
     def __call__(self, messages: list[dict]) -> tuple[str, dict]:
         if self.preflight is None:
             self.preflight = self.client.preflight()
-        # max_tokens bounds what one verdict can cost; the answer is one short JSON line.
-        parsed, entry = self.client.complete({"model": self.model, "messages": messages, "temperature": 0, "max_tokens": 400}, self.preflight)
-        text = parsed["choices"][0]["message"]["content"]
+        # max_tokens bounds what one verdict can cost. The answer is one short JSON line, but the model
+        # reasons first; at 400 tokens a live run got no answer at all (content null), so allow 1200.
+        parsed, entry = self.client.complete({"model": self.model, "messages": messages, "temperature": 0, "max_tokens": 1200}, self.preflight)
+        choice = parsed["choices"][0]
+        text = choice["message"].get("content")
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError(f"the model gave no answer (finish_reason {choice.get('finish_reason')})")
         pre = self.preflight
         return text, {"model": self.model, "signature": entry, "preflight": {
             "checks": [str(c) for c in pre.checks], "signers": [f"{algo}:{address}:{label}" for (algo, address), label in pre.signers.items()],
