@@ -1,0 +1,19 @@
+{
+  "name": "styx-proof-near",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build --base /proof/",
+    "test": "vitest run",
+    "smoke": "node test/smoke.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0",
+    "playwright-core": "^1.56.0",
+    "@types/node": "^22.18.0"
+  }
+}
