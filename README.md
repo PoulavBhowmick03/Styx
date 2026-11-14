@@ -34,7 +34,7 @@ same boundary is tagged: `pre-hackathon` (`a0e4fb2`) and `hackathon-submission` 
 5. **Every test, one command:** `scripts/verify.sh` runs the contract (unit, audit reproductions,
    NEAR sandbox), the factory, the agent CLI, the MCP server, the sentinels runner, the console (with
    browser smokes), the swarm page, the relay and the approval page. It needs no keys and no testnet
-   account. On the submitted commit it printed 404 tests and 4 browser smokes, all passing.
+   account. On the submitted commit it printed 404 tests and 4 browser smokes, all passing; after the hosted-scoring fix, 408.
 
 ## Using Styx, step by step
 
