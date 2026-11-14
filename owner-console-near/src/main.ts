@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, hostedChanges, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -117,6 +117,8 @@ function saveLabels(){try{localStorage.setItem(labelStore(),labelsFile(context!.
 function setLabel(key:string,name:string){names[key]=cleanLabel(name);saveLabels();}
 // Whether the relay will reach this approver on Telegram; filled in when the relay answers.
 const RELAY=import.meta.env.VITE_RELAY_URL??DEFAULT_RELAY;
+// Set only where a sentinels service is deployed; without it the hosted button stays hidden.
+const SENTINEL_SERVICE:string|undefined=import.meta.env.VITE_SENTINEL_SERVICE_URL;
 function telegramBadge(key:string){
  const b=el('p','Telegram alerts: checking…');b.className='tg-badge';
  telegramLinked(RELAY,key).then(linked=>{
@@ -533,6 +535,7 @@ function renderSentinels(){
  const onChain=new Set(sentinelKeys(facts.keys));
  const unnamed=sentinels.filter(k=>!names[k]).length;
  $('#sentinel-names').hidden=false;$('#sentinel-names-hint').textContent=unnamed?`${unnamed} of these keys ${unnamed===1?'has':'have'} no name here. A swarm names its keys: run styx-sentinels names --vault ${context.vault} and import the file.`:'Every key here has a name.';
+ $('#sentinel-hosted').hidden=!SENTINEL_SERVICE;
  $('#sentinel-get').hidden=false;$('#sentinel-get-cmd').textContent=sentinelQuickstart(context.vault);
  $('#sentinel-count').textContent=`${sentinels.length} of ${MAX_SENTINELS}`;
  status.textContent=sentinels.length?'Each key below may only pause this vault.':'No sentinels yet. Install keys from styx-sentinels init, or paste them below.';
@@ -557,6 +560,16 @@ function renderSentinels(){
  }));
  document.querySelectorAll<HTMLButtonElement>('#sentinels [data-write]').forEach(button=>button.disabled=!canWrite()||busy);
 }
+$('#sentinel-hosted-go').onclick=async()=>{try{
+ if(!SENTINEL_SERVICE || !context) throw Error('Read a vault first');
+ if(!canWrite()) throw Error('Connect the vault owner\'s wallet first');
+ const reply=await fetch(SENTINEL_SERVICE.replace(/\/$/,'')+'/api/vaults',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:context.vault})});
+ const answer=await reply.json().catch(()=>null);
+ if(!reply.ok) throw Error(typeof answer?.error==='string'?answer.error:`The sentinel service answered ${reply.status}`);
+ const changes=hostedChanges(answer,context.vault,location.origin);
+ if(!changes.length){toast('ok','Already protected','The hosted sentinels\' keys are on this vault.');return;}
+ sentinelPreview(changes);
+}catch(e){toast('error','Hosted sentinels',e instanceof Error?e.message:String(e));}};
 $('#sentinel-get-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#sentinel-get-cmd').textContent??'');toast('ok','Copied','Paste it in a terminal.');}catch{toast('error','Could not copy','Select the commands and copy them by hand.');}};
 $<HTMLFormElement>('#sentinel-add').onsubmit=e=>{e.preventDefault();try{
  const keys=parseSentinelKeys(readForm($<HTMLFormElement>('#sentinel-add')).keys??'');

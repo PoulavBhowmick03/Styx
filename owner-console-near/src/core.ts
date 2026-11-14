@@ -355,6 +355,21 @@ export function paymentsCsv(rows:EventRow[],names:Labels):string{
 // allowance), or deletes it. A sentinel cannot pay, unpause or change a rule; only the owner unpauses.
 export const SENTINEL_VERSION=3;
 export const MAX_SENTINELS=8;
+// Hosted sentinels (styx-sentinels serve): the service answers a registration with the one console
+// link that installs its keys. Only that link's sentinel changes are used, and only for this vault;
+// the owner still reviews and signs them here.
+export function hostedChanges(answer:unknown,vault:string,consoleOrigin:string):SentinelChange[]{
+ const a=answer as {vault?:unknown;link?:unknown}|null;
+ if(!a || typeof a!=='object' || a.vault!==vault) throw Error('The sentinel service answered for another vault');
+ if(a.link===null || a.link===undefined) return [];
+ if(typeof a.link!=='string') throw Error('The sentinel service sent no link');
+ let url:URL;try{url=new URL(a.link);}catch{throw Error('The sentinel service sent a bad link');}
+ if(url.origin!==consoleOrigin && url.origin!=='https://styxco.xyz') throw Error('The sentinel service sent a link to another site');
+ if(url.searchParams.get('vault')!==vault) throw Error('The sentinel service sent a link for another vault');
+ const changes=readSentinelLink(url.searchParams);
+ if(changes.some(c=>!c.enabled)) throw Error('A new registration should only install keys');
+ return changes;
+}
 // The command that protects a vault with sentinels: no key material in it, the runner makes its own keys.
 export function sentinelQuickstart(vault:string):string{
  return ['git clone https://github.com/PoulavBhowmick03/Styx && cd Styx',

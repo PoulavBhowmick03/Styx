@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,type EventRow } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,hostedChanges,type EventRow } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -293,5 +293,16 @@ describe('getting sentinels',()=>{
   const file=JSON.stringify({vault:'lambda.styx-vaults.testnet',labels:{'ed25519:Cg1uVkD8hQymZyN9GzKWMsr49P2wjaQp9tLLbDVu5Xaw':'burst-g1','ed25519:999SwGbAyfw8rgCy4oSTzkEu1apfAc5xDkekc2YBoGgq':'concentration-g1'}},null,2)+'\n';
   expect(Object.values(parseLabels(file,'lambda.styx-vaults.testnet')).sort()).toEqual(['burst-g1','concentration-g1']);
   expect(()=>parseLabels(file,'other.styx-vaults.testnet')).toThrow();
+ });
+ it('takes only this vault\'s key installs from a hosted service\'s answer',()=>{
+  const V='lambda.styx-vaults.testnet',A='ed25519:Cg1uVkD8hQymZyN9GzKWMsr49P2wjaQp9tLLbDVu5Xaw',B='ed25519:999SwGbAyfw8rgCy4oSTzkEu1apfAc5xDkekc2YBoGgq';
+  const link=`https://styxco.xyz/console/?vault=${V}&network=testnet&sentinel_enable=${A}&sentinel_label=burst-g1&sentinel_enable=${B}&sentinel_label=concentration-g1`;
+  expect(hostedChanges({vault:V,link},V,'https://styxco.xyz')).toEqual([{key:A,enabled:true,name:'burst-g1'},{key:B,enabled:true,name:'concentration-g1'}]);
+  expect(hostedChanges({vault:V,link:null},V,'https://styxco.xyz')).toEqual([]);
+  expect(()=>hostedChanges({vault:'other.styx-vaults.testnet',link},V,'https://styxco.xyz')).toThrow(/another vault/);
+  expect(()=>hostedChanges({vault:V,link:link.replace('styxco.xyz','evil.example')},V,'https://styxco.xyz')).toThrow(/another site/);
+  expect(()=>hostedChanges({vault:V,link:link.replace(`vault=${V}`,'vault=other.styx-vaults.testnet')},V,'https://styxco.xyz')).toThrow(/another vault/);
+  expect(()=>hostedChanges({vault:V,link:`https://styxco.xyz/console/?vault=${V}&sentinel_remove=${A}`},V,'https://styxco.xyz')).toThrow(/only install/);
+  expect(()=>hostedChanges(null,V,'https://styxco.xyz')).toThrow();
  });
 });
