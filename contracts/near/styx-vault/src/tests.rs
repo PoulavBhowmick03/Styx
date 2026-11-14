@@ -722,89 +722,205 @@ fn the_agent_key_may_call_pay_x402_and_the_vault_reports_version_3() {
     assert_eq!(c.get_vault().evm_address.as_deref(), Some(MPC_ADDRESS));
 }
 
-// ---- Guardian: a key that can only pause (contract version 3) ----
+// ---- Sentinel: a key that can only pause (contract version 3) ----
 
-fn guardian() -> PublicKey {
+fn sentinel() -> PublicKey {
     key(5).1
 }
 
 #[test]
-fn the_guardian_pauses_and_payments_stop_but_only_the_owner_unpauses() {
+fn the_sentinel_pauses_and_payments_stop_but_only_the_owner_unpauses() {
     let mut c = setup();
-    c.set_guardian(Some(guardian()));
-    assert_eq!(c.get_vault().guardian, Some(guardian()));
-    testing_env!(context(vault(), guardian(), DAY_NS).build());
-    c.guardian_pause();
+    c.set_sentinel(sentinel(), true);
+    assert_eq!(c.get_sentinels(), vec![sentinel()]);
+    testing_env!(context(vault(), sentinel(), DAY_NS).build());
+    c.sentinel_pause("burst".into());
     assert!(c.get_vault().paused);
-    assert!(get_logs().iter().any(|l| l.contains(r#""by":"guardian""#)));
+    assert!(get_logs().iter().any(|l| l.contains(r#""event":"sentinel_paused""#)));
     as_owner(DAY_NS);
     c.unpause();
     assert!(!c.get_vault().paused);
 }
 
 #[test]
-#[should_panic(expected = "NotGuardian")]
-fn an_agent_key_cannot_use_guardian_pause() {
+#[should_panic(expected = "NotSentinel")]
+fn an_agent_key_cannot_use_sentinel_pause() {
     let mut c = setup();
-    c.set_guardian(Some(guardian()));
+    c.set_sentinel(sentinel(), true);
     as_agent(agent(), DAY_NS);
-    c.guardian_pause();
+    c.sentinel_pause("burst".into());
 }
 
 #[test]
-#[should_panic(expected = "NotGuardian")]
-fn guardian_pause_must_come_from_the_vault_account_itself() {
+#[should_panic(expected = "NotSentinel")]
+fn sentinel_pause_must_come_from_the_vault_account_itself() {
     let mut c = setup();
-    c.set_guardian(Some(guardian()));
-    testing_env!(context(acct("stranger.testnet"), guardian(), DAY_NS).build());
-    c.guardian_pause();
+    c.set_sentinel(sentinel(), true);
+    testing_env!(context(acct("stranger.testnet"), sentinel(), DAY_NS).build());
+    c.sentinel_pause("burst".into());
 }
 
 #[test]
-#[should_panic(expected = "NotGuardian")]
-fn a_removed_guardian_can_no_longer_pause() {
+#[should_panic(expected = "NotSentinel")]
+fn a_removed_sentinel_can_no_longer_pause() {
     let mut c = setup();
-    c.set_guardian(Some(guardian()));
-    c.set_guardian(None);
-    testing_env!(context(vault(), guardian(), DAY_NS).build());
-    c.guardian_pause();
+    c.set_sentinel(sentinel(), true);
+    c.set_sentinel(sentinel(), false);
+    testing_env!(context(vault(), sentinel(), DAY_NS).build());
+    c.sentinel_pause("burst".into());
 }
 
 #[test]
 #[should_panic(expected = "NotOwner")]
-fn the_guardian_cannot_unpause() {
+fn the_sentinel_cannot_unpause() {
     let mut c = setup();
-    c.set_guardian(Some(guardian()));
-    testing_env!(context(vault(), guardian(), DAY_NS).build());
-    c.guardian_pause();
+    c.set_sentinel(sentinel(), true);
+    testing_env!(context(vault(), sentinel(), DAY_NS).build());
+    c.sentinel_pause("burst".into());
     c.unpause();
 }
 
 #[test]
 #[should_panic(expected = "NotOwner")]
-fn only_the_owner_sets_the_guardian() {
+fn only_the_owner_sets_the_sentinel() {
     let mut c = setup();
     as_agent(agent(), DAY_NS);
-    c.set_guardian(Some(guardian()));
+    c.set_sentinel(sentinel(), true);
 }
 
 #[test]
 #[should_panic(expected = "RoleConflict")]
-fn an_agent_key_cannot_become_the_guardian() {
+fn an_agent_key_cannot_become_the_sentinel() {
     let mut c = setup();
-    c.set_guardian(Some(agent()));
+    c.set_sentinel(agent(), true);
 }
 
 #[test]
 #[should_panic(expected = "RoleConflict")]
-fn the_guardian_key_cannot_become_an_agent() {
+fn the_sentinel_key_cannot_become_an_agent() {
     let mut c = setup();
-    c.set_guardian(Some(guardian()));
-    c.configure_agent(guardian(), U128(1), U128(1), U64(10 * DAY_SECONDS), true);
+    c.set_sentinel(sentinel(), true);
+    c.configure_agent(sentinel(), U128(1), U128(1), U64(10 * DAY_SECONDS), true);
 }
 
 #[test]
-fn the_guardian_key_is_limited_to_guardian_pause() {
-    assert_eq!(GUARDIAN_METHODS, "guardian_pause");
-    assert!(!AGENT_METHODS.split(',').any(|m| m == "guardian_pause"));
+fn the_sentinel_key_is_limited_to_sentinel_pause() {
+    assert_eq!(SENTINEL_METHODS, "sentinel_pause");
+    assert!(!AGENT_METHODS.split(',').any(|m| m == "sentinel_pause"));
+}
+#[test]
+fn sentinel_event_has_reason_day_and_spend_and_repeated_pause_is_noop() {
+    let mut c = setup();
+    c.set_sentinel(sentinel(), true);
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("before-pause", 60));
+    as_agent(sentinel(), DAY_NS);
+    c.sentinel_pause("é".repeat(140));
+    let logs = get_logs();
+    let event: near_sdk::serde_json::Value = near_sdk::serde_json::from_str(
+        logs[0].strip_prefix("EVENT_JSON:").unwrap()).unwrap();
+    assert_eq!(event["event"], "sentinel_paused");
+    assert_eq!(event["data"][0]["sentinel"], near_sdk::serde_json::json!(sentinel()));
+    assert_eq!(event["data"][0]["reason"], "é".repeat(140));
+    assert_eq!(event["data"][0]["day"], 1);
+    assert_eq!(event["data"][0]["vault_day_spent"], "60");
+    c.sentinel_pause("again".into());
+    assert_eq!(get_logs(), logs);
+}
+
+#[test]
+#[should_panic(expected = "ReasonTooLong")]
+fn sentinel_reason_limit_counts_bytes() {
+    let mut c = setup();
+    c.set_sentinel(sentinel(), true);
+    as_agent(sentinel(), DAY_NS);
+    c.sentinel_pause("é".repeat(141));
+}
+
+#[test]
+fn eight_sentinels_reenable_and_disable_are_idempotent() {
+    let mut c = setup();
+    for i in 10..18 { c.set_sentinel(key(i).1, true); }
+    c.set_sentinel(key(10).1, true);
+    assert_eq!(c.get_sentinels().len(), 8);
+    c.set_sentinel(key(10).1, false);
+    c.set_sentinel(key(10).1, false);
+    c.set_sentinel(key(18).1, true);
+    assert_eq!(c.get_sentinels().len(), 8);
+    assert!(!c.get_sentinels().contains(&key(10).1));
+}
+
+#[test]
+#[should_panic(expected = "TooManySentinels")]
+fn ninth_sentinel_is_refused() {
+    let mut c = setup();
+    for i in 10..19 { c.set_sentinel(key(i).1, true); }
+}
+
+#[test]
+#[should_panic(expected = "SentinelMustBeEd25519")]
+fn sentinel_must_be_ed25519() {
+    let mut c = setup();
+    c.set_sentinel(PublicKey::from_parts(CurveType::SECP256K1, vec![1; 64]).unwrap(), true);
+}
+
+#[test]
+#[should_panic(expected = "NotAgent")]
+fn sentinel_cannot_pay_even_before_pausing() {
+    let mut c = setup();
+    c.set_sentinel(sentinel(), true);
+    as_agent(sentinel(), DAY_NS);
+    c.pay(payment("sentinel-pay", 1));
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn sentinel_cannot_change_rules() {
+    let mut c = setup();
+    c.set_sentinel(sentinel(), true);
+    as_agent(sentinel(), DAY_NS);
+    c.set_vault_daily_limit(U128(1000));
+}
+
+#[test]
+#[should_panic(expected = "VaultPaused")]
+fn sentinel_pause_stops_agent_payments() {
+    let mut c = setup();
+    c.set_sentinel(sentinel(), true);
+    as_agent(sentinel(), DAY_NS);
+    c.sentinel_pause("burst".into());
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("after-pause", 1));
+}
+
+#[test]
+fn disabled_roles_can_be_reassigned() {
+    let mut c = setup();
+    c.configure_agent(agent(), U128(1), U128(1), U64(10 * DAY_SECONDS), false);
+    c.set_sentinel(agent(), true);
+    c.set_sentinel(agent(), false);
+    c.configure_agent(agent(), U128(1), U128(1), U64(10 * DAY_SECONDS), true);
+}
+
+#[test]
+fn sentinel_key_actions_are_pause_only_and_removal_deletes_key() {
+    use near_sdk::{mock::MockAction, test_utils::get_created_receipts};
+    let mut c = setup();
+    as_owner(DAY_NS);
+    drop(c.set_sentinel(sentinel(), true));
+    let receipts = get_created_receipts();
+    let actions: Vec<_> = receipts.iter().flat_map(|r| &r.actions).collect();
+    assert!(actions.iter().any(|a| matches!(a, MockAction::AddKeyWithFunctionCall {
+        public_key, allowance, receiver_id, method_names, ..
+    } if public_key.to_string() == near_sdk::serde_json::to_value(sentinel()).unwrap().as_str().unwrap()
+        && *allowance == Some(NearToken::from_millinear(50))
+        && *receiver_id == vault() && *method_names == vec!["sentinel_pause".to_string()])));
+    as_owner(DAY_NS);
+    drop(c.set_sentinel(sentinel(), true));
+    assert!(get_created_receipts().iter().all(|r| r.actions.is_empty()));
+    as_owner(DAY_NS);
+    drop(c.set_sentinel(sentinel(), false));
+    assert!(get_created_receipts().iter().flat_map(|r| &r.actions).any(|a|
+        matches!(a, MockAction::DeleteKey { public_key, .. }
+            if public_key.to_string() == near_sdk::serde_json::to_value(sentinel()).unwrap().as_str().unwrap())));
 }

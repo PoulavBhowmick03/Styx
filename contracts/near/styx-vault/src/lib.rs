@@ -23,9 +23,10 @@ const GAS_FOR_FT_TRANSFER: Gas = Gas::from_tgas(20);
 const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(15);
 /// Gas allowance each agent key gets. Gas only: the key holds no tokens.
 const AGENT_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(250);
-/// The guardian key may call only this method: pause, never unpause or anything else.
-const GUARDIAN_METHODS: &str = "guardian_pause";
-const GUARDIAN_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(50);
+/// Each sentinel key may call only this method: pause, never unpause or anything else.
+const SENTINEL_METHODS: &str = "sentinel_pause";
+const MAX_SENTINELS: usize = 8;
+const SENTINEL_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(50);
 const AGENT_METHODS: &str = "pay,pay_with_exception,pay_evm,pay_evm_with_exception,pay_x402,post_record";
 /// The MPC signer used when the constructor names none.
 const DEFAULT_MPC_SIGNER: &str = "v1.signer-prod.testnet";
@@ -217,8 +218,6 @@ pub struct VaultInfo {
     pub evm_key_path: String,
     /// The vault's derived EVM address, as set by the owner; x402 authorizations are signed from it.
     pub evm_address: Option<String>,
-    /// A key that may only pause the vault (for example a Telegram bot's), if the owner set one.
-    pub guardian: Option<PublicKey>,
 }
 
 #[near(contract_state)]
@@ -253,8 +252,8 @@ pub struct Contract {
     x402_domains: LookupMap<u64, X402Domain>,
     /// payment id -> the signed x402 authorization.
     x402_signed: LookupMap<String, X402Authorization>,
-    /// A function-call key on this account allowed only `guardian_pause`.
-    guardian: Option<PublicKey>,
+    /// At most eight function-call keys, each restricted to `sentinel_pause`.
+    sentinels: Vec<PublicKey>,
 }
 
 #[near]
@@ -283,7 +282,7 @@ impl Contract {
             evm_address: None,
             x402_domains: LookupMap::new(StorageKey::X402Domains),
             x402_signed: LookupMap::new(StorageKey::X402Signed),
-            guardian: None,
+            sentinels: Vec::new(),
         }
     }
 
@@ -305,7 +304,7 @@ impl Contract {
                 !self.approvers.get(&agent).map(|a| a.enabled).unwrap_or(false),
                 "RoleConflict"
             );
-            require!(self.guardian.as_ref() != Some(&agent), "RoleConflict");
+            require!(!self.sentinels.contains(&agent), "RoleConflict");
         }
         let was_enabled = self.agents.get(&agent).map(|p| p.enabled).unwrap_or(false);
         let version = self.agents.get(&agent).map(|p| p.version).unwrap_or(0) + 1;
@@ -382,39 +381,55 @@ impl Contract {
         emit("paused", &near_sdk::serde_json::json!({}));
     }
 
-    /// Sets (or with None, removes) the guardian: a function-call key on this account that NEAR lets
-    /// call only `guardian_pause`. It can stop payments, never resume them or move anything.
-    pub fn set_guardian(&mut self, guardian: Option<PublicKey>) -> Promise {
+    /// Installs or removes a pause-only key. Repeating the current state is a no-op.
+    pub fn set_sentinel(&mut self, key: PublicKey, enabled: bool) -> Promise {
         self.assert_owner();
+        require!(is_ed25519(&key), "SentinelMustBeEd25519");
+        if enabled {
+            require!(!self.agents.get(&key).map(|p| p.enabled).unwrap_or(false), "RoleConflict");
+        }
         let account = env::current_account_id();
-        if let Some(g) = &guardian {
-            require!(is_ed25519(g), "GuardianMustBeEd25519");
-            require!(!self.agents.get(g).map(|p| p.enabled).unwrap_or(false), "RoleConflict");
-        }
-        let old = std::mem::replace(&mut self.guardian, guardian.clone());
-        emit("guardian_set", &near_sdk::serde_json::json!({ "guardian": guardian }));
-        let mut promise = Promise::new(account.clone());
-        if let Some(old) = old.filter(|o| Some(o) != guardian.as_ref()) {
-            promise = promise.delete_key(old);
-        }
-        match guardian {
-            Some(g) if self.guardian.is_some() => promise.add_access_key_allowance(
-                g,
-                Allowance::limited(GUARDIAN_KEY_ALLOWANCE).expect("non-zero allowance"),
-                account,
-                GUARDIAN_METHODS.to_string(),
-            ),
-            _ => promise,
+        let position = self.sentinels.iter().position(|k| k == &key);
+        match (position, enabled) {
+            (None, true) => {
+                require!(self.sentinels.len() < MAX_SENTINELS, "TooManySentinels");
+                self.sentinels.push(key.clone());
+                emit("sentinel_set", &near_sdk::serde_json::json!({"sentinel": key, "enabled": true}));
+                Promise::new(account.clone()).add_access_key_allowance(
+                    key,
+                    Allowance::limited(SENTINEL_KEY_ALLOWANCE).expect("non-zero allowance"),
+                    account,
+                    SENTINEL_METHODS.to_string(),
+                )
+            }
+            (Some(i), false) => {
+                self.sentinels.remove(i);
+                emit("sentinel_set", &near_sdk::serde_json::json!({"sentinel": key, "enabled": false}));
+                Promise::new(account).delete_key(key)
+            }
+            _ => Promise::new(account),
         }
     }
 
-    /// Pauses the vault. Only through the guardian key: NEAR allows that key nothing else, and the
-    /// vault checks the signing key is the registered guardian. Unpausing stays with the owner.
-    pub fn guardian_pause(&mut self) {
-        require!(env::predecessor_account_id() == env::current_account_id(), "NotGuardian");
-        require!(self.guardian.as_ref() == Some(&env::signer_account_pk()), "NotGuardian");
+    pub fn get_sentinels(&self) -> Vec<PublicKey> {
+        self.sentinels.clone()
+    }
+
+    /// An enabled sentinel can pause, but only the owner can resume payments.
+    pub fn sentinel_pause(&mut self, reason: String) {
+        require!(env::predecessor_account_id() == env::current_account_id(), "NotSentinel");
+        let sentinel = env::signer_account_pk();
+        require!(self.sentinels.contains(&sentinel), "NotSentinel");
+        require!(reason.len() <= 280, "ReasonTooLong");
+        if self.paused {
+            return;
+        }
         self.paused = true;
-        emit("paused", &near_sdk::serde_json::json!({ "by": "guardian" }));
+        let day = self.current_day();
+        emit("sentinel_paused", &near_sdk::serde_json::json!({
+            "sentinel": sentinel, "reason": reason, "day": day,
+            "vault_day_spent": self.spent_by_vault(day)
+        }));
     }
 
     pub fn unpause(&mut self) {
@@ -652,7 +667,7 @@ impl Contract {
         self.evm_pending = None;
         let chain = self.evm_chains.get(&payment.chain_id).cloned();
         let signed = match (result, chain) {
-            (Ok(sig), Some(chain)) => {
+            (Ok(sig), Some(_chain)) => {
                 let big_r = evm::unhex::<33>(&sig.big_r.affine_point);
                 let s = evm::unhex::<32>(&sig.s.scalar);
                 match (big_r, s) {
@@ -817,7 +832,6 @@ impl Contract {
             mpc_signer: self.mpc_signer.clone(),
             evm_key_path: EVM_KEY_PATH.to_string(),
             evm_address: self.evm_address.clone(),
-            guardian: self.guardian.clone(),
         }
     }
 
