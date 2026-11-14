@@ -105,6 +105,9 @@ class RPC:
                                      "method_name": method, "args_base64": base64.b64encode(json.dumps(args or {}).encode()).decode()})
         return json.loads(bytes(result["result"]).decode())
 
+    def access_keys(self, account: str) -> list[dict]:
+        return self.call("query", {"request_type": "view_access_key_list", "finality": "final", "account_id": account})["keys"]
+
     def tx(self, tx_hash: str, sender: str) -> dict:
         return self.call("tx", {"tx_hash": tx_hash, "sender_account_id": sender, "wait_until": "FINAL"})
 

@@ -21,10 +21,10 @@ def test_marker_follows_an_attack_from_start_to_end(tmp_path):
     m = AttackMarker(path, VAULT)
     assert m.check(100) is None  # no file
     write(path, True, 100)
-    assert m.check(110) == (100, 110, "drain-1")
-    assert m.check(130) == (100, 130, "drain-1")
+    assert m.check(110) == (100, 110, "drain-1", False)
+    assert m.check(130) == (100, 130, "drain-1", False)
     write(path, False, 140)
-    assert m.check(150) == (100, 140, "drain-1")
+    assert m.check(150) == (100, 140, "drain-1", True)
     assert m.check(160) is None  # ended once
 
 
@@ -36,7 +36,7 @@ def test_marker_ignores_other_vaults_unseen_starts_and_expires_stale(tmp_path):
     write(path, False, 140, attack="drain-old")
     assert m.check(150) is None  # we never saw it start
     write(path, True, 200, attack="drain-2")
-    assert m.check(300) == (200, 260, "drain-2")
+    assert m.check(300) == (200, 260, "drain-2", True)
     assert m.check(310) is None
 
 
