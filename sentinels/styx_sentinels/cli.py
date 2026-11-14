@@ -237,7 +237,9 @@ def main(argv=None) -> int:
             except Exception as error:  # noqa: BLE001
                 print(f"watch failed this round: {error}")
                 batch = Batch()
-            if not isinstance(pauser, DryRunPauser) and rounds % max(1, round(5 / interval)) == 0:
+            # Keys change rarely; every 15 s keeps the runner's RPC load low next to the agent's own calls
+            # (a 429 from FastNEAR's RPC stopped a payroll run when this ran every 4.5 s).
+            if not isinstance(pauser, DryRunPauser) and rounds % max(1, round(15 / interval)) == 0:
                 try:
                     keys = rpc.view(a.vault, "get_sentinels")
                     with lock:
