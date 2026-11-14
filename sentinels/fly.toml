@@ -1,0 +1,26 @@
+# Sentinels as a service on Fly. Not deployed. From the repo root:
+#   fly deploy . --config sentinels/fly.toml --dockerfile sentinels/Dockerfile
+# The volume keeps registered vaults and their sentinel keys (0600) across restarts.
+app = "styx-sentinels-near"
+primary_region = "sin"
+
+[env]
+  STYX_SENTINEL_SERVICE_ROOT = "/data/sentinels-service"
+
+[[mounts]]
+  source = "sentinels_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8791
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/api/health"
