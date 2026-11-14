@@ -75,7 +75,7 @@ class Member:
         return self.catches - 2 * self.false_alarms - len(self.misses)
 
 
-def build(member: Member, completer: Callable | None):
+def build(member: Member, completer: Callable | None, background: bool = False):
     """The detector a member runs, from its kind, params and notes."""
     if member.kind == "burst":
         return Burst(name=member.id, **member.params)
@@ -85,7 +85,7 @@ def build(member: Member, completer: Callable | None):
         from .judge import Judge
         if completer is None:
             raise ValueError("the judge needs a model (NEARAI_API_KEY)")
-        return Judge(complete=completer, name=member.id, notes=list(member.notes), **member.params)
+        return Judge(complete=completer, name=member.id, notes=list(member.notes), background=background, **member.params)
     raise ValueError(member.kind)
 
 
@@ -129,6 +129,8 @@ class Swarm:
         self.owner_actions: list[dict] = []  # links the owner needs to sign (enable / remove keys)
         self.installed: set[str] | None = None  # keys get_sentinels reports; None when unknown (rehearsal)
         self.detectors: dict[str, Any] = {}
+        self.judge_background = False  # the runner sets this: the judge asks the model on its own thread
+        self.judge_errors: dict[str, str | None] = {}
         # Payments up to the owner's last unpause were reviewed by the owner; sentinels judge only newer ones.
         self.reviewed_until = 0.0
         self.load()
@@ -266,7 +268,7 @@ class Swarm:
 
     def detector(self, m: Member):
         if m.id not in self.detectors:
-            self.detectors[m.id] = build(m, self.completer)
+            self.detectors[m.id] = build(m, self.completer, self.judge_background)
         return self.detectors[m.id]
 
     # ---- labels ----------------------------------------------------------------------------
@@ -369,6 +371,11 @@ class Swarm:
             except ValueError:
                 continue  # e.g. a judge with no model configured: it waits, it is not removed
             verdict = detector.judge(unreviewed, now, self.daily_limit)
+            error = getattr(detector, "error", None)
+            if m.kind == "judge" and error != self.judge_errors.get(m.id):
+                self.judge_errors[m.id] = error
+                if error:
+                    self.log("judge_error", member=m.id, error=error)
             entry = self.record_verdict(m, verdict, now) if m.kind == "judge" and getattr(detector, "fresh", False) else None
             if not verdict.pause:
                 continue
@@ -381,7 +388,9 @@ class Swarm:
             self.paused = True
             self.events.append({"type": "sentinel_pause_sent", "time": now, "tx": tx, "sentinel": m.id, "reason": verdict.reason})
             model = {"model": entry["model"], "verified": entry["verified"], "evidence_file": entry["file"]} if entry else {}
-            self.log("pause", member=m.id, reason=verdict.reason, tx=tx, **model,
+            # How long after the newest payment's block the pause was decided: the watcher's lag.
+            lag = round(now - unreviewed[-1].time, 1) if unreviewed else None
+            self.log("pause", member=m.id, reason=verdict.reason, tx=tx, **model, decided_after_s=lag, payments_seen=len(unreviewed),
                      evidence={k: v for k, v in verdict.evidence.items() if k != "model_evidence"})
             fired.append((m, verdict))
             break  # one pause is enough

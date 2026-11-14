@@ -4,6 +4,7 @@ client), and the evidence is kept with the verdict, so a reviewer can check whic
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -30,7 +31,11 @@ class Judge:
     notes: list[str] = field(default_factory=list)  # lessons from the parent, e.g. past false alarms
     kind: str = "judge"
     last_evidence: dict | None = None
-    fresh: bool = False  # True when the last judge() call asked the model; False when it reused the answer
+    fresh: bool = False  # True when the last judge() call returned a new model answer; False when it reused one
+    background: bool = False  # ask the model on a thread, so a slow answer never holds up the rule sentinels
+    error: str | None = None  # the last reason the model could not answer, for the lineage
+    _worker: threading.Thread | None = field(default=None, repr=False)
+    _result: tuple | None = field(default=None, repr=False)
     _asked: tuple | None = field(default=None, repr=False)
     _answer: Verdict | None = field(default=None, repr=False)
 
@@ -44,26 +49,50 @@ class Judge:
             lines += ["", "Notes from your supervisor (past mistakes to avoid):", *[f"- {n}" for n in self.notes]]
         return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "\n".join(lines)}]
 
-    def judge(self, history: list[Payment], now: float, daily_limit: int | None) -> Verdict:
-        if not history:
-            return Verdict(False)
-        # The answer depends on the payments, so ask again only when there is a new one: the swarm
-        # polls every second, and the model should not be called a second time for the same payments.
-        key = (len(history), history[-1].tx, history[-1].payment_id)
-        if key == self._asked and self._answer is not None:
-            self.fresh = False
-            return self._answer
-        self.fresh = False
+    def ask(self, key: tuple, messages: list[dict]) -> tuple:
+        """One model call: (key, verdict or None, error or None)."""
         try:
-            text, evidence = self.complete(self.prompt(history, now, daily_limit))
+            text, evidence = self.complete(messages)
             self.last_evidence = evidence
             start, end = text.find("{"), text.rfind("}")
             answer = json.loads(text[start:end + 1])
             pause, reason = bool(answer.get("pause")), str(answer.get("reason", ""))[:200]
-        except Exception:  # noqa: BLE001 (a judge that cannot answer stays quiet; the rules still watch)
-            return Verdict(False)
-        self._asked, self._answer, self.fresh = key, Verdict(pause, reason, {"model_evidence": evidence}), True
+        except Exception as error:  # noqa: BLE001 (a judge that cannot answer stays quiet; the rules still watch)
+            return key, None, f"{type(error).__name__}: {str(error)[:160]}"
+        return key, Verdict(pause, reason, {"model_evidence": evidence}), None
+
+    def take(self, result: tuple) -> Verdict:
+        key, verdict, error = result
+        self._asked, self.error = key, error
+        self._answer = verdict or Verdict(False)
+        self.fresh = verdict is not None
         return self._answer
+
+    def judge(self, history: list[Payment], now: float, daily_limit: int | None) -> Verdict:
+        self.fresh = False
+        if not history:
+            return Verdict(False)
+        # The answer depends on the payments, so ask again only when there is a new one: the swarm
+        # polls every second or so, and the model should not be called twice for the same payments.
+        key = (len(history), history[-1].tx, history[-1].payment_id)
+        if not self.background:
+            if key == self._asked and self._answer is not None:
+                return self._answer
+            return self.take(self.ask(key, self.prompt(history, now, daily_limit)))
+        if self._result is not None:  # an answer came back since the last call
+            result, self._result = self._result, None
+            return self.take(result)
+        if key == self._asked and self._answer is not None:
+            return self._answer
+        if self._worker is None or not self._worker.is_alive():
+            messages = self.prompt(history, now, daily_limit)
+
+            def work():
+                self._result = self.ask(key, messages)
+
+            self._worker = threading.Thread(target=work, name=f"{self.name}-model", daemon=True)
+            self._worker.start()
+        return Verdict(False)  # thinking: the rule sentinels keep watching meanwhile
 
 
 def summarize(evidence: dict) -> dict:

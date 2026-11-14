@@ -121,9 +121,10 @@ def main(argv=None) -> int:
     r = sub.choices["run"]
     r.add_argument("--cli", default="styx-near-vault", help="the Styx agent CLI that signs sentinel_pause")
     r.add_argument("--rpc")
-    r.add_argument("--interval", type=float, help="seconds between polls (default 1 for blocks, 8 for txs)")
-    r.add_argument("--source", choices=["blocks", "txs"], default="blocks",
-                   help="blocks: neardata, a payment is seen in the block it lands in; txs: the transaction list")
+    r.add_argument("--interval", type=float, help="seconds between polls (default 1.5 for txs, 1 for blocks)")
+    r.add_argument("--source", choices=["txs", "blocks"], default="txs",
+                   help="txs: FastNEAR's transaction list, confirmed over RPC (default); blocks: neardata block by block, "
+                        "which rate-limits anonymous clients to a few requests a minute")
     r.add_argument("--dry-run", action="store_true", help="record pauses instead of sending them")
     r.add_argument("--ui", type=int, default=8790)
     r.add_argument("--attack-marker", help="drain_attack.sh's marker (default $STYX_NEAR_STATE_ROOT/sentinel-attack.json)")
@@ -217,7 +218,8 @@ def main(argv=None) -> int:
     lock = threading.Lock()
     watcher = (ResilientWatcher(BlockWatcher(RPC(rpc_url), a.vault, a.network), Watcher(RPC(rpc_url), a.vault, a.network))
                if a.source == "blocks" else Watcher(RPC(rpc_url), a.vault, a.network))
-    interval = a.interval or (1.0 if a.source == "blocks" else 8.0)
+    interval = a.interval or (1.0 if a.source == "blocks" else 1.5)
+    swarm.judge_background = True
     open_ui(swarm, a.ui, lock, lambda: {"dry_run": isinstance(pauser, DryRunPauser), "source": getattr(watcher, "source", "")})
     marker_path = a.attack_marker or (Path(os.environ["STYX_NEAR_STATE_ROOT"]).expanduser() / "sentinel-attack.json"
                                       if os.environ.get("STYX_NEAR_STATE_ROOT") else None)
@@ -260,7 +262,8 @@ def main(argv=None) -> int:
                     swarm.mark_attack(*window)
                 out = swarm.cycle(batch)
             for member, reason in out["fired"]:
-                print(f"PAUSED by {member}: {reason}")
+                lag = next((e.get("decided_after_s") for e in reversed(swarm.lineage()) if e.get("action") == "pause"), None)
+                print(f"PAUSED by {member}: {reason}" + (f" (decided {lag}s after the newest payment's block)" if lag is not None else ""))
             for old, new in out["replaced"]:
                 print(f"retired {old}, spawned {new}")
             time.sleep(interval)

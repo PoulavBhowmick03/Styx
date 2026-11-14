@@ -116,3 +116,15 @@ def test_watcher_falls_back_to_nearblocks():
 
     w = Watcher(None, VAULT, get=lambda url: Reply(), post=post)
     assert list(w.listed()) == [("h9", VAULT)] and w.source == "nearblocks"
+
+
+def test_rpc_confirms_a_transaction_once_executed_not_waiting_for_finality():
+    from styx_sentinels.events import RPC
+    sent = []
+
+    class R:
+        def json(self):
+            return {"result": {}}
+
+    RPC("https://rpc", post=lambda url, json: sent.append(json) or R()).tx("H", "vault.testnet")
+    assert sent[0]["params"]["wait_until"] == "EXECUTED_OPTIMISTIC"

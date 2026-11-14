@@ -118,8 +118,10 @@ class RPC:
     def access_keys(self, account: str) -> list[dict]:
         return self.call("query", {"request_type": "view_access_key_list", "finality": "final", "account_id": account})["keys"]
 
-    def tx(self, tx_hash: str, sender: str) -> dict:
-        return self.call("tx", {"tx_hash": tx_hash, "sender_account_id": sender, "wait_until": "FINAL"})
+    def tx(self, tx_hash: str, sender: str, wait_until: str = "EXECUTED_OPTIMISTIC") -> dict:
+        """Every receipt executed. A sentinel acts on executed payments rather than waiting for finality
+        (about two blocks more): pausing is cheap and only the owner unpauses."""
+        return self.call("tx", {"tx_hash": tx_hash, "sender_account_id": sender, "wait_until": wait_until})
 
     def block_time(self, block_hash: str) -> float:
         header = self.call("block", {"block_id": block_hash})["header"]

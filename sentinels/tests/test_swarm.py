@@ -179,3 +179,47 @@ def test_the_call_cap_stops_the_judge_from_spending_more_and_it_stays_quiet():
         assert not j.judge(history, 1010, None).pause
     assert len(calls) == 2 and capped.calls == 2  # payments 3 and 4 never reached the model
     assert not j.fresh
+
+
+def test_a_slow_model_never_holds_up_the_rule_sentinels():
+    import threading
+    import time as _t
+    gate = threading.Event()
+
+    def slow(messages):
+        gate.wait(5)
+        return '{"pause": true, "reason": "drain"}', EVIDENCE
+
+    j = Judge(complete=slow, background=True)
+    history = [pay(1, 1000)]
+    started = _t.monotonic()
+    v = j.judge(history, 1000, None)
+    assert _t.monotonic() - started < 0.5 and not v.pause and not j.fresh  # returned at once, still thinking
+    assert not j.judge(history, 1001, None).pause  # still thinking: no second model call is started
+    gate.set()
+    j._worker.join(2)
+    v = j.judge(history, 1002, None)
+    assert v.pause and v.reason == "drain" and j.fresh  # the answer lands on the next poll
+    assert j.judge(history, 1003, None).pause and not j.fresh  # same payments: reused, not asked again
+
+
+def test_a_judge_that_fails_says_why_in_the_lineage_once(tmp_path):
+    def broken(messages):
+        raise RuntimeError("attestation did not verify: quote too old")
+
+    s = swarm(tmp_path, Clock(), completer=broken, kinds=(("judge", {"window": 20}),))
+    s.cycle(Batch(payments=[pay(1, 1000)]))
+    s.cycle(Batch(payments=[pay(2, 1010)]))
+    errors = [e for e in s.lineage() if e["action"] == "judge_error"]
+    assert len(errors) == 1 and "quote too old" in errors[0]["error"]
+    assert not s.paused
+
+
+def test_a_pause_records_how_long_after_the_newest_payment_it_was_decided(tmp_path):
+    clock = Clock(1000)
+    s = swarm(tmp_path, clock)
+    for i in range(5):
+        clock.t = 1000 + 8 * i + 3  # the watcher sees each payment 3 s after its block
+        s.cycle(Batch(payments=[pay(i, 1000 + 8 * i)]))
+    pause = next(e for e in s.lineage() if e["action"] == "pause")
+    assert (pause["decided_after_s"], pause["payments_seen"]) == (3.0, 5)
