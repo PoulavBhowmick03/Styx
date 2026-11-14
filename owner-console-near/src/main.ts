@@ -178,7 +178,7 @@ function renderPayments(){
  }
  $('#other-events').replaceChildren(...rows.filter(r=>r.event!=='payment_executed').map(r=>{
   // Do not render sealed ciphertext blobs; show event identity and public payment/key fields.
-  return el('p',`${r.time} · ${r.event} · ${r.data.payment_id??r.data.agent??r.data.approver??r.data.recipient??''} · ${r.tx}`);
+  return el('p',`${r.time} · ${r.event} · ${r.data.payment_id??r.data.agent??r.data.approver??r.data.recipient??(r.data.sentinel?named(r.data.sentinel,names):'')} · ${r.tx}`);
  }));
 }
 async function loadHistory(){
