@@ -1,3 +1,5 @@
+import { checkPauses } from './pause-alerts';
+import { chainClient } from './chain';
 import { dirname, join } from 'node:path';
 import { Relay, server } from './relay';
 import { Links } from './links';
@@ -18,4 +20,4 @@ const notify=tg?telegramNotifier({...tg,consoleUrl,chatId:t.TELEGRAM_CHAT_ID,cha
 server(new Relay(t.RELAY_TOKEN??'',t.RELAY_STATE_FILE),origins,notify,links&&bot?{links,linked:bot.linked}:undefined)
  .listen(Number(t.PORT??8788),t.HOST??'127.0.0.1',()=>{console.log('NEAR relay listening'+(bot?', Telegram alerts and wallet linking on':''));bot?.start();
   if(bot&&watches){const view=rpcView(t.NEAR_RPC_URL??'https://test.rpc.fastnear.com');const every=Math.max(60,Number(t.WATCH_INTERVAL??300))*1000;
-   const pass=()=>checkVaults(watches,view,(chat,text)=>bot.say(chat,text)).catch(()=>{});setInterval(pass,every);void pass();}});
+   let busy=false; const pass=async()=>{if(busy)return;busy=true;try{await checkVaults(watches,view,(chat,text)=>bot.say(chat,text));await checkPauses(watches,view,k=>links!.chats(k),(chat,text)=>bot.say(chat,text),chainClient(fetch,t.NEAR_RPC_URL));}finally{busy=false;}};setInterval(pass,every);void pass();}});

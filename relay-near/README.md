@@ -28,3 +28,22 @@ Absent/null chainId retains the NEAR Payment shape. NEP-413 verification is unch
 relay does not query the vault; the page checks the EVM hash, chain configuration and recipient.
 Tests include the actual public signature of a vault-v2 testnet exception, with a frozen clock.
 See ../docs/near/APPROVAL_PAGE.md for fixture provenance and tested scope.
+
+Sentinel pause alerts (testnet): watched vaults are also scanned through FastNEAR's transaction
+listing API; each transaction is confirmed through NEAR_RPC_URL at FINAL, accepting only successful
+Styx receipt logs executed by that vault. Each sentinel_paused alert includes a short sentinel key,
+its reason truncated at a UTF-8 boundary to 280 bytes as plain text (no parse_mode), a NearBlocks
+transaction link, and https://styxco.xyz/console/?vault=<vault>&network=testnet#sentinels.
+The link opens Review unpause once the owner connects in the console; the owner signs there. The bot cannot unpause.
+Recipients are linked chats for the current owner's full-access keys; merely watching a vault
+does not subscribe unrelated chats to pause alerts. All indexed history is scanned, including
+pauses during downtime. Dedupe IDs include vault, transaction, receipt, log, data index and chat,
+and persist without expiry in RELAY_WATCHES_FILE on the Fly volume. One process owns this file.
+Delivery uses a durable reservation before sending to prevent duplicates after a crash. Telegram
+has no idempotency key: a crash after reservation or an ambiguous/failed send can lose an alert;
+exactly-once delivery across both systems cannot be guaranteed. Such sends are not retried.
+
+No deployment is required for tests. `fly deploy` from relay-near would build the new relay image
+and replace the styx-relay-near Machine using the existing secrets, configuration and persistent
+volume; it would enable these chain reads and Telegram alerts. It would not deploy the console
+or change contracts. No deployment was performed for this change.
