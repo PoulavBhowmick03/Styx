@@ -174,6 +174,19 @@ and removes their keys and shows each pause's reason. How it works, what is test
 demo: [`docs/near/SENTINELS.md`](docs/near/SENTINELS.md). Try the rehearsal with
 `uv run --project sentinels styx-sentinels rehearse`.
 
+### Protect a vault with sentinels in 3 steps
+
+You need a version 3 vault (create one in the [console](https://styxco.xyz/console/)), `uv` and Rust.
+
+1. Build the CLI that signs a sentinel's pause: `cargo build --release --manifest-path sdk/near/Cargo.toml`.
+2. Run `uv run --project sentinels styx-sentinels quickstart --vault <your vault> --cli sdk/near/target/release/styx-near-vault`.
+   It creates the sentinels' keys in `~/.styx-near/sentinels/` (never in the repo) and prints one console link.
+3. Open that link as the vault owner and sign once. The command sees the keys appear on the vault, then
+   starts watching and opens the live page on `127.0.0.1:8790`.
+
+For the judge sentinel, set `NEARAI_API_KEY` and add `--extra judge` after `uv run`; it asks the model at most
+12 times per run (`STYX_JUDGE_MAX_CALLS`). The console's Sentinels panel shows this command for the loaded vault.
+
 ## What has run on testnet
 
 All in [`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md), every transaction re-read from the RPC:
