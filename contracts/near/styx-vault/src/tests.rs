@@ -924,3 +924,129 @@ fn sentinel_key_actions_are_pause_only_and_removal_deletes_key() {
         matches!(a, MockAction::DeleteKey { public_key, .. }
             if public_key.to_string() == near_sdk::serde_json::to_value(sentinel()).unwrap().as_str().unwrap())));
 }
+
+// ---- Velocity limit: at most N payments per window, every pay path, owner-set, off by default ----
+
+const S: u64 = 1_000_000_000;
+
+#[test]
+fn velocity_limit_is_off_by_default() {
+    let mut c = setup();
+    let v = c.get_vault();
+    assert_eq!((v.max_payments_per_window, v.window_seconds), (0, 0));
+    for i in 0..12 {
+        as_agent(agent(), DAY_NS);
+        c.pay(payment(&format!("p{i}"), 1));
+    }
+}
+
+#[test]
+#[should_panic(expected = "VelocityLimit")]
+fn the_n_plus_first_payment_in_the_window_is_refused() {
+    let mut c = setup();
+    c.set_velocity_limit(3, 60);
+    as_agent(agent(), DAY_NS);
+    for i in 0..3 {
+        c.pay(payment(&format!("p{i}"), 1));
+    }
+    c.pay(payment("p3", 1));
+}
+
+#[test]
+fn the_window_slides() {
+    let mut c = setup();
+    c.set_velocity_limit(2, 60);
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("a", 1));
+    as_agent(agent(), DAY_NS + 30 * S);
+    c.pay(payment("b", 1));
+    // 61 s after the first: it left the window, the second has not.
+    as_agent(agent(), DAY_NS + 61 * S);
+    c.pay(payment("c", 1));
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        as_agent(agent(), DAY_NS + 62 * S);
+        c.pay(payment("d", 1));
+    }));
+    assert!(refused.is_err());
+    as_agent(agent(), DAY_NS + 91 * S);
+    c.pay(payment("e", 1));
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 4);
+}
+
+#[test]
+#[should_panic(expected = "VelocityLimit")]
+fn the_limit_covers_exceptions_too() {
+    let mut c = setup();
+    c.set_velocity_limit(1, 60);
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("p1", 1));
+    let p = payment("p2", 150);
+    let a = authorization(&p, &key(2).1, 1);
+    let sig = sign(&c, &key(2).0, &a);
+    c.pay_with_exception(p, a, sig);
+}
+
+#[test]
+#[should_panic(expected = "VelocityLimit")]
+fn the_limit_is_vault_wide_across_near_and_evm() {
+    let mut c = evm_setup();
+    c.set_velocity_limit(1, 60);
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("near-1", 1));
+    c.pay_evm(evm_payment("evm-1", 1));
+}
+
+#[test]
+#[should_panic(expected = "VelocityLimit")]
+fn the_limit_covers_x402() {
+    let mut c = x402_setup();
+    c.set_velocity_limit(1, 60);
+    as_agent(agent(), DAY_NS);
+    c.pay_x402(x402_payment("x-1", 1));
+    c.pay_x402(x402_payment("x-2", 1));
+}
+
+#[test]
+fn a_refused_payment_charges_nothing() {
+    let mut c = setup();
+    c.set_velocity_limit(1, 60);
+    as_agent(agent(), DAY_NS);
+    c.pay(payment("p1", 1));
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.pay(payment("p2", 1))));
+    assert!(r.is_err());
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 1);
+    assert!(c.consumed_payment("p2".into()).is_none());
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn the_agent_cannot_change_the_velocity_limit() {
+    let mut c = setup();
+    as_agent(agent(), DAY_NS);
+    c.set_velocity_limit(0, 0);
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn a_sentinel_cannot_change_the_velocity_limit() {
+    let mut c = setup();
+    c.set_sentinel(sentinel(), true);
+    as_agent(sentinel(), DAY_NS);
+    c.set_velocity_limit(100, 1);
+}
+
+#[test]
+fn the_owner_sets_shows_and_clears_it_within_bounds() {
+    let mut c = setup();
+    c.set_velocity_limit(5, 300);
+    let v = c.get_vault();
+    assert_eq!((v.max_payments_per_window, v.window_seconds), (5, 300));
+    assert!(get_logs().iter().any(|l| l.contains("velocity_limit_set") && l.contains("\"window_seconds\":300")));
+    for (n, w) in [(101, 60), (5, 0), (5, DAY_SECONDS + 1)] {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.set_velocity_limit(n, w)));
+        assert!(r.is_err(), "{n} per {w}s should be refused");
+    }
+    c.set_velocity_limit(0, 999);
+    let v = c.get_vault();
+    assert_eq!((v.max_payments_per_window, v.window_seconds), (0, 0));
+}
