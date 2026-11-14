@@ -721,3 +721,90 @@ fn the_agent_key_may_call_pay_x402_and_the_vault_reports_version_3() {
     assert_eq!(c.get_vault().contract_version, 3);
     assert_eq!(c.get_vault().evm_address.as_deref(), Some(MPC_ADDRESS));
 }
+
+// ---- Guardian: a key that can only pause (contract version 3) ----
+
+fn guardian() -> PublicKey {
+    key(5).1
+}
+
+#[test]
+fn the_guardian_pauses_and_payments_stop_but_only_the_owner_unpauses() {
+    let mut c = setup();
+    c.set_guardian(Some(guardian()));
+    assert_eq!(c.get_vault().guardian, Some(guardian()));
+    testing_env!(context(vault(), guardian(), DAY_NS).build());
+    c.guardian_pause();
+    assert!(c.get_vault().paused);
+    assert!(get_logs().iter().any(|l| l.contains(r#""by":"guardian""#)));
+    as_owner(DAY_NS);
+    c.unpause();
+    assert!(!c.get_vault().paused);
+}
+
+#[test]
+#[should_panic(expected = "NotGuardian")]
+fn an_agent_key_cannot_use_guardian_pause() {
+    let mut c = setup();
+    c.set_guardian(Some(guardian()));
+    as_agent(agent(), DAY_NS);
+    c.guardian_pause();
+}
+
+#[test]
+#[should_panic(expected = "NotGuardian")]
+fn guardian_pause_must_come_from_the_vault_account_itself() {
+    let mut c = setup();
+    c.set_guardian(Some(guardian()));
+    testing_env!(context(acct("stranger.testnet"), guardian(), DAY_NS).build());
+    c.guardian_pause();
+}
+
+#[test]
+#[should_panic(expected = "NotGuardian")]
+fn a_removed_guardian_can_no_longer_pause() {
+    let mut c = setup();
+    c.set_guardian(Some(guardian()));
+    c.set_guardian(None);
+    testing_env!(context(vault(), guardian(), DAY_NS).build());
+    c.guardian_pause();
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn the_guardian_cannot_unpause() {
+    let mut c = setup();
+    c.set_guardian(Some(guardian()));
+    testing_env!(context(vault(), guardian(), DAY_NS).build());
+    c.guardian_pause();
+    c.unpause();
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn only_the_owner_sets_the_guardian() {
+    let mut c = setup();
+    as_agent(agent(), DAY_NS);
+    c.set_guardian(Some(guardian()));
+}
+
+#[test]
+#[should_panic(expected = "RoleConflict")]
+fn an_agent_key_cannot_become_the_guardian() {
+    let mut c = setup();
+    c.set_guardian(Some(agent()));
+}
+
+#[test]
+#[should_panic(expected = "RoleConflict")]
+fn the_guardian_key_cannot_become_an_agent() {
+    let mut c = setup();
+    c.set_guardian(Some(guardian()));
+    c.configure_agent(guardian(), U128(1), U128(1), U64(10 * DAY_SECONDS), true);
+}
+
+#[test]
+fn the_guardian_key_is_limited_to_guardian_pause() {
+    assert_eq!(GUARDIAN_METHODS, "guardian_pause");
+    assert!(!AGENT_METHODS.split(',').any(|m| m == "guardian_pause"));
+}
