@@ -71,6 +71,51 @@ sdk/near/target/release/styx-near-vault` makes the keys, prints the one console 
 vault shows every key, then watches. `styx-sentinels names --vault <vault>` writes a file for the
 console's Import names.
 
+## Your own sentinels (plug-ins)
+
+Anyone can add a kind of sentinel without touching the runner. A plug-in is one Python module:
+
+- `KIND`, its name, and `DEFAULTS`, its starting params;
+- `build(params, notes)`, an object whose `judge(history, now, daily_limit)` returns
+  `{"pause": bool, "reason": str}`;
+- `mutate(params, direction)`, which returns `(params, note)`: "looser" after false alarms, "stricter"
+  after misses.
+
+To use one:
+1. List it outside the repo, in `~/.styx-near/sentinels/plugins.toml`:
+   `[plugins.new_recipient]` with `module = "/path/to/new_recipient.py"`.
+2. Run `styx-sentinels add --vault <vault> --kind new_recipient`. It gets its own key, and the owner
+   installs it with the same one-approval link.
+3. From then on the parent scores, retires and mutates it like a built-in.
+
+The example, [`sentinels/examples/new_recipient.py`](../../sentinels/examples/new_recipient.py),
+pauses when an account first paid within the last 10 minutes takes more than 3 payments.
+
+**Isolation.** The runner never imports a plug-in.
+- Each call runs in a fresh `python -I -B` process that gets the module's source and the request on
+  stdin, and answers on stdout.
+- The request holds only public payment fields (agent, recipient, amount, time, transaction, kind,
+  exception), the time, the daily limit, and the plug-in's own params and notes. Never a key, a key
+  path or the swarm's folder.
+- The process has an empty environment, a fresh empty working folder, a 5-second wall-clock limit
+  and a CPU limit.
+- On macOS it also runs under `sandbox-exec`: no network, no file writes, and no reads of
+  `~/.styx-near`, `~/.near-credentials`, the key folder or the swarm's home. On other systems it runs
+  without that OS sandbox.
+- A crash, a timeout or a malformed answer is a quiet verdict and a `plugin_error` line in the
+  lineage. A failed mutation leaves the child with its parent's params.
+
+Tests (`sentinels/tests/test_plugins.py`):
+- the example pauses a new recipient, not an old one;
+- on macOS, a plug-in that tries to read a key file gets a permission error, sees no `STYX_`
+  variables and cannot write a file;
+- a plug-in sees only the public fields;
+- an endless loop times out quietly in about 1 second;
+- a crash is quiet and logged;
+- selection makes a plug-in's children looser, then stricter;
+- an unregistered kind waits;
+- `add` makes a key and an enable link.
+
 ## The owner console
 
 The **Sentinels** panel, for version 3 vaults:

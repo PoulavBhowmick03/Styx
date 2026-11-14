@@ -7,6 +7,7 @@
   styx-sentinels rehearse                                  the whole lifecycle on simulated payments
   styx-sentinels status   --vault V                        members, scores, owner actions
   styx-sentinels names    --vault V [--out FILE]           a names file for the console's Import names
+  styx-sentinels add      --vault V --kind K [--params J]  add a sentinel: built-in, or a plug-in from plugins.toml
   styx-sentinels label    --vault V MEMBER TIME catch|false_alarm
   styx-sentinels mark-attack --vault V START END [LABEL]
 
@@ -129,7 +130,7 @@ def run_service(a) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="styx-sentinels", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "quickstart", "run", "status", "names", "label", "mark-attack"):
+    for name in ("init", "quickstart", "run", "status", "names", "label", "mark-attack", "add"):
         s = sub.add_parser(name)
         s.add_argument("--vault", required=True)
         s.add_argument("--network", default="testnet", choices=["testnet", "mainnet"])
@@ -151,6 +152,8 @@ def main(argv=None) -> int:
     r.add_argument("--ui", type=int, default=8790)
     r.add_argument("--attack-marker", help="drain_attack.sh's marker (default $STYX_NEAR_STATE_ROOT/sentinel-attack.json)")
     sub.choices["names"].add_argument("--out", help="where to write it (default: styx-names-<vault>.json here)")
+    sub.choices["add"].add_argument("--kind", required=True, help="burst, concentration, judge, or a plug-in listed in plugins.toml")
+    sub.choices["add"].add_argument("--params", help="JSON params; default: the kind's defaults")
     sub.choices["label"].add_argument("member")
     sub.choices["label"].add_argument("time", type=float)
     sub.choices["label"].add_argument("outcome", choices=["catch", "false_alarm"])
@@ -232,11 +235,30 @@ def main(argv=None) -> int:
             if not any(m.kind == kind and m.status == "active" for m in swarm.members):
                 swarm.spawn(kind, params)
         swarm.save()
+    if a.cmd == "add":
+        import json as _json
+        from . import plugins
+        from .swarm import BUILT_IN
+        if any(m.kind == a.kind and m.status == "active" for m in swarm.members):
+            print(f"An active {a.kind} sentinel already watches this vault; see `status`.")
+            return 1
+        try:
+            if a.params:
+                params = _json.loads(a.params)
+            elif a.kind in BUILT_IN:
+                params = dict(next(p for k, p in DEFAULT_SWARM if k == a.kind))
+            else:
+                params = plugins.defaults(a.kind)
+        except (plugins.PluginError, ValueError, StopIteration) as error:
+            print(f"Cannot add {a.kind}: {error}")
+            return 1
+        swarm.spawn(a.kind, params)
+        swarm.save()
     if a.cmd == "label":
         swarm.label(a.member, a.time, a.outcome)
     if a.cmd == "mark-attack":
         swarm.mark_attack(a.start, a.end, a.label)
-    if a.cmd in ("init", "status", "label", "mark-attack"):
+    if a.cmd in ("init", "status", "label", "mark-attack", "add"):
         for m in swarm.members:
             print(f"{m.id:18} {m.status:8} score {m.score:+d} ({m.catches} caught, {m.false_alarms} false)  {m.public_key}")
         pending = swarm.pending()
