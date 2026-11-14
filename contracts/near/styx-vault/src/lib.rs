@@ -27,6 +27,8 @@ const AGENT_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(250);
 const SENTINEL_METHODS: &str = "sentinel_pause";
 const MAX_SENTINELS: usize = 8;
 const SENTINEL_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(50);
+/// Velocity limit bounds: at most this many payments per window, and a window of at most a day.
+const MAX_VELOCITY_PAYMENTS: u32 = 100;
 const AGENT_METHODS: &str = "pay,pay_with_exception,pay_evm,pay_evm_with_exception,pay_x402,post_record";
 /// The MPC signer used when the constructor names none.
 const DEFAULT_MPC_SIGNER: &str = "v1.signer-prod.testnet";
@@ -218,6 +220,10 @@ pub struct VaultInfo {
     pub evm_key_path: String,
     /// The vault's derived EVM address, as set by the owner; x402 authorizations are signed from it.
     pub evm_address: Option<String>,
+    /// Velocity limit: at most this many payments (every pay path, vault-wide) in any
+    /// `window_seconds`. 0 means off, the default.
+    pub max_payments_per_window: u32,
+    pub window_seconds: u64,
 }
 
 #[near(contract_state)]
@@ -254,6 +260,11 @@ pub struct Contract {
     x402_signed: LookupMap<String, X402Authorization>,
     /// At most eight function-call keys, each restricted to `sentinel_pause`.
     sentinels: Vec<PublicKey>,
+    /// Velocity limit, off when 0. `recent_payments` holds the start times (seconds) of the
+    /// payments charged inside the current window, oldest first, at most `velocity_max` of them.
+    velocity_max: u32,
+    velocity_window: u64,
+    recent_payments: Vec<u64>,
 }
 
 #[near]
@@ -283,6 +294,9 @@ impl Contract {
             x402_domains: LookupMap::new(StorageKey::X402Domains),
             x402_signed: LookupMap::new(StorageKey::X402Signed),
             sentinels: Vec::new(),
+            velocity_max: 0,
+            velocity_window: 0,
+            recent_payments: Vec::new(),
         }
     }
 
@@ -373,6 +387,24 @@ impl Contract {
         self.assert_owner();
         self.vault_daily_limit = limit.0;
         emit("vault_daily_limit_set", &near_sdk::serde_json::json!({ "limit": limit }));
+    }
+
+    /// At most `max_payments_per_window` payments, on every pay path together, in any `window_seconds`.
+    /// `0` turns it off. Payments over it are refused with `VelocityLimit` before any counter,
+    /// transfer or signature request. Owner only.
+    pub fn set_velocity_limit(&mut self, max_payments_per_window: u32, window_seconds: u64) {
+        self.assert_owner();
+        if max_payments_per_window > 0 {
+            require!(max_payments_per_window <= MAX_VELOCITY_PAYMENTS, "VelocityLimitTooLarge");
+            require!(window_seconds > 0 && window_seconds <= DAY_SECONDS, "BadVelocityWindow");
+        }
+        self.velocity_max = max_payments_per_window;
+        self.velocity_window = if max_payments_per_window > 0 { window_seconds } else { 0 };
+        let (on, cutoff) = (self.velocity_max > 0, now_seconds().saturating_sub(self.velocity_window));
+        self.recent_payments.retain(|t| on && *t > cutoff);
+        emit("velocity_limit_set", &near_sdk::serde_json::json!({
+            "max_payments_per_window": self.velocity_max, "window_seconds": self.velocity_window
+        }));
     }
 
     pub fn pause(&mut self) {
@@ -539,6 +571,7 @@ impl Contract {
         let token = self.evm_token(payment.chain_id);
         let nonce = hash_evm_payment(&payment, &token);
         let digest = x402_digest(&domain, payment.chain_id, &token, &from, &payment.recipient, payment.amount.0, 0, payment.valid_until.0, &nonce);
+        self.note_payment();
         self.consumed_payments.insert(payment.payment_id.clone(), nonce);
         set_payer(&payment.payment_id, &payment.agent);
         let key = (payment.agent.clone(), day);
@@ -832,6 +865,8 @@ impl Contract {
             mpc_signer: self.mpc_signer.clone(),
             evm_key_path: EVM_KEY_PATH.to_string(),
             evm_address: self.evm_address.clone(),
+            max_payments_per_window: self.velocity_max,
+            window_seconds: self.velocity_window,
         }
     }
 
@@ -943,6 +978,7 @@ impl Contract {
         let policy = policy.unwrap_or_else(|| env::panic_str("NotAgent"));
         require!(!self.paused, "VaultPaused");
         let now = now_seconds();
+        self.check_velocity(now);
         require!(now <= policy.valid_until.0, "PolicyExpired");
         require!(p.agent == agent, "AgentMismatch");
         require!(self.evm_chains.get(&p.chain_id).map(|c| c.enabled).unwrap_or(false), "ChainNotAllowed");
@@ -1005,6 +1041,7 @@ impl Contract {
         let fields = (chain.max_fee_per_gas, chain.max_priority_fee_per_gas, chain.gas_limit, chain.token.clone());
         let transfer = self.transfer_for(&payment, nonce, &fields);
         let sighash = env::keccak256_array(&transfer.signing_payload());
+        self.note_payment();
         self.consumed_payments.insert(payment.payment_id.clone(), hash_evm_payment(&payment, &chain.token));
         set_payer(&payment.payment_id, &payment.agent);
         let key = (payment.agent.clone(), day);
@@ -1054,6 +1091,30 @@ impl Contract {
         }
     }
 
+    /// Refuses a payment that would be the (max + 1)th inside the sliding window.
+    fn check_velocity(&self, now: u64) {
+        if self.velocity_max == 0 {
+            return;
+        }
+        let cutoff = now.saturating_sub(self.velocity_window);
+        let inside = self.recent_payments.iter().filter(|t| **t > cutoff).count();
+        require!(inside < self.velocity_max as usize, "VelocityLimit");
+    }
+
+    /// Counts a payment whose counters were just charged. A payment that later rolls back still
+    /// counts: the limit bounds how often the agent may try, not only what settles.
+    fn note_payment(&mut self) {
+        if self.velocity_max == 0 {
+            return;
+        }
+        let now = now_seconds();
+        let cutoff = now.saturating_sub(self.velocity_window);
+        self.recent_payments.retain(|t| *t > cutoff);
+        self.recent_payments.push(now);
+        let excess = self.recent_payments.len().saturating_sub(self.velocity_max as usize);
+        self.recent_payments.drain(..excess);
+    }
+
     /// Every check shared by `pay` and `pay_with_exception`, in the same order as the Arc vault.
     fn check_shared(&self, p: &Payment) -> (AgentPolicy, u64) {
         require!(env::predecessor_account_id() == env::current_account_id(), "NotAgent");
@@ -1062,6 +1123,7 @@ impl Contract {
         let policy = policy.unwrap_or_else(|| env::panic_str("NotAgent"));
         require!(!self.paused, "VaultPaused");
         let now = now_seconds();
+        self.check_velocity(now);
         require!(now <= policy.valid_until.0, "PolicyExpired");
         require!(p.agent == agent, "AgentMismatch");
         require!(p.token == self.token, "TokenMismatch");
@@ -1094,6 +1156,7 @@ impl Contract {
         exception: Option<(ExceptionAuthorization, [u8; 32])>,
     ) -> Promise {
         let hash = hash_payment(&payment);
+        self.note_payment();
         self.consumed_payments.insert(payment.payment_id.clone(), hash);
         set_payer(&payment.payment_id, &payment.agent);
         let key = (payment.agent.clone(), day);
