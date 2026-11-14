@@ -168,6 +168,24 @@ The v3 factory is on `styx-vaults.testnet` ([TESTNET_RUN.md](TESTNET_RUN.md#sent
 5. In the console's Sentinels panel, read the reason and unpause. Record each transaction with
    `scripts/near/tx_outcome.sh` in [TESTNET_RUN.md](TESTNET_RUN.md).
 
+## Sentinels off and on, as numbers (testnet, 14 Nov 2026)
+
+The same drain, 8 payments of 1 tUSDC, each inside every limit, run twice on
+`sentinels.styx-vaults.testnet` by `scripts/near/compare_sentinels.sh 8 1`. The "off" run has no
+sentinel runner and spends its 8 tUSDC on purpose, to show what the limits alone allow.
+
+| | Sentinels off | Sentinels on |
+| --- | --- | --- |
+| Payments settled | 8 of 8 | 5 of 8; the sixth refused with `VaultPaused` |
+| tUSDC lost | 8 | 5 |
+| First payment to pause | never paused | 43.0 s (blocks 277658980 to 277659057) |
+| Pause | none | [`8K1mx63A…`](https://testnet.nearblocks.io/txns/8K1mx63AMt2k6WMDT6PzsLSc3G5ygpeiNW981DLKgc7u), by burst-g1: "5 payments in 5 min (5 total), over the 4 allowed" |
+
+Every transaction is in [TESTNET_RUN.md](TESTNET_RUN.md#sentinels-off-and-on-as-numbers-14-nov-2026).
+Payments landed about 10 s apart. The burst sentinel's threshold (more than 4 in 5 minutes) is what
+lets the fifth through. A stricter threshold, or the contract's velocity limit (branch
+`vault-velocity-limit`, not deployed), would stop it sooner.
+
 ## What ran on testnet (14 Nov 2026)
 
 On `sentinels.styx-vaults.testnet` ([TESTNET_RUN.md](TESTNET_RUN.md#sentinels-on-testnet-14-nov-2026)):

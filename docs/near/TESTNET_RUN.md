@@ -344,3 +344,28 @@ round 3 the judge logged an error and did not take part: the model returned no c
 answered pause ("Six identical 1-unit payments to the same recipient within 50 seconds looks like
 automated…"), so with a working judge round 3 would likely have been paused by the judge: a false
 alarm the parent would score against it.
+
+## Sentinels off and on, as numbers (14 Nov 2026)
+
+`scripts/near/compare_sentinels.sh 8 1` on `sentinels.styx-vaults.testnet`. The script first checked
+that the vault's balance (79 tUSDC), the agent's daily limit (79 left) and the vault's daily limit
+(479 left) covered both runs (16 tUSDC). The "off" run spent its money on purpose. Every transaction
+was re-read with `scripts/near/tx_outcome.sh` through FastNEAR's RPC: every receipt succeeded.
+
+| | Sentinels off | Sentinels on |
+| --- | --- | --- |
+| Payments settled | 8 of 8 | 5 of 8; the sixth refused with `VaultPaused` |
+| tUSDC lost | 8 | 5 |
+| First payment to pause | never paused | 43.0 s (blocks 277658980 to 277659057) |
+| Pause | none | [`8K1mx63A…`](https://testnet.nearblocks.io/txns/8K1mx63AMt2k6WMDT6PzsLSc3G5ygpeiNW981DLKgc7u), by burst-g1: "5 payments in 5 min (5 total), over the 4 allowed" |
+
+**Sentinels off** (no runner): eight payments of 1 tUSDC to `vendor-a`, all settled:
+[`DPmSrgXF…`](https://testnet.nearblocks.io/txns/DPmSrgXF9ZTuk7s7wFCddVExkrCXk5wghtrcE59uypE3), [`2agWhUFu…`](https://testnet.nearblocks.io/txns/2agWhUFuA4FjMarAXiQWVaPxmdt9zTcMpV1Zi4dkuLVx), [`HYki1Nop…`](https://testnet.nearblocks.io/txns/HYki1NopnQcG57gLpvncnmxU2LxZehKCJhFBaPhYJrc2), [`3KxKo2LY…`](https://testnet.nearblocks.io/txns/3KxKo2LYGarxmsGzhVQHyw8yCV2nsAUDAw8K4nAVo1fN), [`6MKxSCSU…`](https://testnet.nearblocks.io/txns/6MKxSCSUFL43yU4C5ajwQK6NUpeuasrMPKfEhUqWZwBu), [`su1WjVeh…`](https://testnet.nearblocks.io/txns/su1WjVeh1oJxcNatHmJzDQMoaUJUg9GvgpJL7ii3Sqw), [`D88p6SKL…`](https://testnet.nearblocks.io/txns/D88p6SKLt1hT2nyZN6X92vxNo5pHyoTtfjU1GfnpWdtz), [`3WrQRgnP…`](https://testnet.nearblocks.io/txns/3WrQRgnPVjXLsyg5EwbCNsgFHzL9upGM78cr4yHgyKEk).
+
+**Sentinels on**, after the 5-minute burst window cleared: the swarm (burst-g1, concentration-g1;
+the judge was idle, with no NEAR AI key) watched FastNEAR's transaction list.
+- Five payments settled: [`21PMLS2c…`](https://testnet.nearblocks.io/txns/21PMLS2cY7XagpPXCkuzmbJ3X6YTBrsXroy5vsYMZ9QD), [`BoS2epce…`](https://testnet.nearblocks.io/txns/BoS2epceCzHJBbyTUKLWv2Cv4uPeNMW9rVFqjhf3yWAJ), [`DFNyde9F…`](https://testnet.nearblocks.io/txns/DFNyde9FKDAKWkHn42DL4c2qqUaSGQUEzjrC8BYFQnUM), [`BXLyJGLb…`](https://testnet.nearblocks.io/txns/BXLyJGLbJJ1umHUtjh4riZxxrvKeyn2pvEoiCsGKgfEr), [`3fUp66S7…`](https://testnet.nearblocks.io/txns/3fUp66S7oFj6fnHToUfjpAMdRmvP2oy8XbiDxx3ab6aZ).
+- burst-g1 paused the vault with its own key: [`8K1mx63A…`](https://testnet.nearblocks.io/txns/8K1mx63AMt2k6WMDT6PzsLSc3G5ygpeiNW981DLKgc7u) (`sentinel_pause`). It decided 6.1 s after
+  the fifth payment's block.
+- The sixth payment was refused with `VaultPaused` before it was sent, and the drain stopped.
+- The owner unpaused: [`9iquBpzC…`](https://testnet.nearblocks.io/txns/9iquBpzCKPL9ZrystZqBLo5aPB1qroyvPq2H16iBGojW).
