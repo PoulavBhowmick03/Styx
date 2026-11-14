@@ -1,7 +1,7 @@
 import '../../site/styx.css';
 import './style.css';
 import type { State } from './types';
-import { card, esc, feed, generations, mode, ownerActions, timeline } from './view';
+import { esc, evolution, feed, mode, ownerActions, row, timeline } from './view';
 
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 
@@ -9,16 +9,19 @@ function render(s:State){
  const members=s.members??[],lineage=s.lineage??[];
  $('#mode').textContent=mode(s);
  const state=$('#state');state.textContent=s.paused?'Vault paused':'Vault live';state.className=`pill ${s.paused?'paused':'live'}`;
- $('#vault').innerHTML=s.vault?`Watching <code>${esc(s.vault)}</code>`:'Watching a vault';
+ document.body.classList.toggle('is-paused',!!s.paused);
+ $('#vault').innerHTML=s.vault?`<code>${esc(s.vault)}</code>`:'Watching a vault';
  const caption=$('#caption');caption.hidden=!s.caption;caption.textContent=s.caption??'';
  const fired=lineage.filter(e=>e.action==='pause').at(-1)?.member??'';
  const active=members.filter(m=>m.status==='active');
- $('#summary').textContent=`${active.length} active · ${members.length-active.length} retired · ${members.reduce((n,m)=>n+m.catches,0)} attacks caught`;
- $('#cards').innerHTML=members.slice().sort((a,b)=>(a.status===b.status?0:a.status==='active'?-1:1)).map(m=>card(m,fired,!!s.paused)).join('')||'<p class="empty">No sentinels yet. Run styx-sentinels init.</p>';
+ const gens=Math.max(0,...members.map(m=>m.generation));
+ $('#numbers').innerHTML=[['alive',active.length],['retired',members.length-active.length],['generations',gens],['attacks caught',members.reduce((n,m)=>n+m.catches,0)]]
+  .map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+ $('#owner').innerHTML=ownerActions(s);
+ $('#rows').innerHTML=active.map(m=>row(m,s,fired)).join('')||'<p class="empty">No sentinels yet. Run styx-sentinels init.</p>';
  $('#timeline').innerHTML=timeline(s);
+ $('#evolution').innerHTML=evolution(members,lineage);
  $('#feed').innerHTML=feed(lineage);
- $('#tree').innerHTML=generations(members);
- $('#actions').innerHTML=ownerActions(s);
 }
 
 async function tick(){
