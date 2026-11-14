@@ -30,6 +30,7 @@ export function crossed(spent: bigint, limit: bigint, alreadySent: number): numb
 
 export class Watches {
   private watches = new Map<string, string[]>(); // vault -> chats
+  private pauses = new Set<string>();
   private sent = new Map<string, number>();       // `${vault}:${day}` -> highest threshold sent
 
   constructor(private file?: string) {
@@ -37,6 +38,7 @@ export class Watches {
     try {
       const saved = JSON.parse(readFileSync(file, 'utf8'));
       if (!Array.isArray(saved.watches) || !Array.isArray(saved.sent)) throw new Error('invalid saved watches');
+      for (const id of saved.pauses ?? []) if (typeof id === 'string') this.pauses.add(id);
       for (const [v, chats] of saved.watches) {
         if (!isAccount(v) || !Array.isArray(chats) || !chats.every((c: unknown) => typeof c === 'string' && chatId.test(c))) throw new Error('invalid saved watch');
         this.watches.set(v, chats);
@@ -47,9 +49,11 @@ export class Watches {
   private save() {
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
-    writeFileSync(this.file + '.tmp', JSON.stringify({ watches: [...this.watches], sent: [...this.sent] }), { mode: 0o600 });
+    writeFileSync(this.file + '.tmp', JSON.stringify({ watches: [...this.watches], sent: [...this.sent], pauses: [...this.pauses] }), { mode: 0o600 });
     renameSync(this.file + '.tmp', this.file);
   }
+  pauseSent(id: string) { return this.pauses.has(id); }
+  markPause(id: string) { this.pauses.add(id); this.save(); }
   watch(chat: string, vault: string) {
     if (!chatId.test(chat) || !isAccount(vault)) return fail(400, 'invalid watch');
     const chats = this.watches.get(vault) ?? [];
