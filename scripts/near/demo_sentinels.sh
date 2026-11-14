@@ -60,7 +60,7 @@ echo "Every active sentinel's key is on the vault, allowed only sentinel_pause."
 say "3. The sentinels watch (live page: http://127.0.0.1:$PORT/)"
 LOG="$STYX_NEAR_STATE_ROOT/sentinels-demo.log"
 mkdir -p -m 700 "$STYX_NEAR_STATE_ROOT"
-PYTHONUNBUFFERED=1 sentinels run --vault "$STYX_NEAR_VAULT" --cli "$STYX_NEAR_CLI" --rpc "$RPC" --interval 3 --ui "$PORT" \
+PYTHONUNBUFFERED=1 sentinels run --vault "$STYX_NEAR_VAULT" --cli "$STYX_NEAR_CLI" --rpc "$RPC" --ui "$PORT" \
   --attack-marker "$STYX_NEAR_STATE_ROOT/sentinel-attack.json" >"$LOG" 2>&1 &
 RUNNER=$!
 trap 'kill $RUNNER 2>/dev/null || true' EXIT

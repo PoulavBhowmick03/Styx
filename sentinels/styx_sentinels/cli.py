@@ -44,8 +44,10 @@ def completer_or_none(enabled: bool):
     if not os.environ.get("NEARAI_API_KEY"):
         print("NEARAI_API_KEY is not set: the judge sentinel is skipped.")
         return None
-    from .judge import NearAICompleter
-    return NearAICompleter(os.environ.get("STYX_SENTINEL_MODEL", "z-ai/glm-5.3-flash"))
+    from .judge import CappedCompleter, NearAICompleter
+    cap = int(os.environ.get("STYX_JUDGE_MAX_CALLS", "12"))
+    print(f"The judge may ask the model at most {cap} times in this run (STYX_JUDGE_MAX_CALLS).")
+    return CappedCompleter(NearAICompleter(os.environ.get("STYX_SENTINEL_MODEL", "z-ai/glm-5.3-flash")), cap)
 
 
 def open_ui(swarm, port: int, lock, extra=None) -> None:

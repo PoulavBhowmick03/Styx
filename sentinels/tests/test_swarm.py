@@ -166,3 +166,16 @@ def test_the_judge_asks_the_model_once_per_new_payment_not_once_per_poll():
     assert len(calls) == 1 and not j.fresh
     j.judge(history + [pay(2, 1010)], 1010, None)
     assert len(calls) == 2 and j.fresh
+
+
+def test_the_call_cap_stops_the_judge_from_spending_more_and_it_stays_quiet():
+    from styx_sentinels.judge import CappedCompleter
+    calls = []
+    capped = CappedCompleter(lambda m: (calls.append(1) or '{"pause": false, "reason": "ok"}', EVIDENCE), limit=2)
+    j = Judge(complete=capped)
+    history = []
+    for i in range(1, 5):
+        history.append(pay(i, 1000 + i))
+        assert not j.judge(history, 1010, None).pause
+    assert len(calls) == 2 and capped.calls == 2  # payments 3 and 4 never reached the model
+    assert not j.fresh

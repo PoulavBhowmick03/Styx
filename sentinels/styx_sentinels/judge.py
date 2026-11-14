@@ -98,9 +98,25 @@ class NearAICompleter:
     def __call__(self, messages: list[dict]) -> tuple[str, dict]:
         if self.preflight is None:
             self.preflight = self.client.preflight()
-        parsed, entry = self.client.complete({"model": self.model, "messages": messages, "temperature": 0}, self.preflight)
+        # max_tokens bounds what one verdict can cost; the answer is one short JSON line.
+        parsed, entry = self.client.complete({"model": self.model, "messages": messages, "temperature": 0, "max_tokens": 400}, self.preflight)
         text = parsed["choices"][0]["message"]["content"]
         pre = self.preflight
         return text, {"model": self.model, "signature": entry, "preflight": {
             "checks": [str(c) for c in pre.checks], "signers": [f"{algo}:{address}:{label}" for (algo, address), label in pre.signers.items()],
             "rejected": len(pre.rejected), "nonce": pre.nonce, "url": pre.url, "tls": dict(pre.tls) if pre.tls else None}}
+
+
+class CappedCompleter:
+    """Stops asking the model after `limit` calls in this process, so a long run or a bug cannot spend
+    the owner's credits. The judge treats the refusal as an answer it cannot give and stays quiet; the
+    rule sentinels keep watching."""
+
+    def __init__(self, inner: Completer, limit: int):
+        self.inner, self.limit, self.calls = inner, limit, 0
+
+    def __call__(self, messages: list[dict]) -> tuple[str, dict]:
+        if self.calls >= self.limit:
+            raise RuntimeError(f"judge call cap of {self.limit} reached")
+        self.calls += 1
+        return self.inner(messages)
