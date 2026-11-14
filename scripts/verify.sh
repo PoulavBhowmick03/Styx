@@ -11,7 +11,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 QUICK=0; [ "${1:-}" = "--quick" ] && QUICK=1
 LOG="$(mktemp -d)"; ROWS=(); FAILED=0
-row() { ROWS+=("$(printf '%-38s %-6s %s' "$1" "$2" "$3")"); [ "$2" = "FAIL" ] && FAILED=1; return 0; }
+row() { ROWS+=("$(printf '%-44s %-6s %s' "$1" "$2" "$3")"); [ "$2" = "FAIL" ] && FAILED=1; return 0; }
 need() { command -v "$1" >/dev/null || { echo "Missing $1: $2" >&2; exit 2; }; }
 need cargo "install Rust from https://rustup.rs"
 need uv "install from https://docs.astral.sh/uv/"
@@ -63,7 +63,7 @@ if [ $QUICK = 0 ]; then
 fi
 
 echo
-printf '%-38s %-6s %s\n' "Suite" "Result" "Count"
+printf '%-44s %-6s %s\n' "Suite" "Result" "Count"
 printf '%s\n' "${ROWS[@]}"
 echo
 echo "Next, with no wallet: uv run --project sentinels styx-sentinels rehearse  (a drain caught, a sentinel retired and bred, on 127.0.0.1:8790)"
