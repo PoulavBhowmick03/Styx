@@ -68,8 +68,19 @@ try{
  const sent=await page.evaluate(()=>window.__submitted);
  assert.equal(sent.signerId,OWNER);assert.equal(sent.receiverId,vault);
  assert.deepEqual(sent.actions.map(a=>[a.params.methodName,a.params.args]),[['set_sentinel',{key:NEW,enabled:true}]]);
+ // The pause card says who paused, why and what got out first, as text; the owner can mark it.
+ const card=page.locator('#sentinels .paused-banner');
+ assert.match(await card.textContent(),/Paused by /);
+ assert.match(await card.textContent(),/settled in the 5 minutes before the pause|Payment times are unavailable/);
+ assert.equal(await card.locator('p').nth(1).textContent(),reason);
+ assert.equal(await card.locator('b').count(),0);
+ await card.getByRole('button',{name:'Mark as attack'}).click();
+ const verdicts=await page.evaluate(()=>Object.entries(localStorage).find(([k])=>k.startsWith('styx-pause-labels:'))?.[1]);
+ assert.deepEqual(JSON.parse(verdicts),{'pause-tx':'catch'});
+ assert.match(await card.textContent(),/You marked this pause as an attack/);
+ await card.getByRole('button',{name:'Download labels for the swarm'}).waitFor();
  // The unpause is one reviewed click from the banner.
- await page.locator('#sentinels .paused-banner button').click();
+ await card.getByRole('button',{name:'Review unpause'}).click();
  assert.match(await page.locator('#preview').textContent(),/"method": "unpause"/);
  const stored=await page.evaluate(()=>Object.entries(localStorage).find(([k])=>k.startsWith('styx-labels:'))?.[1]);
  assert.match(stored,/burst-g2/);
@@ -81,5 +92,5 @@ try{
  await page.locator('#cancel').click();
  await page.locator('#review[open]').waitFor({state:'hidden'});
  assert.deepEqual(errors,[]);
- console.log('PASS: v3 vault, parent link opens one review (remove + install), paused banner, reason as text, paste-to-install signs set_sentinel, unpause review, names kept; no browser errors.');
+ console.log('PASS: v3 vault, parent link opens one review (remove + install), paused banner, pause card (who, why, the payments before it, Mark as attack saved), reason as text, paste-to-install signs set_sentinel, unpause review, names kept; no browser errors.');
 }finally{await browser.close();await server?.close();}

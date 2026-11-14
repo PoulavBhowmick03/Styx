@@ -355,6 +355,31 @@ export function paymentsCsv(rows:EventRow[],names:Labels):string{
 // allowance), or deletes it. A sentinel cannot pay, unpause or change a rule; only the owner unpauses.
 export const SENTINEL_VERSION=3;
 export const MAX_SENTINELS=8;
+// The pause the vault is in now: the latest sentinel_paused with no unpause after it, and the payments
+// that settled in the 5 minutes before it. Times are the indexer rows' ISO block times.
+export type PauseCard={sentinel:string;reason:string;time:string;tx:string;recent:number|null;recentBase:bigint};
+export function currentPause(rows:EventRow[]):PauseCard|null{
+ let last:EventRow|undefined;
+ for(const r of [...rows].sort((a,b)=>a.time.localeCompare(b.time))){
+  if(r.event==='sentinel_paused' && typeof r.data.sentinel==='string') last=r;
+  else if(r.event==='unpaused') last=undefined;
+ }
+ if(!last) return null;
+ const at=Date.parse(last.time);
+ const base={sentinel:last.data.sentinel as string,reason:typeof last.data.reason==='string'?last.data.reason:'',time:last.time,tx:last.tx};
+ if(Number.isNaN(at)) return {...base,recent:null,recentBase:0n};
+ const recent=rows.filter(r=>{const t=Date.parse(r.time);return r.event==='payment_executed' && !Number.isNaN(t) && t<=at && at-t<=300_000;});
+ return {...base,recent:recent.length,recentBase:recent.reduce((n,r)=>n+(typeof r.data.amount==='string' && /^\d+$/.test(r.data.amount)?BigInt(r.data.amount):0n),0n)};
+}
+// The owner's verdict on a pause, for the swarm's parent: styx-sentinels import-labels reads this file.
+export type PauseVerdict='catch'|'false_alarm';
+export type PauseLabels=Record<string,PauseVerdict>;
+export function pauseLabelsFile(vault:string,labels:PauseLabels):string{
+ return JSON.stringify({vault:account(vault),pause_labels:Object.entries(labels).filter(([,o])=>o==='catch'||o==='false_alarm').map(([tx,outcome])=>({tx,outcome}))},null,2)+'\n';
+}
+export function readPauseLabels(text:string|null):PauseLabels{
+ try{const d=JSON.parse(text??'{}');const out:PauseLabels={};for(const [k,v] of Object.entries(d)) if(typeof k==='string' && (v==='catch'||v==='false_alarm')) out[k]=v;return out;}catch{return {};}
+}
 // Hosted sentinels (styx-sentinels serve): the service answers a registration with the one console
 // link that installs its keys. Only that link's sentinel changes are used, and only for this vault;
 // the owner still reviews and signs them here.

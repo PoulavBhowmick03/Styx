@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, hostedChanges, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, hostedChanges, currentPause, pauseLabelsFile, readPauseLabels, type PauseVerdict, type PauseLabels, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -538,6 +538,15 @@ function sentinelPreview(changes:SentinelChange[]){
  const values={};previewBatch(todo.map(c=>formPlan('set_sentinel',{key:c.key,enabled:String(c.enabled)},context!.vault,facts!.info.token,context!.network)),values);
 }
 const named_=(k:string)=>named(k,names);
+const pauseStore=()=>`styx-pause-labels:${context?.vault??''}`;
+function pauseLabels():PauseLabels{try{return readPauseLabels(localStorage.getItem(pauseStore()));}catch{return {};}}
+function setPauseLabel(tx:string,outcome:PauseVerdict){
+ const all={...pauseLabels(),[tx]:outcome};
+ try{localStorage.setItem(pauseStore(),JSON.stringify(all));}catch{toast('error','Not saved','This browser blocks storage here; download the labels now.');}
+ renderSentinels();
+ toast('ok',outcome==='catch'?'Marked as an attack':'Marked as a false alarm','Download the labels and run styx-sentinels import-labels so the swarm learns from it.');
+}
+const tusdc=(base:bigint)=>(Number(base)/1e6).toLocaleString('en-US',{maximumFractionDigits:6});
 function renderSentinels(){
  const list=$('#sentinel-list'),status=$('#sentinel-status'),add=$<HTMLFormElement>('#sentinel-add'),pausedBox=$('#sentinel-paused');
  list.replaceChildren();pausedBox.replaceChildren();add.hidden=true;$('#sentinel-count').textContent='';$('#sentinel-get').hidden=true;$('#sentinel-names').hidden=true;
@@ -553,8 +562,30 @@ function renderSentinels(){
  $('#sentinel-count').textContent=`${sentinels.length} of ${MAX_SENTINELS}`;
  status.textContent=sentinels.length?'':'No sentinels yet. Add them below.';
  if(facts.info.paused){
-  const box=document.createElement('div');box.className='panel paused-banner';box.append(el('strong','The vault is paused.'),el('p','The agent cannot pay until you unpause. Read the reason below; if it was a false alarm, unpause.'));
-  const b=el('button','Review unpause') as HTMLButtonElement;b.type='button';b.dataset.write='';b.disabled=!canWrite()||busy;b.onclick=()=>{try{previewPlan('unpause',{});}catch(e){fail(e);}};box.append(b);pausedBox.append(box);
+  // What happened, in words: who paused, why, what got out first; then the owner's choices.
+  const box=document.createElement('div');box.className='panel paused-banner';box.append(el('strong','The vault is paused.'));
+  const card=currentPause(rows),labels=pauseLabels();
+  if(card){
+   box.append(el('p',`Paused by ${named_(card.sentinel)} at ${card.time.replace('T',' ').slice(0,19)} UTC.`),el('p',card.reason||'(no reason given)'));
+   box.append(el('p',card.recent===null?'Payment times are unavailable from this indexer.':`${card.recent} ${card.recent===1?'payment':'payments'} (${tusdc(card.recentBase)} tUSDC) settled in the 5 minutes before the pause.`));
+   const verdict=labels[card.tx];
+   if(verdict) box.append(el('p',verdict==='catch'?'You marked this pause as an attack.':'You marked this pause as a false alarm.'));
+  }else box.append(el('p',rows.length?'No sentinel pause in the indexed window: the owner may have paused it.':'Load the event lists to see who paused it and why.'));
+  box.append(el('p','The agent cannot pay until you unpause. If it was a false alarm, unpause.'));
+  const row=document.createElement('div');row.className='actions';
+  const b=el('button','Review unpause') as HTMLButtonElement;b.type='button';b.dataset.write='';b.disabled=!canWrite()||busy;b.onclick=()=>{try{previewPlan('unpause',{});}catch(e){fail(e);}};row.append(b);
+  if(card){
+   for(const [text,outcome] of [['Mark as attack','catch'],['False alarm','false_alarm']] as const){
+    const m=el('button',text) as HTMLButtonElement;m.type='button';m.className='secondary';m.dataset.verdict=outcome;m.onclick=()=>setPauseLabel(card.tx,outcome);row.append(m);
+   }
+  }
+  box.append(row);
+  if(Object.keys(labels).length){
+   const d=el('button','Download labels for the swarm') as HTMLButtonElement;d.type='button';d.className='link';
+   d.onclick=()=>download(`styx-pause-labels-${context!.vault}.json`,pauseLabelsFile(context!.vault,pauseLabels()));
+   box.append(d,el('small',`Then: styx-sentinels import-labels --vault ${context.vault} <file>`));
+  }
+  pausedBox.append(box);
  }
  for(const key of sentinels){
   const panel=el('article','');panel.className='panel sentinel';panel.append(nameRow(key));

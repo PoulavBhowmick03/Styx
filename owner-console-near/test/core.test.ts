@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,hostedChanges,type EventRow } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,hostedChanges,currentPause,pauseLabelsFile,readPauseLabels,type EventRow } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -304,5 +304,21 @@ describe('getting sentinels',()=>{
   expect(()=>hostedChanges({vault:V,link:link.replace(`vault=${V}`,'vault=other.styx-vaults.testnet')},V,'https://styxco.xyz')).toThrow(/another vault/);
   expect(()=>hostedChanges({vault:V,link:`https://styxco.xyz/console/?vault=${V}&sentinel_remove=${A}`},V,'https://styxco.xyz')).toThrow(/only install/);
   expect(()=>hostedChanges(null,V,'https://styxco.xyz')).toThrow();
+ });
+ it('describes the pause the vault is in, with the payments in the 5 minutes before it',()=>{
+  const row=(event:string,time:string,data:Record<string,any>={},tx='t'):EventRow=>({event,time,data,tx});
+  const pay=(min:number,sec=0)=>row('payment_executed',`2026-11-14T12:${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}.000Z`,{amount:'1000000'});
+  const rows=[pay(10),row('sentinel_paused','2026-11-14T12:11:00.000Z',{sentinel:'ed25519:A',reason:'old'},'old'),row('unpaused','2026-11-14T12:12:00.000Z'),
+   pay(14),pay(20),pay(21),pay(22,30),row('sentinel_paused','2026-11-14T12:23:00.000Z',{sentinel:'ed25519:B',reason:'<b>3 payments</b>'},'p2'),pay(24)];
+  const c=currentPause(rows)!;
+  expect([c.sentinel,c.reason,c.tx,c.recent,c.recentBase]).toEqual(['ed25519:B','<b>3 payments</b>','p2',3,3000000n]);
+  expect(currentPause([...rows,row('unpaused','2026-11-14T12:30:00.000Z')])).toBeNull();
+  expect(currentPause([...rows.filter(r=>r.event!=='sentinel_paused'),row('sentinel_paused','Unavailable',{sentinel:'ed25519:C',reason:'r'},'p3')])!.recent).toBeNull(); // no time from the indexer: say so, do not guess
+ });
+ it('writes the owner\'s pause verdicts in the file the runner imports',()=>{
+  const file=JSON.parse(pauseLabelsFile('lambda.styx-vaults.testnet',{p1:'catch',p2:'false_alarm'}));
+  expect(file).toEqual({vault:'lambda.styx-vaults.testnet',pause_labels:[{tx:'p1',outcome:'catch'},{tx:'p2',outcome:'false_alarm'}]});
+  expect(readPauseLabels('{"p1":"catch","p2":"nonsense"}')).toEqual({p1:'catch'});
+  expect(readPauseLabels('not json')).toEqual({});expect(readPauseLabels(null)).toEqual({});
  });
 });
