@@ -13,6 +13,27 @@ build, started on 12 Nov 2026 ([HACKATHON.md](https://nearhackathon.com/HACKATHO
 during the hackathon, against the last pre-hackathon commit:
 [`a0e4fb2...main`](https://github.com/PoulavBhowmick03/Styx/compare/a0e4fb2...main) (Q-003).
 
+## Step by step
+
+New here? [`GETTING_STARTED.md`](GETTING_STARTED.md) walks through it in order.
+
+1. **Create a vault** at [styxco.xyz/console](https://styxco.xyz/console/) with one wallet approval.
+   ![Create a vault](docs/images/02-create-vault.png)
+2. **Fund it and set the rules**: daily cap, recipients, approver and the agent's own limits, one
+   approval per step.
+   ![Owner setup](docs/images/03-owner-setup.png)
+3. **Read the vault** at any time, no wallet needed.
+   ![Vault overview](docs/images/04-vault-overview.png)
+4. **See the agent's key refused** by NEAR when it reaches for owner methods: [styxco.xyz/try](https://styxco.xyz/try/).
+   ![The agent's key](docs/images/07-try.png)
+5. **Add sentinels** and watch them: each key may only pause the vault; every pause comes with a reason.
+   ![Sentinels panel](docs/images/05-sentinels-panel.png)
+   ![The swarm, live on testnet](docs/images/08-swarm-live.png)
+6. **Watch them evolve**: the parent retires the unfit and breeds the next generation, one mutation at a time.
+   ![Evolution](docs/images/09-swarm-evolution.png)
+7. **Every payment, exportable**.
+   ![Payments](docs/images/06-payments.png)
+
 ## The problem
 
 In [a recent study](https://arxiv.org/abs/2610.35835), AI agents with wallets often raised their own
@@ -23,7 +44,7 @@ Styx puts both on chain. The owner funds a vault, sets which recipients it may p
 sets, per agent, the most that agent can pay per payment and per day.
 
 - **The agent is a NEAR function-call access key on the vault account**, allowed to call only
-  `pay`, `pay_with_exception`, `pay_evm`, `pay_evm_with_exception` and `post_record`. NEAR itself
+  `pay`, `pay_with_exception`, `pay_evm`, `pay_evm_with_exception`, `pay_x402` and `post_record`. NEAR itself
   rejects that key's call to any owner method, before the contract runs.
 - **Going over the per-payment limit needs an approver's NEP-413 signature over that exact payment.**
   The vault verifies it on chain. A signature for one recipient fails for another, a payment id pays
@@ -49,12 +70,12 @@ You need Rust with the `wasm32-unknown-unknown` target, [`cargo-near`](https://g
 
 0. **In the browser, with a NEAR testnet wallet.** On [`styxco.xyz/console`](https://styxco.xyz/console/),
    "Create a vault" signs one `create_vault` call to the factory `styx-vaults.testnet` (attach about
-   4 NEAR). It creates `<name>.styx-vaults.testnet` owned by you, with no access keys, and opens it.
+   4.2 NEAR). It creates `<name>.styx-vaults.testnet` owned by you, with no access keys, and opens it.
    Then fund it, allow a recipient, set an approver and add an agent key from the same page.
    Without a browser wallet, the same call from the CLI:
    `near contract call-function as-transaction styx-vaults.testnet create_vault json-args '{"name":"<name>","token":"usdc.styx-owner-c87a.testnet"}' prepaid-gas '100 Tgas' attached-deposit '4 NEAR' sign-as <your-account>.testnet network-config testnet sign-with-keychain send`.
 1. **On a local NEAR sandbox, no accounts needed.** `cd contracts/near/styx-vault && cargo test`.
-   You should see 41 unit tests, 15 audit reproductions (`tests/audit_pocs.rs`, now regression tests
+   You should see 70 unit tests, 15 audit reproductions (`tests/audit_pocs.rs`, now regression tests
    for the fixed findings) and 2 sandbox tests pass. The factory's tests run the same way:
    `cd contracts/near/styx-factory && cargo test` (5 unit, 2 sandbox). Both build their own wasm on
    the first run through `contracts/near/build.sh`, so the first run takes a few minutes. Then `cd ../../..` back to the repo root
@@ -147,8 +168,8 @@ a payment the vault would reject.
 The agent's key is a NEAR function-call access key on the vault account, installed by the vault when
 the owner calls `configure_agent`.
 
-- It can call five methods on the vault and nothing else: `pay`, `pay_with_exception`, `pay_evm`,
-  `pay_evm_with_exception` and `post_record`. NEAR rejects any other method (`MethodNameMismatch`),
+- It can call six methods on the vault and nothing else: `pay`, `pay_with_exception`, `pay_evm`,
+  `pay_evm_with_exception`, `pay_x402` and `post_record`. NEAR rejects any other method (`MethodNameMismatch`),
   any other contract (`ReceiverMismatch`), and any transfer of NEAR, new key or code change
   (`RequiresFullAccess`) before a block includes the transaction. Each of these was sent with an
   agent key on testnet: [`docs/near/TRY_PAGE.md`](docs/near/TRY_PAGE.md).

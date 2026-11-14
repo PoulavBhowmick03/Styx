@@ -1,6 +1,8 @@
 """A scripted rehearsal of the whole lifecycle, through the real parent loop with a dry-run pauser:
-normal traffic, a busy-but-honest payroll run the burst sentinel wrongly pauses twice (it is retired
-and respawned with a higher threshold), then an injected drain the new generation catches. The
+normal traffic; an honest but bursty payroll that the burst sentinel wrongly pauses (a false alarm: it
+is retired and its child gets a looser threshold); two slow leaks that every sentinel lets through
+(misses: the parents are retired and their children get stricter); then an injected drain the
+newest generation catches. The
 payments are simulated; the page says so. Nothing touches a chain."""
 from __future__ import annotations
 
@@ -31,6 +33,16 @@ def scenario(start: float) -> Iterator[tuple[float, str, Batch | None, str]]:
         t += 40
         yield t, "", Batch(pauses=[PauseEvent("unpaused", t, f"rehearsal-unpause-{round_}")]), "unpause"
         t += 400
+    for leak in range(2):
+        t += 60
+        yield t, f"Slow leak {leak + 1}: 4 USDC every two minutes to a new account. Too slow for any sentinel.", None, "leak_start"
+        for i in range(4):
+            t += 120
+            yield t, f"Slow leak {leak + 1}: 4 USDC every two minutes to a new account. Too slow for any sentinel.", pay("leak-9c1e.testnet", 4), ""
+        t += 60
+        yield t, ("The owner finds the leak and marks it an attack: no sentinel paused, so each is charged a miss."
+                  if leak == 0 else "A second miss: the parent retires them, and their children are stricter."), None, "leak_end"
+        t += 3700  # past the concentration window, so the next leak starts clean
     t += 60
     yield t, "An injected agent starts draining: many small payments, each within the limits.", None, "attack_start"
     for i in range(8):
@@ -44,19 +56,22 @@ START = 1_800_000_000.0  # the rehearsal's simulated clock starts here
 
 
 def run(swarm, sleep: Callable[[float], None], speed: float = 8.0, caption: Callable[[str], None] = print) -> None:
-    attack_start = None
+    attack_start, leaks = None, 0
     clock_holder = {"t": None}
     swarm.now = lambda: clock_holder["t"]
     previous = None
     for t, text, batch, action in scenario(START):
         if previous is not None:
-            sleep((t - previous) / speed / 10)
+            sleep(min(3.0, (t - previous) / speed / 10))
         previous = t
         clock_holder["t"] = t
         if text:
             caption(text)
-        if action == "attack_start":
+        if action in ("attack_start", "leak_start"):
             attack_start = t
+        elif action == "leak_end":
+            leaks += 1
+            swarm.mark_attack(attack_start, t, f"slow leak {leaks}")
         elif action == "attack_end":
             swarm.mark_attack(attack_start, t, "rehearsal: injected drain")
         if action == "unpause":

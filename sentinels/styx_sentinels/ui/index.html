@@ -1,17 +1,19 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0a09"><title>Styx: sentinels</title><link rel="icon" href="./styx-logo.png">  <script type="module" crossorigin src="./assets/index-Cq8fib_r.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-wyLpmmjV.css">
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0a09"><title>Styx: sentinels</title><link rel="icon" href="./styx-logo.png">  <script type="module" crossorigin src="./assets/index-C3P1pLQb.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-tQhAaFCu.css">
 </head><body>
 <div class="wrap sentinels">
 <header class="top"><a class="brand" href="https://styxco.xyz/"><img src="./styx-logo.png" alt="Styx" width="600" height="237"></a><span class="net" id="mode">Sentinels</span><span class="pill" id="state">Loading</span></header>
 <main>
-<section class="intro"><p class="kicker"><b>Sentinels</b><span id="vault">Watching a vault</span></p><h1>Watchers that can only <em>hit the brakes.</em></h1>
-<p>Each sentinel reads the vault's payments and may pause it. NEAR lets a sentinel's key do nothing else: no paying, no unpausing, no changing the rules. A parent scores them, retires the noisy ones and spawns their next generation.</p></section>
+<section class="intro-s"><p class="kicker"><b>Sentinels</b><span id="vault">Watching a vault</span></p>
+<h1>Watchers that can only <em>hit the brakes.</em></h1>
+<p class="lead">Each sentinel reads the vault's payments and holds a NEAR key that can call one method: <code>sentinel_pause</code>. The parent keeps the fittest, retires the rest, and breeds their next generation. The owner ratifies every change on chain.</p>
+<dl class="numbers" id="numbers"></dl></section>
 <p class="caption" id="caption" hidden></p>
-<section><div class="section-heading"><h2>The swarm</h2><span class="note" id="summary"></span></div><div class="cards" id="cards"></div></section>
-<section><h2>Payments and pauses</h2><div class="timeline" id="timeline"></div>
-<p class="note">Bars are payments, taller for larger amounts; ember bars went to a recipient a sentinel flagged. An ember line is a sentinel's pause, a green line the owner's unpause. A shaded band is a marked attack.</p></section>
-<section class="cols"><div><h2>Lineage</h2><ol class="feed" id="feed"></ol></div>
-<div><h2>Generations</h2><div class="panel" id="tree"></div><h2>Owner actions</h2><div class="panel" id="actions"></div></div></section>
-<section class="panel how"><h3>How a sentinel is scored</h3><p>A pause during a marked attack is a catch. A pause the owner reverses with no attack marked is a false alarm. The score is catches minus two times false alarms. At minus two the parent retires the sentinel, asks the owner to remove its key, and spawns the next generation with what it learned.</p></section>
+<div id="owner"></div>
+<section><div class="head"><h2>Alive</h2><span class="meta">fitness = catches minus 2 x false alarms minus misses</span></div><div id="rows"></div></section>
+<section><div class="head"><h2>Payments and pauses</h2><span class="meta">bars are payments; shaded spans are marked attacks</span></div><div class="timeline" id="timeline"></div></section>
+<section><div class="head"><h2>Evolution</h2><span class="meta">at fitness -2 a sentinel is retired and its child mutates</span></div><div id="evolution"></div>
+<p class="meta rules">Looser after false alarms, stricter after misses: one mutation per generation, with a note the child inherits. A sentinel's energy is the gas allowance left on its NEAR key; when it runs low the parent proposes a fresh key, same genome.</p></section>
+<details class="log"><summary>Full log</summary><ol class="feed" id="feed"></ol></details>
 </main></div></body></html>

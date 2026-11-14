@@ -28,8 +28,8 @@ class AttackMarker:
             return None
         return data
 
-    def check(self, now: float) -> tuple[float, float, str] | None:
-        """The window to mark for the current attack, (start, end, attack_id), or None."""
+    def check(self, now: float) -> tuple[float, float, str, bool] | None:
+        """The window to mark for the current attack, (start, end, attack_id, final), or None."""
         data = self.read()
         if not data or data["attack_id"] in self.ended:
             return None
@@ -38,9 +38,9 @@ class AttackMarker:
             start = self.starts.setdefault(attack, when)
             if now - start > self.stale_seconds:
                 self.ended.add(attack)
-                return start, start + self.stale_seconds, attack
-            return start, now, attack
+                return start, start + self.stale_seconds, attack, True
+            return start, now, attack, False
         if attack not in self.starts:
             return None  # it began and ended before we watched; nothing to say when it started
         self.ended.add(attack)
-        return self.starts[attack], when, attack
+        return self.starts[attack], when, attack, True

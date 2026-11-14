@@ -241,6 +241,9 @@ def main(argv=None) -> int:
                     with lock:
                         before = swarm.installed
                         swarm.sync_keys(keys if isinstance(keys, list) else [])
+                    access = rpc.access_keys(a.vault)
+                    with lock:
+                        swarm.sync_allowances(access)
                     if before != swarm.installed:
                         waiting = [m.id for m in swarm.active() if m.public_key not in swarm.installed]
                         print(f"Sentinel keys on the vault: {len(swarm.installed)}." + (f" Waiting for the owner to install: {', '.join(waiting)}." if waiting else ""))

@@ -54,3 +54,31 @@ def test_retiring_an_uninstalled_sentinel_cancels_its_enable(tmp_path):
     actions = [(k, v) for k, v in query(s.sign_all_link()) if k.startswith("sentinel_")]
     assert ("sentinel_remove", "ed25519:K0") in actions and ("sentinel_enable", "ed25519:K1") in actions
     assert ("sentinel_enable", "ed25519:K0") not in actions
+
+
+def test_low_energy_proposes_a_fresh_key_and_swaps_it_in_when_installed(tmp_path):
+    s = swarm(tmp_path)
+    m = s.spawn("burst", {"max_payments": 4, "window_seconds": 300})
+    s.sync_keys(["ed25519:K0"])
+    fc = lambda left: {"FunctionCall": {"allowance": left, "receiver_id": VAULT, "method_names": ["sentinel_pause"]}}
+    s.sync_allowances([{"public_key": "ed25519:K0", "access_key": {"permission": fc(str(4 * 10**22))}}])
+    assert m.allowance == str(4 * 10**22) and m.next_key is None and m.ratified
+    s.sync_allowances([{"public_key": "ed25519:K0", "access_key": {"permission": fc(str(5 * 10**21))}},
+                       {"public_key": "ed25519:AGENT", "access_key": {"permission": {"FunctionCall": {"allowance": "1", "method_names": ["pay"]}}}}])
+    assert m.next_key == "ed25519:K1"
+    actions = [(k, v) for k, v in query(s.sign_all_link()) if k.startswith("sentinel_")]
+    assert actions == [("sentinel_remove", "ed25519:K0"), ("sentinel_enable", "ed25519:K1"), ("sentinel_label", "burst-g1")]
+    s.sync_keys(["ed25519:K1"])
+    assert (m.public_key, m.next_key, m.ratified) == ("ed25519:K1", None, True) and s.sign_all_link() is None
+    assert any(e["action"] == "key_swapped" for e in s.lineage())
+
+
+def test_a_closed_attack_with_no_pause_charges_every_active_sentinel_a_miss(tmp_path):
+    s = swarm(tmp_path)
+    a = s.spawn("burst", {"max_payments": 4, "window_seconds": 300})
+    s.mark_attack(100, 200, "leak-1", final=False)
+    assert a.misses == []  # still open
+    s.mark_attack(100, 300, "leak-1")
+    assert a.misses == ["leak-1"] and a.score == -1
+    s.mark_attack(100, 300, "leak-1")
+    assert a.misses == ["leak-1"]  # charged once

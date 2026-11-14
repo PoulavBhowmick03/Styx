@@ -21,16 +21,25 @@ def rehearsed(tmp_path):
 def test_the_rehearsal_tells_the_whole_lifecycle(tmp_path):
     s, captions = rehearsed(tmp_path)
     by_id = {m.id: m for m in s.members}
-    # Generation 1 paused honest payroll, was unpaused (a false alarm), and was retired.
+    # Generation 1 paused honest payroll, was unpaused (a false alarm), and was retired: its child is looser.
     assert (by_id["burst-g1"].status, by_id["burst-g1"].false_alarms) == ("retired", 1)
-    # Generation 2 let the second payroll through, then caught the drain.
     g2 = by_id["burst-g2"]
-    assert (g2.status, g2.catches, g2.false_alarms, g2.params["max_payments"]) == ("active", 1, 0, 6)
+    assert g2.params["max_payments"] == 6 and g2.mutation == {"max_payments": [4, 6]} and g2.parent == "burst-g1"
     assert "Raised the burst threshold to 6" in g2.notes[-1]
+    # Two slow leaks went by unpaused: both active sentinels were charged two misses and retired; children are stricter.
+    assert (g2.status, len(g2.misses)) == ("retired", 2)
+    c1 = by_id["concentration-g1"]
+    assert (c1.status, len(c1.misses), c1.score) == ("retired", 2, -2)
+    c2 = by_id["concentration-g2"]
+    assert c2.mutation == {"share": [0.4, 0.3]} and "Lowered the concentration share to 30%" in c2.notes[-1]
+    g3 = by_id["burst-g3"]
+    assert g3.mutation == {"max_payments": [6, 5]} and "Lowered the burst threshold to 5" in g3.notes[-1]
+    # The newest burst generation caught the drain.
+    assert (g3.status, g3.catches, g3.false_alarms, g3.score) == ("active", 1, 0, 1)
     assert s.paused and len(s.pauser.calls) == 2
     assert any("new generation learned" in c for c in captions)
     actions = [e["action"] for e in s.lineage()]
-    assert actions.index("retire") < actions.index("attack_marked") and actions.count("pause") == 2
+    assert actions.count("retire") == 3 and actions.count("missed") == 4 and actions.count("pause") == 2
 
 
 def test_the_page_and_its_api(tmp_path):
@@ -53,10 +62,10 @@ def test_the_page_and_its_api(tmp_path):
         state = json.loads(urllib.request.urlopen(base + "/api/state").read())
         assert state["rehearsal"] and {m["id"] for m in state["members"]} >= {"burst-g1", "burst-g2"}
         assert any(e["action"] == "retire" for e in state["lineage"])
-        g2 = next(m for m in state["members"] if m["id"] == "burst-g2")
-        req = urllib.request.Request(base + "/api/label", data=json.dumps({"member": "burst-g2", "time": g2["pauses"][0]["time"], "outcome": "false_alarm"}).encode(), method="POST")
+        g2 = next(m for m in state["members"] if m["id"] == "burst-g3")
+        req = urllib.request.Request(base + "/api/label", data=json.dumps({"member": "burst-g3", "time": g2["pauses"][0]["time"], "outcome": "false_alarm"}).encode(), method="POST")
         assert json.loads(urllib.request.urlopen(req).read()) == {"ok": True}
-        assert next(m for m in s.members if m.id == "burst-g2").false_alarms == 1
+        assert next(m for m in s.members if m.id == "burst-g3").false_alarms == 1
         bad = urllib.request.Request(base + "/api/label", data=b'{"member":"x"}', method="POST")
         try:
             urllib.request.urlopen(bad)

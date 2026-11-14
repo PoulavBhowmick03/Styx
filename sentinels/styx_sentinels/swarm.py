@@ -6,8 +6,13 @@ Scoring. A sentinel pause is settled when the owner acts on it:
 - a catch: the owner marks the pause as an attack (UI or `styx-sentinels label`), or the pause falls
   inside an attack window that a drill or demo script recorded;
 - a false alarm: the owner unpauses and marks it a false alarm, or unpauses with no attack marked.
-Score = catches - 2 x false alarms. At or below the retire score, the sentinel is retired: its process
-stops judging, the owner gets a link to remove its key, and a new generation is spawned with notes.
+- a miss: an attack window closes with no pause from any sentinel; every active sentinel is charged.
+Fitness = catches - 2 x false alarms - misses. At or below the retire score, the sentinel is retired:
+it stops judging, and its child is spawned with one mutation, in the direction its record asks for:
+looser after false alarms, stricter after misses. Selection is proposed by the parent and ratified on
+chain by the owner (or the owner's DAO): only `set_sentinel`, signed by the owner, changes which keys
+can pause. A sentinel's key allowance on NEAR is its energy: each pause burns gas from it, and when it
+runs low the parent asks the owner to swap in a fresh key.
 """
 from __future__ import annotations
 
@@ -22,6 +27,9 @@ from .judge import summarize
 from .rules import Burst, Concentration, Verdict
 
 RETIRE_SCORE = -2
+YOCTO = 10**24
+FULL_ALLOWANCE = 5 * 10**22  # set_sentinel installs a 0.05 NEAR allowance
+LOW_ALLOWANCE = 10**22  # below 0.01 NEAR the parent asks for a fresh key
 
 
 @dataclass
@@ -46,6 +54,13 @@ class Member:
     born: float = 0.0
     retired: float | None = None
     verdicts: list[dict] = field(default_factory=list)  # a judge's recent answers, with what the client checked
+    parent: str | None = None
+    mutation: dict = field(default_factory=dict)  # param -> [parent's value, this one's]
+    misses: list[str] = field(default_factory=list)  # attack labels that closed with no pause
+    allowance: str | None = None  # yoctoNEAR left on its key, read from the chain
+    ratified: bool = False  # its key is on the vault (the owner signed set_sentinel)
+    next_key: str | None = None  # a fresh key waiting to be installed, when energy runs low
+    next_key_file: str | None = None
 
     @property
     def catches(self) -> int:
@@ -57,7 +72,7 @@ class Member:
 
     @property
     def score(self) -> int:
-        return self.catches - 2 * self.false_alarms
+        return self.catches - 2 * self.false_alarms - len(self.misses)
 
 
 def build(member: Member, completer: Callable | None):
@@ -74,16 +89,28 @@ def build(member: Member, completer: Callable | None):
     raise ValueError(member.kind)
 
 
-def adjust(kind: str, params: dict, reason: str) -> tuple[dict, str]:
-    """What the parent changes in a respawn, and the note it passes on."""
+def adjust(kind: str, params: dict, reason: str, direction: str = "looser") -> tuple[dict, str]:
+    """The one mutation a child inherits, and the note it carries. `looser` after false alarms (the
+    parent paused on normal traffic), `stricter` after misses (an attack went by)."""
     p = dict(params)
+    looser = direction == "looser"
     if kind == "burst":
-        p["max_payments"] = p.get("max_payments", 4) + 2
-        return p, f"Raised the burst threshold to {p['max_payments']} payments: '{reason}' was a false alarm."
+        n = p.get("max_payments", 4)
+        p["max_payments"] = n + 2 if looser else max(2, n - 1)
+        why = f"'{reason}' was a false alarm" if looser else f"it missed {reason}"
+        return p, f"{'Raised' if looser else 'Lowered'} the burst threshold to {p['max_payments']} payments: {why}."
     if kind == "concentration":
-        p["share"] = round(min(0.9, p.get("share", 0.4) + 0.15), 2)
-        return p, f"Raised the concentration share to {int(p['share'] * 100)}%: '{reason}' was a false alarm."
-    return p, f"Do not pause for this again, it was a false alarm: '{reason}'."
+        x = p.get("share", 0.4)
+        p["share"] = round(min(0.9, x + 0.15), 2) if looser else round(max(0.1, x - 0.1), 2)
+        why = f"'{reason}' was a false alarm" if looser else f"it missed {reason}"
+        return p, f"{'Raised' if looser else 'Lowered'} the concentration share to {int(p['share'] * 100)}%: {why}."
+    if looser:
+        return p, f"Do not pause for this again, it was a false alarm: '{reason}'."
+    return p, f"Pause earlier: an attack went by unpaused ({reason})."
+
+
+def mutation(old: dict, new: dict) -> dict:
+    return {k: [old.get(k), v] for k, v in new.items() if old.get(k) != v}
 
 
 class Swarm:
@@ -134,6 +161,7 @@ class Swarm:
             "vault": self.vault, "network": self.network, "updated": self.now(), "paused": self.paused,
             "daily_limit": self.daily_limit, "reviewed_until": self.reviewed_until, "attack_windows": self.attack_windows, "owner_actions": self.owner_actions, "sign_all": self.sign_all_link(),
             "members": [{**asdict(m), "score": m.score, "catches": m.catches, "false_alarms": m.false_alarms} for m in self.members],
+            "installed_known": self.installed is not None,
             "history": [asdict(p) for p in self.history[-200:]], "events": self.events[-300:],
         }
         tmp = self.state_file.with_suffix(".tmp")
@@ -150,16 +178,17 @@ class Swarm:
         return [json.loads(line) for line in self.lineage_file.read_text().splitlines() if line.strip()]
 
     # ---- members ---------------------------------------------------------------------------
-    def spawn(self, kind: str, params: dict, generation: int = 1, notes: list[str] | None = None, parent: str | None = None) -> Member:
+    def spawn(self, kind: str, params: dict, generation: int = 1, notes: list[str] | None = None, parent: str | None = None,
+              changed: dict | None = None) -> Member:
         member_id = f"{kind}-g{generation}"
         public_key, key_file = self.keygen(member_id)
         m = Member(id=member_id, kind=kind, generation=generation, params=params, public_key=public_key,
-                   key_file=str(key_file), notes=list(notes or []), born=self.now())
+                   key_file=str(key_file), notes=list(notes or []), born=self.now(), parent=parent, mutation=dict(changed or {}))
         self.members.append(m)
         self.owner_actions.append({"action": "enable", "member": m.id, "public_key": public_key,
                                    "link": self.link([("sentinel_enable", public_key), ("sentinel_label", m.id)])})
         self.log("spawn", member=m.id, kind=kind, generation=generation, params=params, notes=m.notes,
-                 parent=parent, public_key=public_key)
+                 parent=parent, mutation=m.mutation, public_key=public_key)
         return m
 
     def link(self, changes: list[tuple[str, str]]) -> str:
@@ -185,6 +214,15 @@ class Swarm:
         sentinel does not try to pause (the vault would refuse it with NotSentinel)."""
         self.installed = set(enabled)
         changed = False
+        for m in self.members:
+            if m.next_key and m.next_key in self.installed:
+                self.log("key_swapped", member=m.id, old=m.public_key, new=m.next_key)
+                m.public_key, m.key_file, m.next_key, m.next_key_file = m.next_key, m.next_key_file or m.key_file, None, None
+                self.detectors.pop(m.id, None)
+                changed = True
+            ratified = m.public_key in self.installed
+            if ratified != m.ratified:
+                m.ratified, changed = ratified, True
         for x in self.pending():
             if (x["action"] == "enable") == (x["public_key"] in self.installed):
                 x["done"] = True
@@ -197,7 +235,31 @@ class Swarm:
         """The console's names format: {"vault": ..., "labels": {public key: name}}. Public keys and the
         members' ids only; every sentinel the swarm ever made, so a retired key still has its name."""
         labels = {m.public_key: m.id for m in self.members}
+        labels.update({m.next_key: m.id for m in self.members if m.next_key})
         return json.dumps({"vault": self.vault, "labels": labels}, indent=2) + "\n"
+
+    def sync_allowances(self, keys: list[dict]) -> None:
+        """The vault's access-key list (RPC view_access_key_list): each sentinel's allowance left. When a
+        key's allowance runs low, the parent proposes a fresh key for that sentinel, same genome."""
+        left = {}
+        for k in keys:
+            perm = (k.get("access_key") or {}).get("permission")
+            fc = perm.get("FunctionCall") if isinstance(perm, dict) else None
+            if fc and fc.get("method_names") == ["sentinel_pause"]:
+                left[k.get("public_key")] = fc.get("allowance")
+        for m in self.active():
+            if m.public_key not in left:
+                continue
+            m.allowance = left[m.public_key]
+            if m.allowance is not None and int(m.allowance) < LOW_ALLOWANCE and not m.next_key:
+                fresh, path = self.keygen(f"{m.id}-refresh")
+                m.next_key, m.next_key_file = fresh, str(path)
+                self.owner_actions.append({"action": "remove", "member": m.id, "public_key": m.public_key,
+                                           "link": self.link([("sentinel_remove", m.public_key)]), "why": "energy"})
+                self.owner_actions.append({"action": "enable", "member": m.id, "public_key": fresh,
+                                           "link": self.link([("sentinel_enable", fresh), ("sentinel_label", m.id)]), "why": "energy"})
+                self.log("energy_low", member=m.id, allowance=m.allowance, next_key=fresh)
+        self.save()
 
     def active(self) -> list[Member]:
         return [m for m in self.members if m.status == "active"]
@@ -208,18 +270,29 @@ class Swarm:
         return self.detectors[m.id]
 
     # ---- labels ----------------------------------------------------------------------------
-    def mark_attack(self, start: float, end: float, label: str = "attack") -> None:
-        """Marks an attack window. Marking the same label again moves its end (an attack in progress)."""
+    def mark_attack(self, start: float, end: float, label: str = "attack", final: bool = True) -> None:
+        """Marks an attack window. Marking the same label again moves its end (an attack in progress).
+        When the window is final and no sentinel paused inside it, every active sentinel is charged a miss."""
         known = [i for i, w in enumerate(self.attack_windows) if w[2] == label]
         if known:
             i = known[0]
-            if self.attack_windows[i][1] >= end:
+            if self.attack_windows[i][1] < end:
+                self.attack_windows[i] = (self.attack_windows[i][0], end, label)
+            elif not final:
                 return
-            self.attack_windows[i] = (self.attack_windows[i][0], end, label)
         else:
             self.attack_windows.append((start, end, label))
             self.log("attack_marked", start=start, end=end, label=label)
         self.settle_by_windows()
+        if final:
+            a, b = next((w[0], w[1]) for w in self.attack_windows if w[2] == label)
+            caught = any(a - 60 <= p.time <= b + 600 for m in self.members for p in m.pauses)
+            if not caught:
+                for m in self.active():
+                    if label not in m.misses:
+                        m.misses.append(label)
+                        self.log("missed", member=m.id, label=label, why="the attack closed with no pause")
+                self.review()
         self.save()
 
     def label(self, member_id: str, pause_time: float, outcome: str) -> None:
@@ -327,10 +400,15 @@ class Swarm:
                     x["done"], x["cancelled"] = True, True  # never installed: nothing to enable now
             self.owner_actions.append({"action": "remove", "member": m.id, "public_key": m.public_key,
                                        "link": self.link([("sentinel_remove", m.public_key)])})
-            last = next((p.reason for p in reversed(m.pauses) if p.outcome == "false_alarm"), "")
-            params, note = adjust(m.kind, m.params, last)
-            self.log("retire", member=m.id, score=m.score, catches=m.catches, false_alarms=m.false_alarms)
-            child = self.spawn(m.kind, params, generation=m.generation + 1, notes=[*m.notes, note], parent=m.id)
+            if 2 * m.false_alarms >= len(m.misses):
+                direction, last = "looser", next((p.reason for p in reversed(m.pauses) if p.outcome == "false_alarm"), "")
+            else:
+                direction, last = "stricter", m.misses[-1]
+            params, note = adjust(m.kind, m.params, last, direction)
+            self.log("retire", member=m.id, score=m.score, catches=m.catches, false_alarms=m.false_alarms,
+                     misses=len(m.misses), direction=direction)
+            child = self.spawn(m.kind, params, generation=m.generation + 1, notes=[*m.notes, note], parent=m.id,
+                               changed=mutation(m.params, params))
             replaced.append((m, child))
         return replaced
 
