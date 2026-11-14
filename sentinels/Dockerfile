@@ -4,7 +4,8 @@
 #   fly deploy . --config sentinels/fly.toml --dockerfile sentinels/Dockerfile
 # No key is baked in: the service makes each vault's sentinel keys at run time under /data.
 FROM rust:1-slim AS cli
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+# perl and make: a dependency builds OpenSSL from source, and the slim image has only perl-base.
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev perl make \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY sdk/near ./sdk/near
