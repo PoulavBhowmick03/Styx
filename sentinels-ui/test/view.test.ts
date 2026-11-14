@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { energy, esc, evolution, feed, genome, judgeBlock, line, mode, ownerActions, row, timeline } from '../src/view';
+import { headline, status, kindName, energy, esc, evolution, feed, genome, judgeBlock, line, mode, ownerActions, row, timeline } from '../src/view';
 import type { Member } from '../src/types';
 
 const member=(over:Partial<Member>={}):Member=>({id:'burst-g1',kind:'burst',generation:1,params:{max_payments:4,window_seconds:300},public_key:'ed25519:KEY',status:'active',notes:[],pauses:[],score:0,catches:0,false_alarms:0,...over});
@@ -65,5 +65,20 @@ describe('swarm page',()=>{
   expect(judgeBlock(member())).toBe('');
   expect(row(j,{},'')).toContain('Latest model verdicts');
   expect(line({time:0,action:'pause',member:'judge-g1',reason:'drain',model:'z-ai/test',verified:true,evidence_file:'f.json'})).toContain('model z-ai/test, response signature verified');
+ });
+ it('leads with one plain sentence and a status word per sentinel',()=>{
+  const m=member({catches:1,score:1});
+  expect(headline({},[m],'').title).toBe('Your vault is watched.');
+  expect(headline({},[m],'').sub).toContain('1 sentinel read every payment');
+  expect(headline({},[m],'').sub).toContain('1 attack caught so far');
+  const paused=headline({paused:true,lineage:[{time:1,action:'pause',member:'burst-g1',reason:'5 payments in 5 min'}]},[m],'burst-g1');
+  expect(paused.title).toBe('Paused by the burst sentinel.');expect(paused.sub).toContain('5 payments in 5 min. No payment goes out');
+  expect(headline({},[],'').title).toBe('No sentinels yet.');
+  expect(status(m,{paused:true},'burst-g1')).toContain('Paused the vault');
+  expect(status(member({ratified:false}),{installed_known:true},'')).toContain('Waiting for the owner');
+  expect(status(m,{},'')).toContain('Watching');
+  expect(kindName('new_recipient')).toBe('New recipient');
+  // Technical numbers sit in the detail block, hidden until "Show details".
+  expect(row(m,{},'')).toMatch(/<div class="detail">[\s\S]*fitness \+1/);
  });
 });

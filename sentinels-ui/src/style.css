@@ -7,12 +7,7 @@
 main > section, main > details, #owner > section { padding: 2rem 0; border-top: 1px solid var(--rule); }
 .intro-s { border-top: 0 !important; padding-top: 2.5rem !important; }
 .intro-s h1 em { color: var(--ember); }
-.lead { color: var(--fore-2); max-width: 40rem; }
-.numbers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 1.75rem 0 0; border: 1px solid var(--rule); border-radius: var(--radius); }
-.numbers div { padding: 0.9rem 1rem; border-left: 1px solid var(--rule); }
-.numbers div:first-child { border-left: 0; }
-.numbers dt { font: 0.625rem var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--fore-2); }
-.numbers dd { margin: 0.3rem 0 0; font: 2rem/1 var(--serif); }
+.lead { color: var(--fore-2); max-width: 40rem; font-size: 1.0625rem; }
 .caption { margin: 0; padding: 0.9rem 1rem; border-left: 2px solid var(--wait); background: var(--panel); font-family: var(--serif); font-size: 1.25rem; }
 .head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .head h2 { margin: 0; }
@@ -21,30 +16,35 @@ main > section, main > details, #owner > section { padding: 2rem 0; border-top: 
 .tag { font: 0.625rem var(--mono); text-transform: uppercase; letter-spacing: 0.1em; padding: 0.15rem 0.45rem; border: 1px solid var(--rule-2); border-radius: var(--radius); color: var(--fore-2); white-space: nowrap; }
 .tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 .tag.wait { color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
-/* Alive: one row per sentinel */
+/* Sentinels: one quiet row each */
 #rows { border: 1px solid var(--rule); border-radius: var(--radius); }
-.row { display: grid; grid-template-columns: 11rem 5rem 1fr; grid-template-areas: "who fit gene" "who fit power" "who fit record" "last last last"; column-gap: 1.25rem; row-gap: 0.3rem; padding: 1.1rem 1.1rem; border-top: 1px solid var(--rule); }
+.row { display: grid; grid-template-columns: 1fr auto; column-gap: 1.25rem; row-gap: 0.4rem; padding: 1.1rem 1.2rem; border-top: 1px solid var(--rule); align-items: center; }
 .row:first-child { border-top: 0; }
 .row.fired { background: color-mix(in srgb, var(--ember) 7%, transparent); box-shadow: inset 2px 0 0 var(--ember); }
-.who { grid-area: who; display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
-.who b { font: 0.75rem var(--mono); text-transform: uppercase; letter-spacing: 0.12em; }
-.fitness { grid-area: fit; display: flex; flex-direction: column; }
-.fitness span { font: 2.25rem/1 var(--serif); }
-.fitness small { font: 0.625rem var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--fore-2); }
-.fitness.pos span { color: var(--ok); }
-.fitness.neg span { color: var(--ember); }
-.gene { grid-area: gene; }
-.record { grid-area: record; }
-.power { grid-area: power; display: flex; align-items: center; gap: 0.6rem; }
+.who { display: flex; flex-direction: column; gap: 0.2rem; }
+.who b { font-family: var(--serif); font-weight: 400; font-size: 1.375rem; }
+.gene { color: var(--fore-2); font-size: 0.9375rem; }
+.state { font: 0.6875rem var(--mono); text-transform: uppercase; letter-spacing: 0.12em; padding: 0.3rem 0.6rem; border-radius: 999px; border: 1px solid var(--rule-2); color: var(--fore-2); white-space: nowrap; }
+.state.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.state.wait { color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
+.state.hot { color: var(--ground); background: var(--ember); border-color: var(--ember); }
+.last { grid-column: 1 / -1; margin: 0.2rem 0 0; padding: 0.6rem 0.8rem; background: var(--panel); border-radius: var(--radius); font-size: 0.9375rem; }
+.last.open { box-shadow: inset 2px 0 0 var(--ember); }
+.settle { grid-column: 1 / -1; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.settle button { font-size: 0.8125rem; padding: 0.4rem 0.75rem; }
+.detail { display: none; grid-column: 1 / -1; }
+.show-details .detail { display: block; }
+.power { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.3rem; }
 .energy { width: 7rem; height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; }
 .energy i { display: block; height: 100%; background: var(--ok); }
 .energy.low i { background: var(--wait); }
-.last { grid-area: last; margin: 0.5rem 0 0; padding: 0.6rem 0.8rem; background: var(--panel); border-radius: var(--radius); font-size: 0.9375rem; }
-.last.open { box-shadow: inset 2px 0 0 var(--ember); }
-.settle { grid-column: 1 / -1; display: flex; gap: 0.5rem; }
-.settle button { font-size: 0.8125rem; padding: 0.4rem 0.75rem; }
+.toggle { font: 0.75rem var(--mono); color: var(--fore-2); display: flex; gap: 0.4rem; align-items: center; cursor: pointer; }
+.more summary { cursor: pointer; font-family: var(--serif); font-size: 1.625rem; }
+.more .rules { margin: 1rem 0; }
 /* Owner */
-.owner ul { margin: 0 0 0.75rem; padding-left: 1.1rem; }
+.owner ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+.show-details .owner ul.detail { display: block; }
+.owner .head p { margin: 0; }
 .owner li { margin: 0.3rem 0; }
 .sign-all { padding: 0.5rem 0.9rem; border: 1px solid var(--ember); border-radius: var(--radius); color: var(--fore); text-decoration: none; font-size: 0.875rem; }
 .sign-all:hover { background: var(--ember); color: var(--ground); }
@@ -80,10 +80,6 @@ main > section, main > details, #owner > section { padding: 2rem 0; border-top: 
 .feed .tag.pause, .feed .tag.retire, .feed .tag.missed { color: var(--ember); border-color: color-mix(in srgb, var(--ember) 35%, transparent); }
 .feed .tag.spawn, .feed .tag.key_confirmed { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 @media (max-width: 40rem) {
-  .numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .numbers div:nth-child(3) { border-left: 0; }
-  .numbers div:nth-child(n+3) { border-top: 1px solid var(--rule); }
-  .row { grid-template-columns: 1fr auto; grid-template-areas: "who fit" "gene gene" "power power" "record record" "last last"; }
   .feed li { grid-template-columns: 4rem 1fr; }
   .feed li > span:last-child { grid-column: 1 / -1; }
 }

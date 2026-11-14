@@ -1,19 +1,19 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0a09"><title>Styx: sentinels</title><link rel="icon" href="./styx-logo.png">  <script type="module" crossorigin src="./assets/index-C3P1pLQb.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-tQhAaFCu.css">
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0a09"><title>Styx: sentinels</title><link rel="icon" href="./styx-logo.png">  <script type="module" crossorigin src="./assets/index-BiU54Fo8.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-HCgpvE-D.css">
 </head><body>
 <div class="wrap sentinels">
 <header class="top"><a class="brand" href="https://styxco.xyz/"><img src="./styx-logo.png" alt="Styx" width="600" height="237"></a><span class="net" id="mode">Sentinels</span><span class="pill" id="state">Loading</span></header>
 <main>
 <section class="intro-s"><p class="kicker"><b>Sentinels</b><span id="vault">Watching a vault</span></p>
-<h1>Watchers that can only <em>hit the brakes.</em></h1>
-<p class="lead">Each sentinel reads the vault's payments and holds a NEAR key that can call one method: <code>sentinel_pause</code>. The parent keeps the fittest, retires the rest, and breeds their next generation. The owner ratifies every change on chain.</p>
-<dl class="numbers" id="numbers"></dl></section>
+<h1 id="headline">Your vault is watched.</h1>
+<p class="lead" id="sub"></p></section>
 <p class="caption" id="caption" hidden></p>
 <div id="owner"></div>
-<section><div class="head"><h2>Alive</h2><span class="meta">fitness = catches minus 2 x false alarms minus misses</span></div><div id="rows"></div></section>
-<section><div class="head"><h2>Payments and pauses</h2><span class="meta">bars are payments; shaded spans are marked attacks</span></div><div class="timeline" id="timeline"></div></section>
-<section><div class="head"><h2>Evolution</h2><span class="meta">at fitness -2 a sentinel is retired and its child mutates</span></div><div id="evolution"></div>
-<p class="meta rules">Looser after false alarms, stricter after misses: one mutation per generation, with a note the child inherits. A sentinel's energy is the gas allowance left on its NEAR key; when it runs low the parent proposes a fresh key, same genome.</p></section>
+<section><div class="head"><h2>Sentinels</h2><label class="toggle"><input type="checkbox" id="details"> Show details</label></div><div id="rows"></div></section>
+<section><div class="head"><h2>Activity</h2><span class="meta">each bar is a payment; a red line is a pause</span></div><div class="timeline" id="timeline"></div></section>
+<details class="more"><summary>How sentinels learn</summary>
+<p class="meta rules">Each sentinel is scored: a pause during a real attack counts for it, a false alarm counts twice against it, a missed attack once. At minus two it is retired and a new generation takes over, a little looser after false alarms or a little stricter after misses. Nothing changes on the vault until the owner approves it.</p>
+<div id="evolution"></div></details>
 <details class="log"><summary>Full log</summary><ol class="feed" id="feed"></ol></details>
 </main></div></body></html>

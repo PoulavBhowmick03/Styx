@@ -55,18 +55,45 @@ export function judgeBlock(m:Member):string{
  return `<div class="verdicts"><p class="meta">Latest model verdicts</p>${list.map(verdictBlock).join('')}</div>`;
 }
 
+export const KIND_NAMES:Record<string,[string,string]>={
+ burst:['Burst','Too many payments in a short time'],
+ concentration:['Concentration','One recipient taking too much'],
+ judge:['Judge','An AI model on NEAR AI Cloud reviews the payments'],
+};
+export const kindName=(kind:string)=>KIND_NAMES[kind]?.[0]??words(kind).replace(/^./,c=>c.toUpperCase());
+
+// What a person needs: which sentinel, what it watches for, what it is doing now. The rest is detail.
+export function status(m:Member,s:State,firedId:string):string{
+ if(s.paused&&m.id===firedId) return '<span class="state hot">Paused the vault</span>';
+ if(!s.rehearsal&&s.installed_known&&!m.ratified) return '<span class="state wait">Waiting for the owner</span>';
+ return '<span class="state ok">Watching</span>';
+}
+
 export function row(m:Member,s:State,firedId:string):string{
  const last=m.pauses.at(-1),misses=m.misses?.length??0,open=last?.outcome==='open';
- const settle=open&&m.status==='active'?`<div class="settle"><button class="ok" data-label="catch" data-member="${esc(m.id)}" data-time="${last!.time}">It was an attack</button><button data-label="false_alarm" data-member="${esc(m.id)}" data-time="${last!.time}">False alarm</button></div>`:'';
+ const settle=open&&m.status==='active'?`<div class="settle"><span class="meta">Was this a real attack?</span><button class="ok" data-label="catch" data-member="${esc(m.id)}" data-time="${last!.time}">It was an attack</button><button data-label="false_alarm" data-member="${esc(m.id)}" data-time="${last!.time}">False alarm</button></div>`:'';
  return `<article class="row ${m.id===firedId&&s.paused?'fired':''}">
- <div class="who"><b>${esc(m.kind)}</b><span class="meta">Generation ${m.generation}</span>${chainState(m,s)}</div>
- <div class="fitness ${m.score<0?'neg':m.score>0?'pos':''}"><span>${signed(m.score)}</span><small>fitness</small></div>
- <div class="record meta">${plural(m.catches,'catch','catches')} · ${plural(m.false_alarms,'false alarm')} · ${plural(misses,'miss','misses')}</div>
- <div class="gene">${esc(genome(m))}</div>
- <div class="power">${energy(m,s)}</div>
- ${last?`<p class="last${open?' open':''}"><span class="meta">${clock(last.time)} · ${esc(words(last.outcome))}</span> ${esc(last.reason)}</p>${settle}`:''}
- ${judgeBlock(m)}
+ <div class="who"><b>${esc(kindName(m.kind))}</b><span class="gene">${esc(genome(m))}</span></div>
+ ${status(m,s,firedId)}
+ ${last?`<p class="last${open?' open':''}">${esc(last.reason)}<span class="meta"> · ${clock(last.time)}${last.outcome==='open'?'':` · ${esc(words(last.outcome))}`}</span></p>${settle}`:''}
+ <div class="detail">
+  <p class="meta">Generation ${m.generation} · fitness ${signed(m.score)} · ${plural(m.catches,'catch','catches')} · ${plural(m.false_alarms,'false alarm')} · ${plural(misses,'miss','misses')} ${chainState(m,s)}</p>
+  <div class="power">${energy(m,s)}</div>
+  ${judgeBlock(m)}
+ </div>
  </article>`;
+}
+
+/** The one sentence at the top. */
+export function headline(s:State,members:Member[],firedId:string):{title:string;sub:string}{
+ const active=members.filter(m=>m.status==='active'),caught=members.reduce((n,m)=>n+m.catches,0);
+ if(s.paused){
+  const pause=[...(s.lineage??[])].reverse().find(e=>e.action==='pause');
+  const who=members.find(m=>m.id===firedId);
+  return {title:`Paused by the ${who?kindName(who.kind).toLowerCase():'a'} sentinel.`,sub:`${pause?.reason?`${pause.reason}. `:''}No payment goes out until the owner unpauses it in the console.`};
+ }
+ if(!active.length) return {title:'No sentinels yet.',sub:'Run styx-sentinels quickstart for this vault to add them.'};
+ return {title:'Your vault is watched.',sub:`${active.length} sentinel${active.length===1?'':'s'} read every payment and pause the vault if something looks wrong. They can't pay, unpause, or change your rules.${caught?` ${plural(caught,'attack')} caught so far.`:''}`};
 }
 
 export function timeline(s:State):string{
@@ -133,6 +160,6 @@ export function ownerActions(s:State):string{
  if(!pending.length) return '';
  const items=pending.slice(-8).reverse().map(a=>`<li>${a.action==='enable'?'Install':'Remove'} <b>${esc(a.member)}</b>'s key${a.why==='energy'?' (fresh key, low energy)':''}</li>`).join('');
  const sign=!s.rehearsal&&s.sign_all?`<a class="sign-all" href="${esc(s.sign_all)}" target="_blank" rel="noopener noreferrer">Review and sign ${pending.length===1?'it':`all ${pending.length}`} in one approval</a>`:'<span class="meta">Rehearsal: nothing is signed.</span>';
- return `<section class="owner"><div class="head"><h2>Waiting for the owner</h2>${sign}</div><ul>${items}</ul>
- <p class="meta">The parent proposes; the owner decides. Only set_sentinel, signed by the vault's owner (or voted through by its DAO), changes which keys can pause.</p></section>`;
+ return `<section class="owner"><div class="head"><p><b>${plural(pending.length,'change')} waiting for the owner's approval.</b></p>${sign}</div>
+ <ul class="detail">${items}</ul></section>`;
 }

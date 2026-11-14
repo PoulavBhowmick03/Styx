@@ -1,7 +1,7 @@
 import '../../site/styx.css';
 import './style.css';
 import type { State } from './types';
-import { esc, evolution, feed, mode, ownerActions, row, timeline } from './view';
+import { esc, evolution, feed, headline, mode, ownerActions, row, timeline } from './view';
 
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 
@@ -14,9 +14,7 @@ function render(s:State){
  const caption=$('#caption');caption.hidden=!s.caption;caption.textContent=s.caption??'';
  const fired=lineage.filter(e=>e.action==='pause').at(-1)?.member??'';
  const active=members.filter(m=>m.status==='active');
- const gens=Math.max(0,...members.map(m=>m.generation));
- $('#numbers').innerHTML=[['alive',active.length],['retired',members.length-active.length],['generations',gens],['attacks caught',members.reduce((n,m)=>n+m.catches,0)]]
-  .map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+ const h=headline(s,members,fired);$('#headline').textContent=h.title;$('#sub').textContent=h.sub;
  $('#owner').innerHTML=ownerActions(s);
  $('#rows').innerHTML=active.map(m=>row(m,s,fired)).join('')||'<p class="empty">No sentinels yet. Run styx-sentinels init.</p>';
  $('#timeline').innerHTML=timeline(s);
@@ -35,4 +33,9 @@ document.addEventListener('click',async e=>{
  await fetch('./api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({member:b.dataset.member,time:Number(b.dataset.time),outcome:b.dataset.label})});
  await tick();
 });
+// One switch for every detail on the page: it survives the re-render every 1.5 s.
+const details=$<HTMLInputElement>('#details');
+try{details.checked=localStorage.getItem('styx-sentinels-details')==='1';}catch{/* storage blocked */}
+const showDetails=()=>{document.body.classList.toggle('show-details',details.checked);try{localStorage.setItem('styx-sentinels-details',details.checked?'1':'0');}catch{/* storage blocked */}};
+details.onchange=showDetails;showDetails();
 void tick();setInterval(tick,1500);
