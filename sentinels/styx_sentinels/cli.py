@@ -86,7 +86,8 @@ def main(argv=None) -> int:
         import tempfile
         from . import rehearsal
         swarm = Swarm("rehearsal.styx-vaults.testnet", Path(tempfile.mkdtemp(prefix="styx-rehearsal-")), DryRunPauser(),
-                      keygen=lambda name: (f"ed25519:rehearsal-{name}", "(no key: rehearsal)"))
+                      keygen=lambda name: (f"ed25519:rehearsal-{name}", "(no key: rehearsal)"),
+                      now=lambda: rehearsal.START)  # spawns happen on the simulated clock too
         for kind, params in DEFAULT_SWARM[:2]:
             swarm.spawn(kind, params)
         swarm.save()

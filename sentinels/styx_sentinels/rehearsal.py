@@ -40,12 +40,15 @@ def scenario(start: float) -> Iterator[tuple[float, str, Batch | None, str]]:
     yield t, "The owner confirms it was an attack.", None, "attack_end"
 
 
+START = 1_800_000_000.0  # the rehearsal's simulated clock starts here
+
+
 def run(swarm, sleep: Callable[[float], None], speed: float = 8.0, caption: Callable[[str], None] = print) -> None:
     attack_start = None
     clock_holder = {"t": None}
     swarm.now = lambda: clock_holder["t"]
     previous = None
-    for t, text, batch, action in scenario(1_800_000_000.0):
+    for t, text, batch, action in scenario(START):
         if previous is not None:
             sleep((t - previous) / speed / 10)
         previous = t
