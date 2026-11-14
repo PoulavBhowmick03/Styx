@@ -12,6 +12,7 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 (cd "$ROOT/approval-page-near" && npm ci --silent && VITE_DEFAULT_RELAY="${NEAR_RELAY_URL:-https://styx-relay-near.fly.dev}" \
   npx vite build --base /approval/ --outDir "$OUT/approval" --emptyOutDir)
 (cd "$ROOT/owner-console-near" && npm ci --silent && npx vite build --base /console/ --outDir "$OUT/console" --emptyOutDir)
+(cd "$ROOT/proof-page-near" && npm ci --silent && npm run build -- --outDir "$OUT/proof" --emptyOutDir)
 if [ -n "${VITE_TRY_VAULT:-}" ] && [ -n "${VITE_TRY_RECIPIENT:-}" ] && [ -n "${VITE_TRY_AGENT_KEY:-}" ]; then
   (cd "$ROOT/try-page-near" && npm ci --silent && npx vite build --base /try/ --outDir "$OUT/try" --emptyOutDir)
 elif [ -n "${VERCEL:-}" ]; then
