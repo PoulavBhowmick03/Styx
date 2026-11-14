@@ -2,6 +2,7 @@
 # Sequential allowed NEAR payments, no sleeps or retries. Usage: drain_attack.sh <n> <amount>
 # Amount is USDC units (e.g. 1 or 0.25), converted exactly to 6-decimal base units.
 # Reads ~/.styx-near/v3.env (override STYX_NEAR_DEMO_ENV); requires VENDOR and CLI settings.
+# STYX_NEAR_NO_ATTACK_MARK=1 skips the attack marker: false_alarm.sh uses it for a legitimate burst.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ENV_FILE="${STYX_NEAR_DEMO_ENV:-$HOME/.styx-near/v3.env}"
@@ -51,6 +52,8 @@ tag = 'drain-' + uuid.uuid4().hex
 marker = state / 'sentinel-attack.json'
 # A runner can read this marker; always end it, including on refusal or uncertain outcome.
 def mark(active):
+    if os.environ.get('STYX_NEAR_NO_ATTACK_MARK') == '1':
+        return
     tmp = state / (tag + '-marker.tmp')
     tmp.write_text(json.dumps({'attack_id': tag, 'active': active, 'time': int(time.time()),
                                'vault': os.environ['STYX_NEAR_VAULT']}))
