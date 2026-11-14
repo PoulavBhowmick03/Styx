@@ -27,8 +27,11 @@ export function chainClient(get: typeof fetch = fetch, rpcUrl = 'https://test.rp
     const r = await post(rpcUrl, { jsonrpc: '2.0', id: 'styx-events', method, params });
     if (r.error || !r.result) throw new Error('RPC confirmation failed'); return r.result;
   }
-  async function events(vault: string): Promise<ChainEvent[]> {
-    const out: ChainEvent[] = [], seen = new Set<string>(); let cursor: number | null = null;
+  // `known` carries the hashes already read across calls, so a watcher pays RPC only for new
+  // transactions: re-reading a vault's whole history each pass gets rate-limited (429).
+  // `sink` receives events as each transaction is read, so progress survives a failed request.
+  async function events(vault: string, known?: Set<string>, sink?: ChainEvent[]): Promise<ChainEvent[]> {
+    const out: ChainEvent[] = sink ?? [], seen = known ?? new Set<string>(); let cursor: number | null = null;
     for (;;) {
       const page = await post('https://tx.test.fastnear.com/v0/account', { account_id: vault, max_block_height: cursor });
       const rows = page.account_txs;
@@ -45,6 +48,9 @@ export function chainClient(get: typeof fetch = fetch, rpcUrl = 'https://test.rp
         }
       }
       if (!rows.length) break;
+      // FastNEAR returns every transaction it counts on the first page and does not move on
+      // max_block_height, so stop once all of txs_count are read; otherwise page down.
+      if (Number.isSafeInteger(page.txs_count) && seen.size >= page.txs_count) break;
       const next = Math.min(...rows.map((r: any) => Number(r.tx_block_height))) - 1;
       if (!Number.isSafeInteger(next) || next < 0 || (cursor !== null && next >= cursor)) throw new Error('Invalid listing cursor');
       cursor = next;
