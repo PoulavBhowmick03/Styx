@@ -68,6 +68,15 @@ class Service:
         keys = self.root / "keys" / vault
         swarm = Swarm(vault, home, self.pauser_for(vault, home), network=self.network, console_url=self.console_url,
                       keygen=lambda name: new_key(f"{name}-{int(self.now())}", vault, keys), now=self.now)
+        swarm.unlabeled_unpause = "open"  # the owner's verdicts do not reach this service
+        repair = home / "reinstate.json"  # an operator's one-time fix, applied before the swarm runs
+        if repair.exists():
+            try:
+                fix = json.loads(repair.read_text())
+                swarm.reinstate(fix["member"], fix.get("catch_tx"))
+            except (ValueError, KeyError, TypeError):
+                pass
+            repair.unlink()
         self.swarms[vault] = swarm
         return swarm
 

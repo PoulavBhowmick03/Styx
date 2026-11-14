@@ -151,6 +151,10 @@ class Swarm:
         self.judge_errors: dict[str, str | None] = {}
         # Payments up to the owner's last unpause were reviewed by the owner; sentinels judge only newer ones.
         self.reviewed_until = 0.0
+        # What an unpause with no verdict means. "false_alarm" on the owner's machine, where the owner's
+        # verdicts reach the runner (attack markers, import-labels). "open" on the hosted service, which
+        # cannot hear them: the pause stays unscored instead of costing a sentinel that may have caught a drain.
+        self.unlabeled_unpause = "false_alarm"
         self.load()
 
     # ---- persistence ----------------------------------------------------------------------
@@ -342,6 +346,34 @@ class Swarm:
         self.review()
         self.save()
 
+    def reinstate(self, member_id: str, catch_tx: str | None = None) -> bool:
+        """Undoes a wrong retirement: optionally labels the pause sent in `catch_tx` a catch, brings the
+        member back, and drops the child it spawned and the key changes that retirement asked for, as long
+        as the owner signed none of them (the child's key is not installed and it never paused)."""
+        m = next((x for x in self.members if x.id == member_id), None)
+        if m is None or m.status != "retired":
+            return False
+        children = [c for c in self.members if c.parent == m.id]
+        if any(c.pauses or (self.installed is not None and c.public_key in self.installed) for c in children):
+            return False
+        if self.installed is not None and m.public_key not in self.installed:
+            return False  # the owner already removed its key
+        for p in m.pauses:
+            if catch_tx and p.tx == catch_tx:
+                p.outcome = "catch"
+                self.log("labelled", member=m.id, pause_time=p.time, outcome="catch")
+        if m.score <= RETIRE_SCORE:
+            return False  # it would be retired again at once
+        dropped = {c.id for c in children}
+        self.members = [x for x in self.members if x.id not in dropped]
+        for x in self.pending():
+            if x["member"] in dropped or (x["member"] == m.id and x["action"] == "remove"):
+                x["done"], x["cancelled"] = True, True
+        m.status, m.retired = "active", None
+        self.log("reinstated", member=m.id, dropped=sorted(dropped), catch_tx=catch_tx)
+        self.save()
+        return True
+
     def settle_by_windows(self) -> None:
         for m in self.members:
             for p in m.pauses:
@@ -367,11 +399,14 @@ class Swarm:
         self.history.sort(key=lambda p: p.time)
 
     def owner_unpaused(self, e: PauseEvent) -> None:
-        """An unpause settles every open pause before it: an attack if marked, otherwise a false alarm."""
+        """An unpause settles every open pause before it: an attack if marked, otherwise a false alarm
+        (or, where verdicts cannot arrive, nothing: the pause stays open and unscored)."""
         self.settle_by_windows()
         for m in self.members:
             for p in m.pauses:
-                if p.outcome == "open" and p.time <= e.time:
+                if p.outcome == "open" and p.time <= e.time and self.unlabeled_unpause == "open":
+                    self.log("unscored", member=m.id, pause_time=p.time, why="owner unpaused; no verdict reached this service")
+                elif p.outcome == "open" and p.time <= e.time:
                     p.outcome = "false_alarm"
                     self.log("settled", member=m.id, pause_time=p.time, outcome="false_alarm", why="owner unpaused, no attack marked")
 

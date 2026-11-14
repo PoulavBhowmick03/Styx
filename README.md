@@ -108,6 +108,9 @@ its child takes over:
 - a little looser after false alarms;
 - a little stricter after misses.
 
+The hosted sentinels service can't hear your verdicts, so there an unpause leaves the pause unscored
+rather than counting it as a false alarm.
+
 You approve each key change with one link, so nothing changes on the vault without you. "Show
 details" and "How sentinels learn" on the live page show the scores and generations.
 ![Evolution](docs/images/09-swarm-evolution.png)

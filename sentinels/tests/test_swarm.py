@@ -258,3 +258,51 @@ def test_the_consoles_verdicts_reach_the_parent_by_pause_transaction(tmp_path):
     import pytest
     with pytest.raises(ValueError):
         s.import_pause_labels(json.dumps({"vault": "other.testnet", "pause_labels": []}))
+
+
+def two_unpaused_bursts(s, clock):
+    t = 1000
+    for round_ in range(2):
+        for i in range(5):
+            t += 10
+            clock.t = t
+            s.cycle(Batch(payments=[pay(f"{round_}-{i}", t)]))
+        t += 30
+        clock.t = t
+        s.cycle(Batch(pauses=[PauseEvent("unpaused", t, f"U{round_}")]))
+        t += 400
+
+
+def test_where_verdicts_cannot_arrive_an_unpause_leaves_the_pause_unscored(tmp_path):
+    clock = Clock()
+    s = swarm(tmp_path, clock)
+    s.unlabeled_unpause = "open"
+    two_unpaused_bursts(s, clock)
+    m = s.members[0]
+    assert len(s.members) == 1 and m.status == "active" and m.score == 0
+    assert [p.outcome for p in m.pauses] == ["open", "open"]
+    assert "unscored" in [e["action"] for e in s.lineage()] and "retire" not in [e["action"] for e in s.lineage()]
+    s.import_pause_labels(json.dumps({"vault": VAULT, "pause_labels": [{"tx": m.pauses[0].tx, "outcome": "catch"}]}))
+    assert m.catches == 1  # a verdict that does arrive still counts
+
+
+def test_a_wrong_retirement_is_undone_before_the_owner_signs_the_swap(tmp_path):
+    clock = Clock()
+    s = swarm(tmp_path, clock)
+    two_unpaused_bursts(s, clock)
+    g1 = s.members[0]
+    assert g1.status == "retired" and [m.id for m in s.members] == ["burst-g1", "burst-g2"]
+    assert not s.reinstate("burst-g1")  # with no verdict it would be retired again at once
+    assert s.reinstate("burst-g1", catch_tx=g1.pauses[0].tx)
+    assert [m.id for m in s.members] == ["burst-g1"] and g1.status == "active" and (g1.catches, g1.false_alarms) == (1, 0)
+    assert all(x["member"] == "burst-g1" and x["action"] == "enable" for x in s.pending())
+    assert "reinstated" in [e["action"] for e in s.lineage()]
+
+
+def test_a_retirement_the_owner_already_signed_is_not_undone(tmp_path):
+    clock = Clock()
+    s = swarm(tmp_path, clock)
+    two_unpaused_bursts(s, clock)
+    s.sync_keys([s.members[1].public_key])  # burst-g2 installed, burst-g1 removed
+    assert not s.reinstate("burst-g1", catch_tx=s.members[0].pauses[0].tx)
+    assert s.members[0].status == "retired"

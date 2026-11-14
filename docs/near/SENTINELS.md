@@ -46,7 +46,12 @@ Contract unit tests cover each of these rules: 70 pass in `contracts/near/styx-v
 - **The parent** keeps score:
   - A pause during a marked attack is a **catch**. `drain_attack.sh` marks its run in
     `$STYX_NEAR_STATE_ROOT/sentinel-attack.json`; `styx-sentinels mark-attack` marks one by hand.
-  - A pause the owner reverses with no attack marked is a **false alarm**.
+  - A pause the owner reverses with no attack marked is a **false alarm**. On the hosted service
+    (`styx-sentinels serve`), which receives neither attack markers nor the console's verdicts, such
+    a pause stays open and unscored. A hosted run on testnet showed why: on 14 Nov 2026 burst-g1
+    paused `lambda` 7.2 s after a drain's 5th payment, and the owner's unpause then scored that catch
+    as a false alarm and retired it. `<root>/<vault>/reinstate.json` (`{"member", "catch_tx"}`) undoes
+    such a retirement on the next start, if the owner signed none of its key changes.
   - An attack window that closes with no pause from any sentinel is a **miss** for every active one.
   - Fitness = catches − 2 × false alarms − misses. At −2 the parent retires the sentinel and spawns
     the next generation with one change: looser after false alarms (a rule's threshold goes up, the

@@ -134,3 +134,28 @@ def test_the_http_api(tmp_path):
         assert call("/api/health", origin="https://evil.example")[2] is None  # other pages get no CORS grant
     finally:
         server.shutdown()
+
+
+def test_the_service_leaves_an_unjudged_unpause_unscored_and_applies_a_one_time_repair(tmp_path):
+    from styx_sentinels.events import PauseEvent
+    rpc = FakeRPC()
+    s, feeds, pausers, clock = service(tmp_path, rpc=rpc)
+    s.register(V3)
+    rpc.sentinels[V3] = [m["public_key"] for m in s.state(V3)["members"]]
+    s.tick()
+    feeds[V3].batches.append(Batch(payments=[Payment(payment_id=f"p{i}", agent="a", recipient="v.testnet", amount=1_000_000,
+                                                     time=1000 + 8 * i, tx=f"T{i}") for i in range(6)]))
+    clock["t"] = 1050
+    s.tick()
+    feeds[V3].batches.append(Batch(pauses=[PauseEvent("unpaused", 1100, "U1")]))
+    clock["t"] = 1100
+    s.tick()
+    burst = s.swarms[V3].members[0]
+    assert burst.status == "active" and [p.outcome for p in burst.pauses] == ["open"]
+
+    burst.pauses[0].outcome, burst.status = "false_alarm", "retired"  # the old service's wrong score
+    s.swarms[V3].save()
+    (tmp_path / "root" / V3 / "reinstate.json").write_text(json.dumps({"member": "burst-g1", "catch_tx": burst.pauses[0].tx}))
+    again, *_ = service(tmp_path, rpc=rpc)
+    m = again.swarms[V3].members[0]
+    assert m.status == "active" and m.catches == 1 and not (tmp_path / "root" / V3 / "reinstate.json").exists()
