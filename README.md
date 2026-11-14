@@ -337,6 +337,9 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 
 ## Limits
 
+- Testnet only. What stands between this and mainnet is listed, with contract reproductions, in
+  [`docs/near/MAINNET_AUDIT.md`](docs/near/MAINNET_AUDIT.md). The release blocker: the factory's
+  default MPC signer is the testnet one.
 - Sentinels watch only while something runs them: the owner's own machine, or the hosted testnet
   service at `styx-sentinels-near.fly.dev`. If neither is running, nothing pauses the vault on their
   behalf. The velocity limit is the always-on part: a circuit breaker in the contract itself, so a
