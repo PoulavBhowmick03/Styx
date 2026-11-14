@@ -34,8 +34,9 @@ if os.environ['STYX_NEAR_NETWORK'] != 'testnet' or os.getenv('NETWORK', 'testnet
 for name in ('STYX_NEAR_VAULT', 'VENDOR'):
     if not os.environ.get(name, '').endswith('.testnet'):
         sys.exit(f'{name} must be a NEAR testnet account')
-# Pin the public testnet RPC; do not inherit an arbitrary endpoint from payment settings.
-os.environ['STYX_NEAR_RPC_URL'] = 'https://rpc.testnet.near.org'
+# Pin a public testnet RPC; do not inherit an arbitrary endpoint from payment settings.
+# FastNEAR's: rpc.testnet.near.org rate-limited a 20-payment run after four payments (429).
+os.environ['STYX_NEAR_RPC_URL'] = 'https://test.rpc.fastnear.com'
 for name in ('STYX_NEAR_STATE_ROOT', 'STYX_NEAR_AGENT_KEY_FILE'):
     if not os.environ.get(name):
         sys.exit(f'{name} is required')

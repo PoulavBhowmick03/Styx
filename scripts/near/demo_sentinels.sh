@@ -19,11 +19,12 @@ case "${STYX_NEAR_VAULT:-}" in *.testnet) ;; *) echo 'STYX_NEAR_VAULT must be a 
 : "${STYX_NEAR_STATE_ROOT:?STYX_NEAR_STATE_ROOT is required}"
 export STYX_NEAR_CLI="${STYX_NEAR_CLI:-$ROOT/sdk/near/target/release/styx-near-vault}"
 [ -x "$STYX_NEAR_CLI" ] || { echo "Build the CLI first: cargo build --release --manifest-path $ROOT/sdk/near/Cargo.toml" >&2; exit 1; }
-RPC=https://rpc.testnet.near.org
+# FastNEAR's public testnet RPC: rpc.testnet.near.org rate-limits a run like this one (429, retry after 600 s).
+RPC="${STYX_SENTINEL_RPC:-https://test.rpc.fastnear.com}"
 EXTRA=(); [ -n "${NEARAI_API_KEY:-}" ] && EXTRA=(--extra judge)
 sentinels() { uv run -q --project "$ROOT/sentinels" ${EXTRA[@]+"${EXTRA[@]}"} styx-sentinels "$@"; }
 view() {
-  curl -fsS "$RPC" -H 'Content-Type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"$STYX_NEAR_VAULT\",\"method_name\":\"$1\",\"args_base64\":\"e30=\"}}" \
+  curl -fsS --retry 4 --retry-delay 3 --retry-all-errors "$RPC" -H 'Content-Type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"$STYX_NEAR_VAULT\",\"method_name\":\"$1\",\"args_base64\":\"e30=\"}}" \
     | python3 -c 'import json,sys; print(json.dumps(json.loads(bytes(json.load(sys.stdin)["result"]["result"]))))'
 }
 
@@ -59,7 +60,7 @@ echo "Every active sentinel's key is on the vault, allowed only sentinel_pause."
 say "3. The sentinels watch (live page: http://127.0.0.1:$PORT/)"
 LOG="$STYX_NEAR_STATE_ROOT/sentinels-demo.log"
 mkdir -p -m 700 "$STYX_NEAR_STATE_ROOT"
-sentinels run --vault "$STYX_NEAR_VAULT" --cli "$STYX_NEAR_CLI" --rpc "$RPC" --interval 3 --ui "$PORT" \
+PYTHONUNBUFFERED=1 sentinels run --vault "$STYX_NEAR_VAULT" --cli "$STYX_NEAR_CLI" --rpc "$RPC" --interval 3 --ui "$PORT" \
   --attack-marker "$STYX_NEAR_STATE_ROOT/sentinel-attack.json" >"$LOG" 2>&1 &
 RUNNER=$!
 trap 'kill $RUNNER 2>/dev/null || true' EXIT
@@ -72,7 +73,7 @@ say "4. The hijacked agent drains: $N payments of $AMOUNT, each inside every lim
 
 say "5. What happened"
 for _ in $(seq 1 40); do
-  python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("paused") else 1)' "$(view get_vault)" && break
+  python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("paused") else 1)' "$(view get_vault || echo '{}')" 2>/dev/null && break
   sleep 3
 done
 python3 - "$(view get_vault)" <<'PY'
