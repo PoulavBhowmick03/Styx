@@ -3,6 +3,7 @@
   styx-sentinels init     --vault V [--no-judge]           spawn the swarm, write keys, print enable links
   styx-sentinels quickstart --vault V [--cli PATH]         init, print the one link, wait for the keys, then run
   styx-sentinels run      --vault V --cli PATH [--dry-run] watch the vault block by block, pause it when a sentinel asks
+  styx-sentinels serve    [--root DIR] [--port 8791]       sentinels as a service: many vaults, an HTTP API
   styx-sentinels rehearse                                  the whole lifecycle on simulated payments
   styx-sentinels status   --vault V                        members, scores, owner actions
   styx-sentinels names    --vault V [--out FILE]           a names file for the console's Import names
@@ -104,6 +105,27 @@ def quickstart(a, swarm: Swarm, rpc_url: str, sleep=time.sleep) -> int:
     return main(argv)
 
 
+def run_service(a) -> int:
+    from .service import Service, serve
+    rpc_url = a.rpc or RPCS[a.network]
+    root = Path(a.root or os.environ.get("STYX_SENTINEL_SERVICE_ROOT", Path.home() / ".styx-near" / "sentinels-service")).expanduser()
+    pauser_for = (lambda vault, home: DryRunPauser()) if a.dry_run else \
+        (lambda vault, home: CliPauser(a.cli, vault, str(home / "cli-state"), rpc_url))
+    service = Service(root, RPC(rpc_url), pauser_for, lambda vault: Watcher(RPC(rpc_url), vault, a.network),
+                      network=a.network, cap=a.cap)
+    origins = a.allow_origin or ["https://styxco.xyz", "http://127.0.0.1:5174", "http://localhost:5173"]
+    serve(service, a.host, a.port, origins)
+    print(f"Sentinels service on http://{a.host}:{a.port}/api/health, watching {len(service.swarms)} of at most "
+          f"{a.cap} vaults{' (dry run: pauses not sent)' if a.dry_run else ''}. State and keys in {root}.")
+    try:
+        while True:
+            for vault, member, reason in service.tick():
+                print(f"PAUSED {vault} by {member}: {reason}")
+            time.sleep(a.interval)
+    except KeyboardInterrupt:
+        return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="styx-sentinels", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -135,11 +157,24 @@ def main(argv=None) -> int:
     sub.choices["mark-attack"].add_argument("start", type=float)
     sub.choices["mark-attack"].add_argument("end", type=float)
     sub.choices["mark-attack"].add_argument("label", nargs="?", default="marked by the owner")
+    v = sub.add_parser("serve", help="watch many vaults; owners register theirs over HTTP")
+    v.add_argument("--root", help="state and keys (default ~/.styx-near/sentinels-service)")
+    v.add_argument("--host", default="127.0.0.1")
+    v.add_argument("--port", type=int, default=8791)
+    v.add_argument("--cap", type=int, default=20, help="most vaults this service will watch")
+    v.add_argument("--network", default="testnet", choices=["testnet", "mainnet"])
+    v.add_argument("--cli", default="styx-near-vault", help="the Styx agent CLI that signs sentinel_pause")
+    v.add_argument("--rpc")
+    v.add_argument("--interval", type=float, default=2.0, help="seconds between rounds over all vaults")
+    v.add_argument("--allow-origin", action="append", default=[], help="a page allowed to call the API (repeatable)")
+    v.add_argument("--dry-run", action="store_true", help="record pauses instead of sending them")
     h = sub.add_parser("rehearse")
     h.add_argument("--ui", type=int, default=8790)
     h.add_argument("--speed", type=float, default=8.0)
     a = p.parse_args(argv)
 
+    if a.cmd == "serve":
+        return run_service(a)
     if a.cmd == "rehearse":
         import tempfile
         from . import rehearsal
