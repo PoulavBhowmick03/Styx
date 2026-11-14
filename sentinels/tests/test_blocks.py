@@ -109,4 +109,85 @@ def test_one_poll_reads_a_bounded_number_of_blocks():
     chain = Chain({h: block(h) for h in range(1, 1000)}, top=999)
     w = watcher(chain, start_height=1)
     w.poll()
-    assert w.next_height == 201
+    assert w.next_height == 31
+
+
+class Rate429:
+    status_code = 429
+    headers = {"Retry-After": "7"}
+
+
+def test_a_429_is_a_rate_limit_with_the_wait_it_asked_for():
+    from styx_sentinels.blocks import RateLimited
+    chain = Chain({11: block(11)}, top=11)
+    w = BlockWatcher(chain, VAULT, get=lambda url: Rate429(), start_height=11)
+    with pytest.raises(RateLimited) as e:
+        w.poll()
+    assert e.value.retry_after == 7.0
+
+
+def test_an_error_mid_catch_up_does_not_lose_the_blocks_already_read():
+    chain = Chain({11: block(11, [payment(1)]), 12: block(12, [payment(2)]), 13: block(13)}, top=13)
+    broken = {"on": True}
+    real = chain.get
+
+    def get(url):
+        if url.endswith("/12") and broken["on"]:
+            raise RuntimeError("neardata down")
+        return real(url)
+
+    w = BlockWatcher(chain, VAULT, get=get, start_height=11)
+    with pytest.raises(RuntimeError):
+        w.poll()
+    assert w.next_height == 11  # nothing was acknowledged, so block 11's payment comes back
+    broken["on"] = False
+    assert [p.payment_id for p in w.poll().payments] == ["p1", "p2"]
+
+
+class Source:
+    """A stand-in watcher: returns what it is told, or raises."""
+
+    def __init__(self, *answers):
+        self.answers, self.next_height = list(answers), 5
+
+    def poll(self):
+        a = self.answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+
+
+def batch_of(*ids):
+    from styx_sentinels.events import Batch, Payment
+    return Batch(payments=[Payment(payment_id=i, agent="a", recipient="r", amount=1, time=1.0, tx="T" + i) for i in ids])
+
+
+def test_a_rate_limit_switches_to_the_transaction_list_and_back_without_repeats():
+    from styx_sentinels.blocks import RateLimited, ResilientWatcher
+    now = {"t": 100.0}
+    primary = Source(batch_of("p1"), RateLimited(5), batch_of("p4"))
+    fallback = Source(batch_of("p1", "p2"))
+    w = ResilientWatcher(primary, fallback, clock=lambda: now["t"], fallback_every=5.0)
+    assert [p.payment_id for p in w.poll().payments] == ["p1"] and w.source == "neardata"
+    now["t"] += 1
+    got = w.poll()  # neardata says 429: the transaction list answers this poll, p1 is not repeated
+    assert [p.payment_id for p in got.payments] == ["p2"] and w.source == "transactions" and w.errors == 1
+    now["t"] += 1
+    assert not w.poll().payments  # inside the 5 s backoff and the fallback's own pace: no request at all
+    now["t"] += 5.5  # past the 5 s neardata asked for
+    got = w.poll()
+    assert [p.payment_id for p in got.payments] == ["p4"] and w.source == "neardata"
+    assert primary.next_height is None  # resumed at the tip: the fallback covered the gap
+
+
+def test_the_backoff_doubles_up_to_thirty_seconds_while_neardata_keeps_failing():
+    from styx_sentinels.blocks import ResilientWatcher
+    now = {"t": 0.0}
+    boom = RuntimeError("down")
+    w = ResilientWatcher(Source(*[boom] * 8), Source(*[batch_of()] * 8), clock=lambda: now["t"], fallback_every=1.0)
+    waits = []
+    for _ in range(6):
+        w.poll()
+        waits.append(w.until - now["t"])
+        now["t"] = w.until
+    assert waits == [2.0, 4.0, 8.0, 16.0, 30.0, 30.0]

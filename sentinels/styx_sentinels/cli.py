@@ -19,7 +19,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from .blocks import BlockWatcher
+from .blocks import BlockWatcher, ResilientWatcher
 from .events import RPC, Batch, Watcher
 from .keys import new_key
 from .marker import AttackMarker
@@ -153,9 +153,10 @@ def main(argv=None) -> int:
     if swarm.completer is None and any(m.kind == "judge" for m in swarm.active()):
         print("The judge sentinel waits while NEARAI_API_KEY is unset; the rule sentinels watch.")
     lock = threading.Lock()
-    open_ui(swarm, a.ui, lock, lambda: {"dry_run": isinstance(pauser, DryRunPauser)})
-    watcher = BlockWatcher(RPC(rpc_url), a.vault, a.network) if a.source == "blocks" else Watcher(RPC(rpc_url), a.vault, a.network)
+    watcher = (ResilientWatcher(BlockWatcher(RPC(rpc_url), a.vault, a.network), Watcher(RPC(rpc_url), a.vault, a.network))
+               if a.source == "blocks" else Watcher(RPC(rpc_url), a.vault, a.network))
     interval = a.interval or (1.0 if a.source == "blocks" else 8.0)
+    open_ui(swarm, a.ui, lock, lambda: {"dry_run": isinstance(pauser, DryRunPauser), "source": getattr(watcher, "source", "")})
     marker_path = a.attack_marker or (Path(os.environ["STYX_NEAR_STATE_ROOT"]).expanduser() / "sentinel-attack.json"
                                       if os.environ.get("STYX_NEAR_STATE_ROOT") else None)
     marker = AttackMarker(Path(marker_path), a.vault) if marker_path else None
@@ -164,6 +165,7 @@ def main(argv=None) -> int:
     print(f"Watching {a.vault} every {interval:g}s ({a.source}). Ctrl+C to stop.")
     rpc = RPC(rpc_url)
     rounds = 0
+    last_source = ""
     try:
         while True:
             try:
@@ -183,6 +185,10 @@ def main(argv=None) -> int:
                 except Exception as error:  # noqa: BLE001
                     print(f"could not read get_sentinels: {error}")
             rounds += 1
+            source = getattr(watcher, "source", "")
+            if source != last_source:
+                print(f"Reading the chain through {source}.")
+                last_source = source
             with lock:
                 window = marker.check(time.time()) if marker else None
                 if window:

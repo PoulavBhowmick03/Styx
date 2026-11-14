@@ -12,7 +12,15 @@ from typing import Any, Callable
 from .events import RPC, Batch, parse_logs, succeeded
 
 NEARDATA = {"testnet": "https://testnet.neardata.xyz", "mainnet": "https://mainnet.neardata.xyz"}
-MAX_CATCH_UP = 200  # blocks one poll may read after a gap; the rest wait for the next poll
+MAX_CATCH_UP = 30  # blocks one poll may read after a gap; the rest wait for the next poll
+
+
+class RateLimited(Exception):
+    """neardata answered 429. retry_after is how long it asked us to wait, in seconds."""
+
+    def __init__(self, retry_after: float = 5.0):
+        super().__init__(f"neardata rate limit, retry after {retry_after:g}s")
+        self.retry_after = retry_after
 
 
 def vault_events(block: dict, vault: str) -> Batch:
@@ -44,6 +52,12 @@ class BlockWatcher:
 
     def _json(self, url: str) -> Any:
         reply = self._get(url)
+        if getattr(reply, "status_code", 200) == 429:
+            try:
+                wait = float((getattr(reply, "headers", None) or {}).get("Retry-After", 5))
+            except (TypeError, ValueError):
+                wait = 5.0
+            raise RateLimited(wait)
         reply.raise_for_status()
         return reply.json()
 
@@ -81,7 +95,62 @@ class BlockWatcher:
                     out.pauses += batch.pauses
                 self.last_height = height
             height += 1
-            self.next_height = height
+        self.next_height = height  # only after the whole poll: an error mid-way re-reads these blocks
         out.payments.sort(key=lambda p: p.time)
         out.pauses.sort(key=lambda p: p.time)
         return out
+
+
+class ResilientWatcher:
+    """neardata first; when it fails or rate-limits, back off and read the vault's transaction list
+    (events.Watcher) meanwhile, so a rate limit cannot blind the sentinels. The same event is never
+    returned twice, whichever source saw it first. `source` says which one answered last."""
+
+    def __init__(self, primary: BlockWatcher, fallback, clock: Callable[[], float] | None = None, fallback_every: float = 5.0):
+        import time
+        self.primary, self.fallback = primary, fallback
+        self.clock = clock or time.monotonic
+        self.fallback_every = fallback_every
+        self.until = 0.0  # no neardata request before this time
+        self.backoff = 0.0
+        self.degraded = False
+        self.last_fallback = float("-inf")
+        self.source = "neardata"
+        self.errors = 0
+        self.seen: set[tuple] = set()
+
+    def fresh(self, batch: Batch) -> Batch:
+        out = Batch()
+        for p in batch.payments:
+            if ("p", p.tx, p.payment_id) not in self.seen:
+                self.seen.add(("p", p.tx, p.payment_id))
+                out.payments.append(p)
+        for e in batch.pauses:
+            if ("e", e.kind, e.tx, e.reason) not in self.seen:
+                self.seen.add(("e", e.kind, e.tx, e.reason))
+                out.pauses.append(e)
+        return out
+
+    def poll(self) -> Batch:
+        now = self.clock()
+        if now >= self.until:
+            try:
+                batch = self.primary.poll()
+            except Exception as error:  # noqa: BLE001 (rate limit, network, a bad block: use the fallback)
+                self.errors += 1
+                self.degraded = True
+                wait = error.retry_after if isinstance(error, RateLimited) else 0.0
+                self.backoff = min(30.0, max(2.0, self.backoff * 2))
+                self.until = now + max(self.backoff, wait)
+            else:
+                if self.degraded:
+                    self.primary.next_height = None  # the transaction list covered the gap: resume at the tip
+                    self.degraded = False
+                self.backoff = 0.0
+                self.source = "neardata"
+                return self.fresh(batch)
+        if now - self.last_fallback >= self.fallback_every:
+            self.last_fallback = now
+            self.source = "transactions"
+            return self.fresh(self.fallback.poll())
+        return Batch()
