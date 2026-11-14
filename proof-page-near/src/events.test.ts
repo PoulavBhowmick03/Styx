@@ -1,7 +1,7 @@
 import { it, expect } from 'vitest';
 import fixture from '../test/pause.json';
 import { parseEvents, reasonText, chainClient } from './chain';
-import { pauseStats, load, type TimedEvent } from './events';
+import { pauseStats, load, summary, type TimedEvent } from './events';
 const vault='lambda.styx-vaults.testnet';
 const pause={...parseEvents(fixture,vault)[0],ns:10_500_000_000n};
 const payment=(ns:bigint,kind='payment_executed'):TimedEvent=>({...pause,kind,ns,data:{amount:'1',recipient:'receiver.testnet'}});
@@ -50,4 +50,12 @@ it('stops when every counted transaction is read, as FastNEAR answers the same p
  }) as typeof fetch;
  const events=await chainClient(fake).events(vault);
  expect(events.length).toBe(1);expect(listings).toBe(1);
+});
+it('summarises payments, tokens and each pause for the top of the page',()=>{
+ const unpause={...pause,kind:'unpaused',ns:5_000_000_000n};
+ const s=summary([payment(1n),payment(2n),unpause,payment(9_000_000_000n),pause]);
+ expect(s.payments).toBe(3);expect(s.tokens).toBe(0.000003);expect(s.unpauses).toBe(1);
+ expect(s.pauses).toHaveLength(1);
+ expect(s.pauses[0]).toMatchObject({count:1,sinceUnpause:true,seconds:1.5,tx:pause.tx});
+ expect(summary([]).pauses).toEqual([]);
 });

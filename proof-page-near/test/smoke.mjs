@@ -23,6 +23,9 @@ try {
  assert.match(await page.locator('#timeline').textContent(),/<b>too many payments<\/b> & slow/);
  assert.equal(await page.locator('#timeline b').count(),0);
  assert.match(await page.locator('#timeline').textContent(),/0 payments settled before it/);
+ assert.match(await page.locator('#summary').textContent(),/1 sentinel pause/);
+ assert.match(await page.locator('#summary td').nth(2).textContent(),/<b>too many payments<\/b> & slow/);
+ assert.equal(await page.locator('#summary b').count(),0);
  assert.equal(await page.locator('#timeline a').getAttribute('href'),'https://testnet.nearblocks.io/txns/pause-tx');
  assert.deepEqual(errors,[]);
  await page.setViewportSize({width:375,height:812});

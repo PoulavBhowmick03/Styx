@@ -21,3 +21,13 @@ export async function load(vault: string, chain = chainClient()): Promise<TimedE
  }
  return out.sort((a,b)=>a.ns < b.ns ? -1 : a.ns > b.ns ? 1 : 0);
 }
+
+export type PauseRow = { ns: bigint; sentinel: string; reason: unknown; tx: string; count: number; sinceUnpause: boolean; seconds: number | null };
+/** What a reviewer needs first: totals, and one line per sentinel pause. */
+export function summary(events: TimedEvent[]) {
+ const settled = events.filter(e => e.kind === 'payment_executed' && typeof e.data.amount === 'string' && /^\d+$/.test(e.data.amount));
+ const base = settled.reduce((n, e) => n + BigInt(e.data.amount as string), 0n);
+ const pauses: PauseRow[] = events.filter(e => e.kind === 'sentinel_paused').map(e => ({
+  ns: e.ns, sentinel: String(e.data.sentinel ?? ''), reason: e.data.reason, tx: e.tx, ...pauseStats(e, events) }));
+ return { payments: settled.length, tokens: Number(base) / 1e6, pauses, unpauses: events.filter(e => e.kind === 'unpaused').length };
+}
