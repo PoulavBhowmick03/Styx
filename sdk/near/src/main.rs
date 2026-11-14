@@ -76,7 +76,7 @@ fn from_contract(name: &str) -> VaultError {
             "OWNER_APPROVAL_REQUIRED"
         }
         "DailyLimitExceeded" | "VaultDailyLimitExceeded" | "RecipientNotAllowed" | "VaultPaused"
-        | "PolicyExpired" | "PaymentExpired" | "ZeroAmount" | "RecipientVersionMismatch" => {
+        | "PolicyExpired" | "PaymentExpired" | "ZeroAmount" | "RecipientVersionMismatch" | "VelocityLimit" => {
             "POLICY_LIMIT"
         }
         "PolicyVersionMismatch" => "POLICY_VERSION_CHANGED",
@@ -1070,6 +1070,7 @@ mod tests {
         assert_eq!(from_contract("PerPaymentLimitExceeded").code, "OWNER_APPROVAL_REQUIRED");
         assert_eq!(from_contract("PaymentAlreadyUsed").code, "PAYMENT_ALREADY_SETTLED");
         assert_eq!(from_contract("DailyLimitExceeded").code, "POLICY_LIMIT");
+        assert_eq!(from_contract("VelocityLimit").code, "POLICY_LIMIT");
         assert_eq!(contract_refusal("no refusal here"), None);
     }
 

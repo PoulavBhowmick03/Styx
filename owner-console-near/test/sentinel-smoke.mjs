@@ -38,7 +38,7 @@ try{
     if(p.method_name==='get_sentinels') result=view([OLD]);
     if(p.method_name==='get_policy') result=undefined;
     if(!result && p.method_name.startsWith('get_')) result=view(null);
-    if(p.method_name==='get_vault'){const info=JSON.parse(Buffer.from(result.result).toString());result=view({...info,contract_version:3,paused:true});}
+    if(p.method_name==='get_vault'){const info=JSON.parse(Buffer.from(result.result).toString());result=view({...info,contract_version:3,paused:true,max_payments_per_window:5,window_seconds:600});}
    }
   }
   if(!result && q.method==='query' && p.method_name==='get_policy') return route.fulfill({json:{jsonrpc:'2.0',id:q.id,error:{name:'HANDLER_ERROR',cause:{name:'NO_CONTRACT_CODE'}}}});
@@ -50,6 +50,9 @@ try{
  await page.locator('#review[open]').waitFor();
  const preview=await page.locator('#preview').textContent();
  assert.match(preview,/2 calls, one approval/);assert.match(preview,/Sentinel removed/);assert.match(preview,/Sentinel installed/);
+ // A vault with the velocity limit says so, and offers its form under Advanced.
+ assert.equal(await page.locator('#overview-velocity').textContent(),'At most 5 payments in any 10 min.');
+ assert.equal(await page.locator('form[data-method="set_velocity_limit"]').evaluate(f=>f.hidden),false);
  // The panel: the paused banner, the key with allowance, and the pause reason as plain text.
  await page.locator('#cancel').click();
  await page.locator('#sentinels .paused-banner').getByText('The vault is paused.').waitFor();
@@ -92,5 +95,5 @@ try{
  await page.locator('#cancel').click();
  await page.locator('#review[open]').waitFor({state:'hidden'});
  assert.deepEqual(errors,[]);
- console.log('PASS: v3 vault, parent link opens one review (remove + install), paused banner, pause card (who, why, the payments before it, Mark as attack saved), reason as text, paste-to-install signs set_sentinel, unpause review, names kept; no browser errors.');
+ console.log('PASS: v3 vault with a velocity limit shown, parent link opens one review (remove + install), paused banner, pause card (who, why, the payments before it, Mark as attack saved), reason as text, paste-to-install signs set_sentinel, unpause review, names kept; no browser errors.');
 }finally{await browser.close();await server?.close();}

@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,hostedChanges,currentPause,pauseLabelsFile,readPauseLabels,type EventRow } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,sentinelQuickstart,parseLabels,hostedChanges,currentPause,pauseLabelsFile,readPauseLabels,type EventRow,velocityText,velocitySupported } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -320,5 +320,21 @@ describe('getting sentinels',()=>{
   expect(file).toEqual({vault:'lambda.styx-vaults.testnet',pause_labels:[{tx:'p1',outcome:'catch'},{tx:'p2',outcome:'false_alarm'}]});
   expect(readPauseLabels('{"p1":"catch","p2":"nonsense"}')).toEqual({p1:'catch'});
   expect(readPauseLabels('not json')).toEqual({});expect(readPauseLabels(null)).toEqual({});
+ });
+});
+
+describe('velocity limit',()=>{
+ it('maps set_velocity_limit, with bounds, and words',()=>{
+  expect(plan('set_velocity_limit',{max_payments_per_window:'5',window_seconds:'600'}).args).toEqual({max_payments_per_window:5,window_seconds:600});
+  expect(plan('set_velocity_limit',{max_payments_per_window:'0',window_seconds:''}).args).toEqual({max_payments_per_window:0,window_seconds:0});
+  for(const [n,w] of [['101','600'],['5','0'],['5','86401'],['x','600'],['-1','60']]) expect(()=>plan('set_velocity_limit',{max_payments_per_window:n,window_seconds:w})).toThrow();
+  expect(describePlan(plan('set_velocity_limit',{max_payments_per_window:'5',window_seconds:'600'}))).toBe('Velocity limit: at most 5 payments in 10 min');
+  expect(describePlan(plan('set_velocity_limit',{max_payments_per_window:'0',window_seconds:'0'}))).toBe('Velocity limit off');
+ });
+ it('shows only on vaults that have it',()=>{
+  expect(velocitySupported({contract_version:3})).toBe(false);
+  expect(velocityText({contract_version:3})).toBeNull();
+  expect(velocityText({max_payments_per_window:5,window_seconds:600})).toBe('At most 5 payments in any 10 min.');
+  expect(velocityText({max_payments_per_window:0,window_seconds:0})).toContain('No velocity limit');
  });
 });

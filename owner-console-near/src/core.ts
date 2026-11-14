@@ -28,6 +28,12 @@ export function formPlan(method:string,v:Record<string,string>,vault:string,toke
  case 'set_sentinel':args={key:publicKey(v.key),enabled:enabled()};break;
  case 'set_recipient':if(!['true','false'].includes(v.allowed)) throw Error('Choose allowed or denied');args={recipient:account(v.recipient),allowed:v.allowed==='true'};break;
  case 'set_vault_daily_limit':args={limit:units(v.limit)};break;
+ case 'set_velocity_limit':{
+  const n=Number(v.max_payments_per_window),w=Number(v.window_seconds);
+  if(!/^[0-9]+$/.test(v.max_payments_per_window??'') || n>100) throw Error('Payments per window: a whole number from 0 (off) to 100');
+  if(n>0 && (!/^[0-9]+$/.test(v.window_seconds??'') || w<1 || w>86400)) throw Error('Window: 1 to 86400 seconds');
+  args={max_payments_per_window:n,window_seconds:n>0?w:0};break;
+ }
  case 'pause':case 'unpause':break;
  case 'withdraw':args={to:account(v.to),amount:units(v.amount)};break;
  case 'storage_deposit':receiverId=token;deposit=STORAGE_DEPOSIT;args={account_id:vault,registration_only:true};break;
@@ -152,6 +158,7 @@ export function describePlan(p:Plan):string{
   case 'set_approver':return `${a.enabled?'Approver set':'Approver disabled'}: ${String(a.approver).slice(0,18)}…`;
   case 'set_sentinel':return `${a.enabled?'Sentinel installed':'Sentinel removed'}: ${String(a.key).slice(0,18)}…`;
   case 'set_vault_daily_limit':return `Vault daily limit set to ${tokens(a.limit)}`;
+  case 'set_velocity_limit':return a.max_payments_per_window?`Velocity limit: at most ${a.max_payments_per_window} payments in ${velocityWindow(Number(a.window_seconds))}`:'Velocity limit off';
   case 'pause':return 'Vault paused';
   case 'unpause':return 'Vault unpaused';
   case 'withdraw':return `Withdrew ${tokens(a.amount)} to ${a.to}`;
@@ -217,10 +224,18 @@ export function agentSetupCommands(vault:string,keyFile:string,approver:string):
 
 // ---- Starting points for the rules step (amounts in tokens) ----
 export const PRESETS:{name:string;note:string;values:Record<string,string>}[]=[
- {name:'Cautious',note:'5 a payment, 20 a day',values:{limit:'50',per_payment_limit:'5',daily_limit:'20'}},
- {name:'Personal agent',note:'10 a payment, 100 a day',values:{limit:'500',per_payment_limit:'10',daily_limit:'100'}},
- {name:'Team',note:'50 a payment, 500 a day',values:{limit:'2000',per_payment_limit:'50',daily_limit:'500'}},
+ {name:'Cautious',note:'5 a payment, 20 a day, at most 3 payments in 10 minutes',values:{limit:'50',per_payment_limit:'5',daily_limit:'20',velocity:'3'}},
+ {name:'Personal agent',note:'10 a payment, 100 a day, at most 5 payments in 10 minutes',values:{limit:'500',per_payment_limit:'10',daily_limit:'100',velocity:'5'}},
+ {name:'Team',note:'50 a payment, 500 a day, at most 20 payments in 10 minutes',values:{limit:'2000',per_payment_limit:'50',daily_limit:'500',velocity:'20'}},
 ];
+// ---- Velocity limit (contract field max_payments_per_window): at most N payments in any window ----
+export const VELOCITY_WINDOW='600';
+export const velocitySupported=(info:any)=>!!info && typeof info.max_payments_per_window==='number';
+export const velocityWindow=(s:number)=>s%3600===0?`${s/3600} h`:s%60===0?`${s/60} min`:`${s} s`;
+export function velocityText(info:any):string|null{
+ if(!velocitySupported(info)) return null;
+ return info.max_payments_per_window?`At most ${info.max_payments_per_window} payments in any ${velocityWindow(info.window_seconds)}.`:'No velocity limit: set one under Set the rules or Advanced.';
+}
 
 // ---- Approver invites: the approver proves they hold a key by signing one NEP-413 message ----
 // Not a transaction. The owner's console checks the signature and that the key is on the named

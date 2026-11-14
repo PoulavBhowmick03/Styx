@@ -1,7 +1,7 @@
 # Styx
 
 **Contract-level spending caps and signed approvals for AI agents on NEAR, so an agent can't raise
-its own cap.**
+its own cap, and watcher agents that can only pause the vault when a drain starts.**
 
 [Try the agent's key, no wallet needed](https://styxco.xyz/try/) · [Open the app](https://styxco.xyz) · [Approval page](https://styxco.xyz/approval/) ·
 [Owner console](https://styxco.xyz/console/) · [Demo video](https://x.com/ishitaaaaw/status/2121588328910975470) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
@@ -13,26 +13,83 @@ build, started on 12 Nov 2026 ([HACKATHON.md](https://nearhackathon.com/HACKATHO
 during the hackathon, against the last pre-hackathon commit:
 [`a0e4fb2...main`](https://github.com/PoulavBhowmick03/Styx/compare/a0e4fb2...main) (Q-003).
 
-## Step by step
+## Using Styx, step by step
 
-New here? [`GETTING_STARTED.md`](GETTING_STARTED.md) walks through it in order.
+New here? [`GETTING_STARTED.md`](GETTING_STARTED.md) is the same path, in order. Everything runs on
+NEAR testnet. You need a NEAR testnet wallet (Meteor) with about 4.2 testnet NEAR.
 
-1. **Create a vault** at [styxco.xyz/console](https://styxco.xyz/console/) with one wallet approval.
-   ![Create a vault](docs/images/02-create-vault.png)
-2. **Fund it and set the rules**: daily cap, recipients, approver and the agent's own limits, one
-   approval per step.
-   ![Owner setup](docs/images/03-owner-setup.png)
-3. **Read the vault** at any time, no wallet needed.
-   ![Vault overview](docs/images/04-vault-overview.png)
-4. **See the agent's key refused** by NEAR when it reaches for owner methods: [styxco.xyz/try](https://styxco.xyz/try/).
-   ![The agent's key](docs/images/07-try.png)
-5. **Add sentinels** and watch them: each key may only pause the vault; every pause comes with a reason.
-   ![Sentinels panel](docs/images/05-sentinels-panel.png)
-   ![The swarm, live on testnet](docs/images/08-swarm-live.png)
-6. **Watch them evolve**: the parent retires the unfit and breeds the next generation, one mutation at a time.
-   ![Evolution](docs/images/09-swarm-evolution.png)
-7. **Every payment, exportable**.
-   ![Payments](docs/images/06-payments.png)
+**1. Create a vault.** At [styxco.xyz/console](https://styxco.xyz/console/), click "Create a vault" and
+approve once. You get `<name>.styx-vaults.testnet`, which only you control.
+![Create a vault](docs/images/02-create-vault.png)
+
+**2. Fund it and set the rules.** This takes two approvals:
+- **Register and fund.** On testnet, the console mints test tUSDC into the vault.
+- **Set the rules:**
+  - the vault's daily cap;
+  - the accounts the agent may pay;
+  - an approver (you send them an invite link);
+  - the agent's own limits: per payment, per day, and an expiry.
+
+  A preset fills these in for you. "Generate agent key" downloads the agent's key file once.
+![Owner setup](docs/images/03-owner-setup.png)
+
+**3. Give your AI agent its key.** The ready screen prints four commands. They:
+- move the key file into a private folder;
+- install the agent CLI with `cargo install`;
+- add the Styx payment tools to Claude Code with `uvx`.
+
+From then on, ask Claude to pay an invoice. It pays within your limits on its own. It can't change a
+limit, add a recipient, pause or withdraw: NEAR refuses those calls from its key before the contract
+runs. You can see that for yourself at [styxco.xyz/try](https://styxco.xyz/try/), no wallet needed.
+![The agent's key](docs/images/07-try.png)
+
+**4. Approve the exceptions.** A payment over the per-payment limit waits for your approver:
+1. The approver gets a Telegram alert and opens the approval page.
+2. The page reads the payment back from the vault.
+3. The approver signs that exact payment in their wallet.
+
+Nothing lifts the daily caps.
+
+**5. Watch the vault.** The console shows it at a glance, no wallet needed to read it:
+- live or paused, the balance, and today's spend against the cap;
+- each agent's limits in words;
+- every payment, exportable as CSV.
+![Vault overview](docs/images/04-vault-overview.png)
+![Payments](docs/images/06-payments.png)
+
+**6. Add sentinels.** Sentinels are watcher agents that read every payment and pause the vault when a
+drain starts: many small payments that each pass every limit. To start them:
+1. Build the CLI once: `cargo build --release --manifest-path sdk/near/Cargo.toml`.
+2. Run one command:
+   `uv run --project sentinels styx-sentinels quickstart --vault <your vault> --cli sdk/near/target/release/styx-near-vault`.
+3. Approve once the console link it prints.
+
+The three sentinels are a burst rule, a concentration rule, and a judge model on NEAR AI Cloud. They
+then watch from that machine, and the live page opens on `127.0.0.1:8790`.
+- Their keys can only pause: NEAR refuses them anything else, and only you unpause.
+- In the console's Sentinels panel you read each pause's reason, then unpause.
+
+Sentinels run on a machine you control, today your own. While it is off, nothing watches. The
+console's "Protect with hosted sentinels" appears only where a sentinels service is configured, and
+none is deployed for styxco.xyz.
+![Sentinels panel](docs/images/05-sentinels-panel.png)
+![The swarm, live on testnet](docs/images/08-swarm-live.png)
+
+**7. Let them learn.** A pause during a real attack counts as a catch. A pause you reverse counts as a
+false alarm, and an attack that slips by counts as a miss. A sentinel at fitness -2 is retired, and
+its child takes over:
+- a little looser after false alarms;
+- a little stricter after misses.
+
+You approve each key change with one link, so nothing changes on the vault without you. "Show
+details" and "How sentinels learn" on the live page show the scores and generations.
+![Evolution](docs/images/09-swarm-evolution.png)
+
+**8. Cap the pace.** Vaults built from the current contract also take a velocity limit: at most N
+payments in any window, on every pay path. It is set in Set the rules (a preset fills it) or under
+Advanced, and refused payments fail with `VelocityLimit` before any money moves. The contract and
+console have it, unit- and browser-tested. Only vaults created after the factory is redeployed with
+this build get it.
 
 ## The problem
 
@@ -156,7 +213,7 @@ a payment the vault would reject.
 
 | Action | Owner | Approver | Agent | Reviewer |
 | --- | --- | --- | --- | --- |
-| Set limits, recipients, approvers, EVM chains | Yes | No | No (NEAR rejects the key) | No |
+| Set limits, a velocity limit, recipients, approvers, EVM chains | Yes | No | No (NEAR rejects the key) | No |
 | Pause, withdraw | Yes | No | No | No |
 | Pause only (a sentinel's key, contract version 3) | Installs and removes sentinels; unpauses | No | No | No |
 | Pay within limits, on NEAR or an enabled EVM chain | No | No | Yes | No |
@@ -219,6 +276,12 @@ phone, settled in [`Eauk4L8M…`](https://testnet.nearblocks.io/txns/Eauk4L8MRK1
 a sentinel pausing a vault mid-drain, with its own pause-only key, 8.6 seconds after the fifth
 payment ([`5YxTgLtp…`](https://testnet.nearblocks.io/txns/5YxTgLtpndSXEwiNsu2bJNwTrQbNSu99xA5yrf89UR1J)).
 
+Sentinels off against on, the same drain of 8 payments of 1 tUSDC on `sentinels.styx-vaults.testnet`
+([`docs/near/SENTINELS.md`](docs/near/SENTINELS.md)):
+- **Off:** all 8 settled.
+- **On:** the burst sentinel paused the vault 43 s after the first payment. 5 settled; the sixth was
+  refused with `VaultPaused`.
+
 Live: vault `vault.styx-owner-c87a.testnet`, sentinel vault `sentinels.styx-vaults.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet`
 (EVM address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet` (our test token, not Circle's
 USDC), vault factory `styx-vaults.testnet`, relay `https://styx-relay-near.fly.dev`.
@@ -242,6 +305,10 @@ What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault
 
 ## Limits
 
+- Sentinels run on a machine the owner controls. While it is off or asleep, nothing pauses the vault
+  on their behalf. The velocity limit, once set, holds on chain either way.
+- The burst sentinel pauses after the payment that crosses its threshold, so that many payments
+  settle first (5 in the testnet comparison).
 - A reverted or never-broadcast EVM transfer still counts against the daily limit: the vault charges
   its counters when it signs.
 - One EVM signature request is in flight at a time, across all chains.

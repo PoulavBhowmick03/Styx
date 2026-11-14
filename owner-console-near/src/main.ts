@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, hostedChanges, currentPause, pauseLabelsFile, readPauseLabels, type PauseVerdict, type PauseLabels, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, sentinelQuickstart, hostedChanges, currentPause, pauseLabelsFile, readPauseLabels, type PauseVerdict, type PauseLabels, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch, velocitySupported, velocityText, VELOCITY_WINDOW } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -66,6 +66,8 @@ function render(){
  ].map(([k,v])=>card(k,v)));
  area.querySelector('article')!.classList.add(info.paused?'paused':'live');
  $('#overview-extra').replaceChildren(...[['Token',info.token],['Vault daily limit',amount(info.vault_daily_limit)],["Today's spend",amount(spent)],['Token balance',amount(balance)],['UTC day',String(day)],['Network',context.network],['Contract version',String(info.contract_version)]].map(([k,v])=>card(k,v)));
+ const vel=velocityText(info),velLine=document.querySelector('#overview-velocity')??Object.assign(document.createElement('p'),{id:'overview-velocity',className:'note'});
+ if(vel){velLine.textContent=vel;area.after(velLine);}else velLine.remove();
  // Anyone can watch spend: it is public on chain. The bot messages at 80% and 100% of the daily limit.
  const link=watchLink(BOT,context.vault);
  if(link){const a=el('a','Get spend alerts on Telegram') as HTMLAnchorElement;a.href=link;a.target='_blank';a.rel='noopener noreferrer';a.className='watch-link';a.title='The Styx bot messages you when today\'s spend passes 80% and 100% of the vault daily limit.';area.append(a);}
@@ -73,6 +75,7 @@ function render(){
  $('#storage-status').textContent=storage?'Vault is registered with this token.':'Vault is not registered. Register it before funding.';
  const register=document.querySelector<HTMLButtonElement>('form[data-method="storage_deposit"] button');if(register){register.hidden=!!storage;}
  document.querySelector<HTMLElement>('form[data-method="mint"]')!.hidden=context.network!=='testnet'||info.token!==TEST_TOKEN;
+ document.querySelector<HTMLElement>('form[data-method="set_velocity_limit"]')!.hidden=!velocitySupported(info);
  role();
 }
 async function walletSetup(network:string,vault:string){
@@ -203,10 +206,10 @@ async function loadHistory(){
 const definitions:[string,string,string[]][]=[
  ['configure_agent','Configure an agent',['agent','per_payment_limit','daily_limit','valid_until','enabled']],
  ['set_recipient','Allow or block a recipient',['recipient','allowed']],['set_approver','Set an approver',['approver','enabled']],
- ['set_vault_daily_limit','Vault daily limit',['limit']],['pause','Pause the vault',[]],['unpause','Unpause the vault',[]],['withdraw','Withdraw tokens',['to','amount']],
+ ['set_vault_daily_limit','Vault daily limit',['limit']],['set_velocity_limit','Velocity limit',['max_payments_per_window','window_seconds']],['pause','Pause the vault',[]],['unpause','Unpause the vault',[]],['withdraw','Withdraw tokens',['to','amount']],
  ['storage_deposit','Register vault with token (0.00125 NEAR)',[]],['ft_transfer','Fund from owner wallet (1 yoctoNEAR)',['amount']],['mint','Mint tUSDC — test-token only',['amount']]
 ];
-const labels:Record<string,string>={agent:'Agent public key',approver:'Approver public key',recipient:'Recipient account',to:'Withdrawal destination',per_payment_limit:'Per-payment limit (tokens)',daily_limit:'Agent daily limit (tokens)',valid_until:'Policy expiry (Unix seconds)',limit:'Vault daily limit (tokens)',amount:'Amount (tokens)',enabled:'Enabled',allowed:'Allowed'};
+const labels:Record<string,string>={agent:'Agent public key',approver:'Approver public key',recipient:'Recipient account',to:'Withdrawal destination',per_payment_limit:'Per-payment limit (tokens)',daily_limit:'Agent daily limit (tokens)',valid_until:'Policy expiry (Unix seconds)',limit:'Vault daily limit (tokens)',max_payments_per_window:'Most payments per window (0 = off)',window_seconds:'Window (seconds)',velocity:'Most payments in any 10 minutes (empty = no limit)',amount:'Amount (tokens)',enabled:'Enabled',allowed:'Allowed'};
 function fieldInput(field:string,value=''){
  const label=el('label',labels[field]);let input:HTMLInputElement|HTMLSelectElement;
  if(['enabled','allowed'].includes(field)){
@@ -418,10 +421,11 @@ const steps:Step[]=[
  {title:'Register and fund the vault',why:`One approval: the token registers the vault (0.00125 NEAR, once) and ${'{fund}'} into it. The agent pays from this balance.`,fields:['amount'],defaults:()=>({amount:'100'}),
   plans:v=>[...(facts?.storage?[]:[owned('storage_deposit',{})]),owned(testToken()?'mint':'ft_transfer',v)],done:()=>!!facts?.storage && BigInt(facts?.balance??'0')>0n},
  {title:'Set the rules',why:'One approval sets the vault\'s daily cap, who it may pay, who approves exceptions, and the agent\'s own limits. Leave a field empty to skip it.',
-  fields:['limit','recipient','approver','agent','per_payment_limit','daily_limit','valid_until'],optional:true,
+  fields:['limit','velocity','recipient','approver','agent','per_payment_limit','daily_limit','valid_until'],optional:true,
   defaults:()=>({approver:invited?.publicKey??'',limit:rulesDone.limit()?'':'500',per_payment_limit:'10',daily_limit:'100',valid_until:String(Math.floor(Date.now()/1000)+7*86400)}),
   plans:v=>[
    ...(v.limit?[owned('set_vault_daily_limit',{limit:v.limit})]:[]),
+   ...(v.velocity && velocitySupported(facts?.info)?[owned('set_velocity_limit',{max_payments_per_window:v.velocity.trim(),window_seconds:VELOCITY_WINDOW})]:[]),
    ...recipientPlans(v.recipient??''),
    ...(v.approver?[owned('set_approver',{approver:v.approver.trim(),enabled:'true'})]:[]),
    ...(v.agent?[owned('configure_agent',{agent:v.agent.trim(),per_payment_limit:v.per_payment_limit,daily_limit:v.daily_limit,valid_until:v.valid_until,enabled:'true'})]:[]),
@@ -495,7 +499,9 @@ function renderSetup(){
  form.replaceChildren(el('p',`Step ${current+1} of ${steps.length} · one wallet approval${state[current]?' · already done':''}`),el('h3',step.title),el('p',step.why.replace('{fund}',fund)));
  if(step.fields.includes('per_payment_limit')) form.append(presetBar(form));
  for(const field of step.fields){
+  if(field==='velocity' && !velocitySupported(facts?.info)) continue;  // vaults created before the velocity limit
   const label=field==='recipient'?recipientBox(values[field]??''):fieldInput(field,values[field]??'');
+  if(field==='velocity'){const i=label.querySelector('input')!;i.inputMode='numeric';i.placeholder='e.g. 5';label.append(el('small','Stops a drain of many small payments: the vault refuses any payment past this count until the window moves on.'));}
   if(step.optional){const input=label.querySelector('input');if(input)input.required=false;}
   if(field==='recipient' && rulesDone.recipient()) label.append(el('small','A recipient is already allowed; add another or leave empty.'));
   if(field==='approver'){if(rulesDone.approver()) label.append(el('small','An approver is already set; add another or leave empty.'));label.append(inviteBox());form.append(label,telegramNote());continue;}
