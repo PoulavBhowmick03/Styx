@@ -112,6 +112,10 @@ enum Request {
         payment_id: String,
         signature_file: Option<PathBuf>,
     },
+    /// x402: have the vault sign an EIP-3009 authorization for a proposed EVM payment (contract v3).
+    SubmitX402 {
+        payment_id: String,
+    },
     Status {
         payment_id: String,
     },
@@ -803,6 +807,52 @@ async fn handle(request: Request) -> Result<Value> {
                 Err(error) => Err(error),
             }
         }
+        Request::SubmitX402 { payment_id } => {
+            let key = config.agent_key()?;
+            let mut record = journal.load(&payment_id)?;
+            if record.payment.agent != key.public_key().to_string() {
+                return Err(invalid("retained payment belongs to another agent"));
+            }
+            if record.vault != config.vault.as_str() {
+                return Err(invalid("retained payment belongs to another vault"));
+            }
+            if record.chain_id.is_none() {
+                return Err(invalid("x402 pays on an EVM chain: propose with an eip155 recipient"));
+            }
+            if record.exception_required {
+                return Err(approval("over the per-payment limit: x402 has no approval path"));
+            }
+            let flat = |a: &Value| {
+                let f = |k: &str| a.get(k).cloned().unwrap_or(Value::Null);
+                json!({
+                    "status": "ok", "state": "signed", "payment_id": f("payment_id"), "chain_id": f("chain_id"),
+                    "auth_token": f("token"), "auth_from": f("from"), "auth_to": f("to"), "auth_value": f("value"),
+                    "auth_valid_after": f("valid_after"), "auth_valid_before": f("valid_before"),
+                    "auth_nonce": f("nonce"), "auth_signature": f("signature"),
+                })
+            };
+            // Already signed (a retry): return the stored authorization, never sign twice.
+            let stored: Option<Value> = chain.view("get_x402_authorization", json!({ "payment_id": record.payment.payment_id })).await?;
+            if let Some(auth) = stored {
+                return Ok(flat(&auth));
+            }
+            let consumed: Option<String> = chain.view("consumed_payment", json!({ "payment_id": record.payment.payment_id })).await?;
+            if let Some(hash) = consumed {
+                if hash != record.payment_hash {
+                    return Err(invalid("payment ID was consumed by a different payment"));
+                }
+                return Ok(json!({"status": "ok", "state": "unknown", "payment_hash": hash}));
+            }
+            let (tx, value) = chain.call(&key, "pay_x402", json!({ "payment": record.contract_payment() })).await?;
+            record.attempts.push(tx.clone());
+            journal.write(&record)?;
+            if value.is_null() {
+                return Ok(json!({"status": "ok", "state": "reverted", "tx_hash": tx}));
+            }
+            let mut out = flat(&value);
+            out["tx_hash"] = json!(tx);
+            Ok(out)
+        }
         Request::Status { payment_id } => {
             let mut record = journal.load(&payment_id)?;
             if let Some(tx) = &record.settled_tx {
@@ -988,6 +1038,13 @@ mod tests {
         assert_eq!(from_contract("PaymentAlreadyUsed").code, "PAYMENT_ALREADY_SETTLED");
         assert_eq!(from_contract("DailyLimitExceeded").code, "POLICY_LIMIT");
         assert_eq!(contract_refusal("no refusal here"), None);
+    }
+
+    #[test]
+    fn parses_submit_x402_and_nothing_extra() {
+        let r: Request = serde_json::from_value(json!({"method": "submit_x402", "payment_id": "p1"})).unwrap();
+        assert!(matches!(r, Request::SubmitX402 { ref payment_id } if payment_id == "p1"));
+        assert!(serde_json::from_value::<Request>(json!({"method": "submit_x402", "payment_id": "p1", "to": "0x1"})).is_err());
     }
 
     #[test]
