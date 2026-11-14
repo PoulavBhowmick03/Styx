@@ -65,3 +65,45 @@ The relay (commit `b8ea16f`, deployed to Fly the same day) polls `@Styx_pvt_bot`
 to that chat. There is no fallback chat: `TELEGRAM_CHAT_ID` was removed from Fly the same day, so an
 approver who has not linked gets no alert (the agent sees `alerted: false` and still has the link). Links are stored in
 `/data/relay/telegram-links.json` on the Fly volume. `/status` and `/unlink` in the bot.
+
+## Factory redeploy with the velocity limit (14 Nov 2026)
+
+`styx-vaults.testnet` was redeployed from `main` at `37ec00c` with `scripts/near/deploy_v3.sh`:
+[`GsCGvn99…`](https://testnet.nearblocks.io/txns/GsCGvn997FBE8AuR89eUFZ5XKcap5Xb5bfwAutz3kEFD).
+- Factory code hash: `G5246MAQdC5cXHgChDKddQcjcbecYkWcRmSRWnpf6cSn`.
+- Embedded vault code hash: `Da5NdjYk948jqEzRZMTw5t9mR3w24RPnQFPLz7brY3Mm` (contract version 3,
+  with `set_velocity_limit`).
+- `min_deposit`: 4.21423 NEAR.
+
+Vaults created before it keep their code. The first vault with the limit is
+`velocity.styx-vaults.testnet` (see TESTNET_RUN.md).
+
+## Relay redeploy (14 Nov 2026)
+
+`styx-relay-near` release v12, from `main` at `78dab73`, with sentinel pause alerts. 49 relay tests
+passed before deploy. `/health` answers `{"ok":true}`.
+
+## Sentinels service on Fly (14 Nov 2026)
+
+`https://styx-sentinels-near.fly.dev`:
+- app `styx-sentinels-near`, region `sin`, 1 GB volume `sentinels_data` at `/data`;
+- image from `sentinels/Dockerfile`, built on Fly's remote builder;
+- `/api/health` answers `{"vaults": …, "cap": 20, "network": "testnet"}`.
+
+The first build, from `main`, failed: OpenSSL builds from source, and `rust:1-slim` lacks a full
+`perl`. The running image is from branch `sentinels-dockerfile` (`39d69dc`), which adds `perl` and
+`make` to the build stage. Merge it before the next deploy from `main`.
+
+Fly mounts the volume owned by uid 1000, so the non-root `styx` user can write it.
+
+`lambda.styx-vaults.testnet` is registered. `POST /api/vaults` answered with a console link enabling
+two keys, burst-g1 and concentration-g1. The owner has not signed it yet, so these hosted sentinels
+cannot pause until they do. Plug-ins are off on the service: it has no `plugins.toml`, and their
+sandbox is macOS-only.
+
+## Site: hosted sentinels (14 Nov 2026)
+
+Vercel project `styx-approve`: `VITE_SENTINEL_SERVICE_URL=https://styx-sentinels-near.fly.dev` set for
+production, and the production build from `37ec00c` redeployed. The console's Sentinels panel now
+offers "Protect with hosted sentinels". `/proof/?vault=lambda.styx-vaults.testnet` shows the four
+sentinel pauses.

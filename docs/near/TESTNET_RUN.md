@@ -369,3 +369,45 @@ the judge was idle, with no NEAR AI key) watched FastNEAR's transaction list.
   the fifth payment's block.
 - The sixth payment was refused with `VaultPaused` before it was sent, and the drain stopped.
 - The owner unpaused: [`9iquBpzC…`](https://testnet.nearblocks.io/txns/9iquBpzCKPL9ZrystZqBLo5aPB1qroyvPq2H16iBGojW).
+
+## Velocity limit on testnet (14 Nov 2026)
+
+Commit `e71a65d` (reviewed by Poulav) merged into `main` as `37ec00c`. Contract tests at that
+commit: 80 unit, 15 audit and 2 sandbox, all passing. `scripts/near/deploy_v3.sh` rebuilt the vault
+and the factory and redeployed `styx-vaults.testnet`. Finalized reads match the local builds:
+- factory code `G5246MAQdC5cXHgChDKddQcjcbecYkWcRmSRWnpf6cSn` (500,823 bytes);
+- embedded vault code (`vault_code_hash`) `Da5NdjYk948jqEzRZMTw5t9mR3w24RPnQFPLz7brY3Mm`
+  (371,423 bytes);
+- `min_deposit` is now 4.21423 NEAR.
+
+A new vault, `velocity.styx-vaults.testnet`, is owned by `styx-velocity-64806.testnet`, a testnet account created from
+NEAR's faucet for this run. Its `get_vault` reports `max_payments_per_window` and `window_seconds`;
+vaults created earlier do not have them. Every transaction was re-read with
+`scripts/near/tx_outcome.sh` through FastNEAR's RPC.
+
+| Step | Transaction | Signer | Outcome |
+| --- | --- | --- | --- |
+| Factory redeploy (`deploy_v3.sh`, from `37ec00c`) | [`GsCGvn99…`](https://testnet.nearblocks.io/txns/GsCGvn997FBE8AuR89eUFZ5XKcap5Xb5bfwAutz3kEFD) | `styx-vaults.testnet`, `DeployContract` | every receipt succeeded |
+| `create_vault` (4.25 NEAR) | [`52GcbeH2…`](https://testnet.nearblocks.io/txns/52GcbeH2Z65z6WjDL9jbFWz3UCeoLruzrPNFasnVMxyh) | `styx-velocity-64806.testnet` | every receipt succeeded |
+| `storage_deposit` | [`9TgpauZo…`](https://testnet.nearblocks.io/txns/9TgpauZoTegvNfdiA3QuUdwbCLuf5TUqFEPuAvK7uGoU) | `styx-velocity-64806.testnet` | every receipt succeeded |
+| `mint` 50 tUSDC to the vault | [`3NkNF2Ss…`](https://testnet.nearblocks.io/txns/3NkNF2SsvScmEYzWLN5m2CXN5U17msxAUitrZeLdGNgJ) | `styx-velocity-64806.testnet` | every receipt succeeded |
+| `set_vault_daily_limit` 500 | [`3xgyHUDk…`](https://testnet.nearblocks.io/txns/3xgyHUDk1v1hQ2VY9bjQ7P8uW7ec51zEuqchDac1VaEE) | `styx-velocity-64806.testnet` | every receipt succeeded |
+| `set_recipient` vendor-a | [`DkRbtsid…`](https://testnet.nearblocks.io/txns/DkRbtsiduasTP91UhcK6iMLkVmm1UtznTAkiWCZvHEmy) | `styx-velocity-64806.testnet` | every receipt succeeded |
+| `configure_agent` (10 a payment, 100 a day) | [`Dfo3jTgb…`](https://testnet.nearblocks.io/txns/Dfo3jTgbzHou1W5FjidaunFZBih32pJYuouy1amNdyJm) | `styx-velocity-64806.testnet` | every receipt succeeded |
+| `set_velocity_limit(4, 300)` | [`Yah2N2Cq…`](https://testnet.nearblocks.io/txns/Yah2N2CqgynszxjgDq7i6DaQeCYYu9gwjJ7VU95A92z) | `styx-velocity-64806.testnet` | every receipt succeeded |
+
+Then `scripts/near/drain_attack.sh 8 1` (agent key, 1 tUSDC a payment to `vendor-a`, each inside every
+other limit):
+
+| Payment | Transaction | Outcome |
+| --- | --- | --- |
+| 1 | [`CaudaEzM…`](https://testnet.nearblocks.io/txns/CaudaEzMT4jydAyanXW2mQNhQyLgrNxKK9UcuZyrTijK) | `pay`, every receipt succeeded |
+| 2 | [`CJqbbu3i…`](https://testnet.nearblocks.io/txns/CJqbbu3i1TMTCc4rThvL4njWFi5BNoTe844tp55mPvqn) | `pay`, every receipt succeeded |
+| 3 | [`5xFYREeb…`](https://testnet.nearblocks.io/txns/5xFYREebiF4kAPKfCaG46u72mRET5Jr3FnDAbf9TmxRF) | `pay`, every receipt succeeded |
+| 4 | [`58mVqs1k…`](https://testnet.nearblocks.io/txns/58mVqs1kFn2NW9cCm6b8rLfpV1mL6S5VMBCmyHznM6ct) | `pay`, every receipt succeeded |
+| 5 | [`47D6Szb4…`](https://testnet.nearblocks.io/txns/47D6Szb4xDoL8LpeV4ancCisZyvVY8awgyLyjT9RWVEQ) | `pay` FAILED: `Smart contract panicked: VelocityLimit` |
+
+The fifth payment in the 300-second window was refused by the vault with `VelocityLimit`. No tokens
+moved: the vault holds 46 of its 50 tUSDC, with 4 spent today. The agent CLI on `main` reported it as
+`INVALID_REQUEST` ("the vault refused: VelocityLimit"), and the drain script stopped on that first
+refusal.
