@@ -13,17 +13,24 @@ class PauseFailed(Exception):
     pass
 
 
+def fit(reason: str, limit: int = 280) -> str:
+    """The contract takes a reason of at most 280 UTF-8 bytes; cut on a character boundary."""
+    return reason.encode()[:limit].decode(errors="ignore")
+
+
 @dataclass
 class CliPauser:
     cli: str
     vault: str
+    state_root: str
     rpc_url: str | None = None
 
     def pause(self, key_file: str, reason: str) -> str:
-        env = {**os.environ, "STYX_NEAR_VAULT": self.vault, "STYX_NEAR_SENTINEL_KEY_FILE": key_file}
+        env = {**os.environ, "STYX_NEAR_VAULT": self.vault, "STYX_NEAR_SENTINEL_KEY_FILE": key_file,
+               "STYX_NEAR_STATE_ROOT": self.state_root, "STYX_NEAR_NETWORK": "testnet"}
         if self.rpc_url:
             env["STYX_NEAR_RPC_URL"] = self.rpc_url
-        done = subprocess.run([self.cli], input=json.dumps({"method": "sentinel_pause", "reason": reason[:280]}),
+        done = subprocess.run([self.cli], input=json.dumps({"method": "sentinel_pause", "reason": fit(reason)}),
                               capture_output=True, text=True, timeout=120, env=env)
         try:
             reply = json.loads(done.stdout)

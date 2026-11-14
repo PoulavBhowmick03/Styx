@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .events import RPC, Batch, Watcher
 from .keys import new_key
+from .marker import AttackMarker
 from .pauser import CliPauser, DryRunPauser
 from .swarm import DEFAULT_SWARM, Swarm
 
@@ -69,6 +70,7 @@ def main(argv=None) -> int:
     r.add_argument("--interval", type=float, default=8.0)
     r.add_argument("--dry-run", action="store_true", help="record pauses instead of sending them")
     r.add_argument("--ui", type=int, default=8790)
+    r.add_argument("--attack-marker", help="drain_attack.sh's marker (default $STYX_NEAR_STATE_ROOT/sentinel-attack.json)")
     sub.choices["label"].add_argument("member")
     sub.choices["label"].add_argument("time", type=float)
     sub.choices["label"].add_argument("outcome", choices=["catch", "false_alarm"])
@@ -112,7 +114,8 @@ def main(argv=None) -> int:
             return 0
 
     rpc_url = getattr(a, "rpc", None) or RPCS[a.network]
-    pauser = DryRunPauser() if getattr(a, "dry_run", False) or a.cmd != "run" else CliPauser(a.cli, a.vault, rpc_url)
+    pauser = DryRunPauser() if getattr(a, "dry_run", False) or a.cmd != "run" else CliPauser(
+        a.cli, a.vault, str(home(a.vault) / "cli-state"), rpc_url)
     swarm = Swarm(a.vault, home(a.vault), pauser, keygen=keygen_for(a.vault),
                   completer=completer_or_none(a.cmd == "run"), network=a.network)
 
@@ -145,6 +148,11 @@ def main(argv=None) -> int:
     lock = threading.Lock()
     open_ui(swarm, a.ui, lock, lambda: {"dry_run": isinstance(pauser, DryRunPauser)})
     watcher = Watcher(RPC(rpc_url), a.vault, a.network)
+    marker_path = a.attack_marker or (Path(os.environ["STYX_NEAR_STATE_ROOT"]).expanduser() / "sentinel-attack.json"
+                                      if os.environ.get("STYX_NEAR_STATE_ROOT") else None)
+    marker = AttackMarker(Path(marker_path), a.vault) if marker_path else None
+    if marker:
+        print(f"Reading attack markers from {marker_path}")
     print(f"Watching {a.vault} every {a.interval:g}s. Ctrl+C to stop.")
     try:
         while True:
@@ -154,6 +162,9 @@ def main(argv=None) -> int:
                 print(f"watch failed this round: {error}")
                 batch = Batch()
             with lock:
+                window = marker.check(time.time()) if marker else None
+                if window:
+                    swarm.mark_attack(*window)
                 out = swarm.cycle(batch)
             for member, reason in out["fired"]:
                 print(f"PAUSED by {member}: {reason}")

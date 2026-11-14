@@ -169,8 +169,16 @@ class Swarm:
 
     # ---- labels ----------------------------------------------------------------------------
     def mark_attack(self, start: float, end: float, label: str = "attack") -> None:
-        self.attack_windows.append((start, end, label))
-        self.log("attack_marked", start=start, end=end, label=label)
+        """Marks an attack window. Marking the same label again moves its end (an attack in progress)."""
+        known = [i for i, w in enumerate(self.attack_windows) if w[2] == label]
+        if known:
+            i = known[0]
+            if self.attack_windows[i][1] >= end:
+                return
+            self.attack_windows[i] = (self.attack_windows[i][0], end, label)
+        else:
+            self.attack_windows.append((start, end, label))
+            self.log("attack_marked", start=start, end=end, label=label)
         self.settle_by_windows()
         self.save()
 
