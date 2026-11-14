@@ -47,42 +47,52 @@ def _int(value: Any) -> int | None:
         return None
 
 
+def parse_logs(logs: Iterable[Any], tx_hash: str, time: float, out: Batch | None = None) -> Batch:
+    """The styx events in one receipt's log lines (EVENT_JSON, standard styx)."""
+    out = out if out is not None else Batch()
+    for line in logs:
+        if not isinstance(line, str) or not line.startswith("EVENT_JSON:"):
+            continue
+        try:
+            log = json.loads(line[len("EVENT_JSON:"):])
+        except ValueError:
+            continue
+        if log.get("standard") != "styx" or not isinstance(log.get("data"), list):
+            continue
+        name = log.get("event")
+        for data in log["data"]:
+            if not isinstance(data, dict):
+                continue
+            if name in PAYMENT_EVENTS and isinstance(data.get("recipient"), str) and _int(data.get("amount")) is not None:
+                out.payments.append(Payment(
+                    payment_id=str(data.get("payment_id", "")), agent=str(data.get("agent", "")),
+                    recipient=data["recipient"].lower(), amount=_int(data["amount"]) or 0, time=time, tx=tx_hash,
+                    kind=name, exception=bool(data.get("exception")), chain_id=_int(data.get("chain_id")),
+                    vault_daily_limit=_int(data.get("vault_daily_limit")),
+                    vault_day_spent_after=_int(data.get("vault_day_spent_after")),
+                ))
+            elif name in PAUSE_EVENTS:
+                out.pauses.append(PauseEvent(
+                    kind=name, time=time, tx=tx_hash,
+                    sentinel=data.get("sentinel") if isinstance(data.get("sentinel"), str) else None,
+                    reason=str(data["reason"])[:280] if isinstance(data.get("reason"), str) else None,
+                ))
+    return out
+
+
+def succeeded(outcome: dict) -> bool:
+    status = outcome.get("status", {})
+    return isinstance(status, dict) and ("SuccessValue" in status or "SuccessReceiptId" in status)
+
+
 def parse_events(tx: dict, vault: str, time: float) -> Batch:
     """Every styx event the vault logged in a successful receipt of this transaction."""
     out = Batch()
     tx_hash = tx.get("transaction", {}).get("hash", "")
     for receipt in tx.get("receipts_outcome", []):
         outcome = receipt.get("outcome", {})
-        status = outcome.get("status", {})
-        if outcome.get("executor_id") != vault or not ("SuccessValue" in status or "SuccessReceiptId" in status):
-            continue
-        for line in outcome.get("logs", []):
-            if not isinstance(line, str) or not line.startswith("EVENT_JSON:"):
-                continue
-            try:
-                log = json.loads(line[len("EVENT_JSON:"):])
-            except ValueError:
-                continue
-            if log.get("standard") != "styx" or not isinstance(log.get("data"), list):
-                continue
-            name = log.get("event")
-            for data in log["data"]:
-                if not isinstance(data, dict):
-                    continue
-                if name in PAYMENT_EVENTS and isinstance(data.get("recipient"), str) and _int(data.get("amount")) is not None:
-                    out.payments.append(Payment(
-                        payment_id=str(data.get("payment_id", "")), agent=str(data.get("agent", "")),
-                        recipient=data["recipient"].lower(), amount=_int(data["amount"]) or 0, time=time, tx=tx_hash,
-                        kind=name, exception=bool(data.get("exception")), chain_id=_int(data.get("chain_id")),
-                        vault_daily_limit=_int(data.get("vault_daily_limit")),
-                        vault_day_spent_after=_int(data.get("vault_day_spent_after")),
-                    ))
-                elif name in PAUSE_EVENTS:
-                    out.pauses.append(PauseEvent(
-                        kind=name, time=time, tx=tx_hash,
-                        sentinel=data.get("sentinel") if isinstance(data.get("sentinel"), str) else None,
-                        reason=str(data["reason"])[:280] if isinstance(data.get("reason"), str) else None,
-                    ))
+        if outcome.get("executor_id") == vault and succeeded(outcome):
+            parse_logs(outcome.get("logs", []), tx_hash, time, out)
     return out
 
 

@@ -1,7 +1,7 @@
 """styx-sentinels: run a sentinel swarm on a Styx vault.
 
   styx-sentinels init     --vault V [--no-judge]           spawn the swarm, write keys, print enable links
-  styx-sentinels run      --vault V --cli PATH [--dry-run] watch the vault, pause it when a sentinel asks
+  styx-sentinels run      --vault V --cli PATH [--dry-run] watch the vault block by block, pause it when a sentinel asks
   styx-sentinels rehearse                                  the whole lifecycle on simulated payments
   styx-sentinels status   --vault V                        members, scores, owner actions
   styx-sentinels label    --vault V MEMBER TIME catch|false_alarm
@@ -19,6 +19,7 @@ import time
 import webbrowser
 from pathlib import Path
 
+from .blocks import BlockWatcher
 from .events import RPC, Batch, Watcher
 from .keys import new_key
 from .marker import AttackMarker
@@ -67,7 +68,9 @@ def main(argv=None) -> int:
     r = sub.choices["run"]
     r.add_argument("--cli", default="styx-near-vault", help="the Styx agent CLI that signs sentinel_pause")
     r.add_argument("--rpc")
-    r.add_argument("--interval", type=float, default=8.0)
+    r.add_argument("--interval", type=float, help="seconds between polls (default 1 for blocks, 8 for txs)")
+    r.add_argument("--source", choices=["blocks", "txs"], default="blocks",
+                   help="blocks: neardata, a payment is seen in the block it lands in; txs: the transaction list")
     r.add_argument("--dry-run", action="store_true", help="record pauses instead of sending them")
     r.add_argument("--ui", type=int, default=8790)
     r.add_argument("--attack-marker", help="drain_attack.sh's marker (default $STYX_NEAR_STATE_ROOT/sentinel-attack.json)")
@@ -149,13 +152,14 @@ def main(argv=None) -> int:
         print("The judge sentinel waits while NEARAI_API_KEY is unset; the rule sentinels watch.")
     lock = threading.Lock()
     open_ui(swarm, a.ui, lock, lambda: {"dry_run": isinstance(pauser, DryRunPauser)})
-    watcher = Watcher(RPC(rpc_url), a.vault, a.network)
+    watcher = BlockWatcher(RPC(rpc_url), a.vault, a.network) if a.source == "blocks" else Watcher(RPC(rpc_url), a.vault, a.network)
+    interval = a.interval or (1.0 if a.source == "blocks" else 8.0)
     marker_path = a.attack_marker or (Path(os.environ["STYX_NEAR_STATE_ROOT"]).expanduser() / "sentinel-attack.json"
                                       if os.environ.get("STYX_NEAR_STATE_ROOT") else None)
     marker = AttackMarker(Path(marker_path), a.vault) if marker_path else None
     if marker:
         print(f"Reading attack markers from {marker_path}")
-    print(f"Watching {a.vault} every {a.interval:g}s. Ctrl+C to stop.")
+    print(f"Watching {a.vault} every {interval:g}s ({a.source}). Ctrl+C to stop.")
     rpc = RPC(rpc_url)
     rounds = 0
     try:
@@ -165,7 +169,7 @@ def main(argv=None) -> int:
             except Exception as error:  # noqa: BLE001
                 print(f"watch failed this round: {error}")
                 batch = Batch()
-            if not isinstance(pauser, DryRunPauser) and rounds % 5 == 0:
+            if not isinstance(pauser, DryRunPauser) and rounds % max(1, round(5 / interval)) == 0:
                 try:
                     keys = rpc.view(a.vault, "get_sentinels")
                     with lock:
@@ -186,6 +190,6 @@ def main(argv=None) -> int:
                 print(f"PAUSED by {member}: {reason}")
             for old, new in out["replaced"]:
                 print(f"retired {old}, spawned {new}")
-            time.sleep(a.interval)
+            time.sleep(interval)
     except KeyboardInterrupt:
         return 0
