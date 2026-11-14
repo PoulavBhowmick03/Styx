@@ -94,6 +94,9 @@ fn contract_refusal(text: &str) -> Option<String> {
 #[derive(Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case", deny_unknown_fields)]
 enum Request {
+    SentinelPause {
+        reason: String,
+    },
     Version,
     Propose {
         recipient: String,
@@ -434,22 +437,26 @@ impl Config {
 
     fn agent_key(&self) -> Result<SecretKey> {
         let path = self.key_file.as_ref().ok_or_else(|| invalid("STYX_NEAR_AGENT_KEY_FILE must be set"))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(path).map_err(|_| invalid("agent key file is unavailable"))?.permissions().mode();
-            if mode & 0o077 != 0 {
-                return Err(invalid("agent key file must be owner-only (chmod 600)"));
-            }
-        }
-        let value: Value = serde_json::from_slice(&read_bounded(path, 4096)?).map_err(|_| invalid("agent key file is not JSON"))?;
-        let text = value
-            .get("private_key")
-            .or_else(|| value.get("secret_key"))
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid("agent key file has no private_key"))?;
-        text.parse().map_err(|_| invalid("agent key file holds an invalid key"))
+        read_signing_key(path)
     }
+}
+
+fn read_signing_key(path: &Path) -> Result<SecretKey> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path).map_err(|_| invalid("signing key file is unavailable"))?.permissions().mode();
+        if mode & 0o077 != 0 {
+            return Err(invalid("signing key file must be owner-only (chmod 600)"));
+        }
+    }
+    let value: Value = serde_json::from_slice(&read_bounded(path, 4096)?).map_err(|_| invalid("signing key file is not JSON"))?;
+    let text = value
+        .get("private_key")
+        .or_else(|| value.get("secret_key"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid("signing key file has no private_key"))?;
+    text.parse().map_err(|_| invalid("signing key file holds an invalid key"))
 }
 
 // ---- chain access ----------------------------------------------------------------------------
@@ -519,8 +526,8 @@ impl Chain<'_> {
 
     async fn check_vault(&self) -> Result<VaultInfo> {
         let info: VaultInfo = self.view("get_vault", json!({})).await?;
-        if info.contract_version != 1 && info.contract_version != 2 {
-            return Err(invalid("configured account is not a Styx NEAR vault version 1 or 2"));
+        if !(1..=3).contains(&info.contract_version) {
+            return Err(invalid("configured account is not a Styx NEAR vault version 1, 2 or 3"));
         }
         Ok(info)
     }
@@ -561,9 +568,26 @@ async fn handle(request: Request) -> Result<Value> {
     let config = Config::from_env()?;
     let chain = Chain { config: &config };
     let vault = chain.check_vault().await?;
+    if let Request::SentinelPause { reason } = &request {
+        if reason.len() > 280 {
+            return Err(invalid("sentinel reason must be at most 280 bytes"));
+        }
+        if config.network_name != "testnet" || !config.vault.as_str().ends_with(".testnet") {
+            return Err(invalid("sentinel_pause is testnet only"));
+        }
+        if vault.contract_version != 3 {
+            return Err(invalid("sentinel_pause requires contract version 3"));
+        }
+        let path = std::env::var("STYX_NEAR_SENTINEL_KEY_FILE")
+            .ok().filter(|s| !s.is_empty())
+            .ok_or_else(|| invalid("STYX_NEAR_SENTINEL_KEY_FILE must be set"))?;
+        let key = read_signing_key(Path::new(&path))?;
+        let (tx_hash, _) = chain.call(&key, "sentinel_pause", json!({"reason": reason})).await?;
+        return Ok(json!({"status": "ok", "tx_hash": tx_hash}));
+    }
     let journal = Journal::open(&config.state_root)?;
     match request {
-        Request::Version => unreachable!(),
+        Request::Version | Request::SentinelPause { .. } => unreachable!(),
         Request::Propose { recipient, amount, invoice_file, invoice_reference, valid_until } => {
             let key = config.agent_key()?;
             let agent: PublicKey = key.public_key();
@@ -591,7 +615,7 @@ async fn handle(request: Request) -> Result<Value> {
                 return Err(policy("zero amount"));
             }
             if vault.paused {
-                return Err(policy("vault is paused"));
+                return Err(from_contract("VaultPaused"));
             }
             let state: Option<RecipientState> = match evm_chain {
                 Some(chain_id) => chain.view("get_evm_recipient", json!({ "chain_id": chain_id, "recipient": recipient })).await?,
@@ -1038,6 +1062,14 @@ mod tests {
         assert_eq!(from_contract("PaymentAlreadyUsed").code, "PAYMENT_ALREADY_SETTLED");
         assert_eq!(from_contract("DailyLimitExceeded").code, "POLICY_LIMIT");
         assert_eq!(contract_refusal("no refusal here"), None);
+    }
+
+    #[test]
+    fn parses_sentinel_pause_and_rejects_extra_or_missing_fields() {
+        let r: Request = serde_json::from_value(json!({"method": "sentinel_pause", "reason": "burst"})).unwrap();
+        assert!(matches!(r, Request::SentinelPause { ref reason } if reason == "burst"));
+        assert!(serde_json::from_value::<Request>(json!({"method": "sentinel_pause"})).is_err());
+        assert!(serde_json::from_value::<Request>(json!({"method": "sentinel_pause", "reason": "burst", "key": "override"})).is_err());
     }
 
     #[test]

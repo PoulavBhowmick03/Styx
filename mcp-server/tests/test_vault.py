@@ -558,3 +558,14 @@ def test_pay_x402_refuses_terms_the_vault_cannot_pay(tmp_path):
         assert not log.exists() or all(json.loads(l)["method"] == "version" for l in log.read_text().splitlines())
     finally:
         api.shutdown()
+
+
+def test_seam_forwards_sentinel_reason_and_transaction(tmp_path):
+    binary = scripted_binary(tmp_path, {
+        "sentinel_pause": [{"status": "ok", "tx_hash": "pause-tx"}, 0],
+    })
+    response = VaultSeam(binary=binary).call("sentinel_pause", reason="burst detected")
+    assert response == {"status": "ok", "tx_hash": "pause-tx"}
+    assert json.loads((tmp_path / "requests.log").read_text()) == {
+        "method": "sentinel_pause", "reason": "burst detected",
+    }

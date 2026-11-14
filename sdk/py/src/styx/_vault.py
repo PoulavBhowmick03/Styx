@@ -33,6 +33,7 @@ class VaultSeam:
     """Run the local vault binary. Python passes paths and never opens key or invoice files."""
 
     _parameters = {
+        "sentinel_pause": {"reason"},
         "version": set(),
         "propose": {"recipient", "amount", "invoice_file", "invoice_reference", "valid_until"},
         "request_approval": {"payment_id", "authorization_expiry", "pending_file", "signer"},
