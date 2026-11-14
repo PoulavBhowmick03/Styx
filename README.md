@@ -4,7 +4,7 @@
 its own cap, and watcher agents that can only pause the vault when a drain starts.**
 
 [Try the agent's key, no wallet needed](https://styxco.xyz/try/) · [Open the app](https://styxco.xyz) · [Approval page](https://styxco.xyz/approval/) ·
-[Owner console](https://styxco.xyz/console/) · [Demo video](https://x.com/ishitaaaaw/status/2121588328910975470) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
+[Owner console](https://styxco.xyz/console/) · [Pause proof](https://styxco.xyz/proof/?vault=lambda.styx-vaults.testnet&network=testnet) · [Demo video](https://x.com/ishitaaaaw/status/2121588328910975470) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
 
 Built for the NEAR Hackathon (tracks: AI Security & Defense, Agent Economy, Autonomous Business).
 Styx began at ETHGlobal Mumbai (5 to 7 Nov 2026) on another chain. That code was removed from this
@@ -69,9 +69,13 @@ then watch from that machine, and the live page opens on `127.0.0.1:8790`.
 - Their keys can only pause: NEAR refuses them anything else, and only you unpause.
 - In the console's Sentinels panel you read each pause's reason, then unpause.
 
-Sentinels run on a machine you control, today your own. While it is off, nothing watches. The
-console's "Protect with hosted sentinels" appears only where a sentinels service is configured, and
-none is deployed for styxco.xyz.
+Sentinels run on a machine you control. While it is off, nothing watches. Or, in the console, click
+"Protect with hosted sentinels": a testnet sentinels service
+([`styx-sentinels-near.fly.dev`](https://styx-sentinels-near.fly.dev/api/health)) makes the burst and
+concentration sentinels' keys and gives you one link to install them. Their keys can still only pause.
+Anyone can check a vault's pauses at [styxco.xyz/proof](https://styxco.xyz/proof/): each pause, its
+reason, the payments before it and the seconds from the last payment to the pause, read from the
+vault's own receipts.
 ![Sentinels panel](docs/images/05-sentinels-panel.png)
 ![The swarm, live on testnet](docs/images/08-swarm-live.png)
 
@@ -288,7 +292,8 @@ Sentinels off against on, the same drain of 8 payments of 1 tUSDC on `sentinels.
 
 Live: vault `vault.styx-owner-c87a.testnet`, sentinel vault `sentinels.styx-vaults.testnet`, Chain Signatures vault `vault-v2.styx-owner-c87a.testnet`
 (EVM address `0xb0241fcB…3CAd`), token `usdc.styx-owner-c87a.testnet` (our test token, not Circle's
-USDC), vault factory `styx-vaults.testnet`, relay `https://styx-relay-near.fly.dev`.
+USDC), vault factory `styx-vaults.testnet`, relay `https://styx-relay-near.fly.dev`, sentinels service
+`https://styx-sentinels-near.fly.dev`, proof page `https://styxco.xyz/proof/`.
 
 What it costs: a payment burns about 0.0007 to 0.0016 NEAR of gas from the vault account and keeps
 143 bytes of state; the approver pays nothing. Measured per action, with who pays each, in
