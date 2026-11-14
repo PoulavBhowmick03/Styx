@@ -45,6 +45,9 @@ export function chainClient(get: typeof fetch = fetch, rpcUrl = 'https://test.rp
         }
       }
       if (!rows.length) break;
+      // FastNEAR returns every transaction it counts on the first page and does not move on
+      // max_block_height, so stop once all of txs_count are read; otherwise page down.
+      if (Number.isSafeInteger(page.txs_count) && seen.size >= page.txs_count) break;
       const next = Math.min(...rows.map((r: any) => Number(r.tx_block_height))) - 1;
       if (!Number.isSafeInteger(next) || next < 0 || (cursor !== null && next >= cursor)) throw new Error('Invalid listing cursor');
       cursor = next;

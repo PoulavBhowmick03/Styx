@@ -15,7 +15,7 @@ function render(events: TimedEvent[]) {
   if(e.kind==='sentinel_paused') {
    row.append(el('p',`Sentinel: ${String(e.data.sentinel ?? '')}`),el('p',reasonText(e.data.reason)));
    const s=pauseStats(e,events);
-   row.append(el('p',`${s.count} payments settled before it, ${s.seconds===null?'no earlier settlement in loaded history':`landed ${s.seconds.toFixed(3)} s after the last`}`));
+   row.append(el('p',`${s.count} payments settled ${s.sinceUnpause?'since the owner\'s last unpause':'before it'}, ${s.seconds===null?'no earlier settlement in loaded history':`landed ${s.seconds.toFixed(3)} s after the last`}`));
    row.append(el('p','Block timestamps cannot order events within the same block; equal timestamps are excluded from “before”.'));
   }
   const link=el('a','View transaction on NearBlocks') as HTMLAnchorElement;
