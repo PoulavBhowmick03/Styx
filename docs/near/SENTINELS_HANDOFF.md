@@ -235,3 +235,9 @@ CLI vault checking now accepts versions 1–3. Proposing against a paused vault 
 - `bash -n` passed for both scripts. Mock CLI runs checked settled payments, pause refusal,
   unknown/reverted outcomes, marker cleanup, and mainnet rejection.
 - No testnet deployment or drain was run. Deployment and the live sentinel demo remain for human review and task B.
+
+
+Deployment follow-up (14 Nov 2026): Poulav reported review complete. The v3 factory was deployed
+and both its code hash and embedded vault hash matched local builds on finalized testnet reads.
+See [TESTNET_RUN.md](TESTNET_RUN.md#sentinel-v3-factory-deployment-14-nov-2026) for the transaction
+and hashes. The CLI release build passed. Fresh-vault setup and the task B live demo remain pending.

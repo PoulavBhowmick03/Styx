@@ -210,3 +210,21 @@ Two page bugs showed up only with the real wallet and were fixed before the run 
 Selector needs a global `Buffer` for its nonce check (`3647b46`), and Meteor returns extra fields
 that the strict signature schema refused (`84fab3f`). The linked chat is also the relay's fallback
 chat, so this run does not by itself show per-key routing; `relay-near/src/links.test.ts` does.
+
+
+## Sentinel v3 factory deployment (14 Nov 2026)
+
+After Poulav reported review complete, `scripts/near/deploy_v3.sh` rebuilt the vault and factory
+and deployed the factory to `styx-vaults.testnet`:
+[deployment transaction](https://testnet.nearblocks.io/txns/27zizyHQTDkxobzsunu5RuHpGxvWynxYY3UrGWqT4SSj).
+The testnet RPC returned `FINAL`, `SuccessValue`, and no failed receipt outcomes.
+
+Finalized RPC reads matched both local build hashes:
+
+- Factory code: `EBa4hsr8Y8GtpVdf7SrNzmrFox6AU29MwW5XuLukJwQs`.
+- Embedded vault code (`vault_code_hash`): `8WXJ31AQKnJk3Ap4jeFNcgrp9xRYoFnpmUrFAAnn26S3`.
+- Embedded-code view block: `277629480`, hash `CbjeyzBSVWvpG4qXZkJ7XhF5kmBm7V392qa3EQVe3vK9`.
+
+The CLI release build also passed. This verifies deployment of the factory and its embedded
+sentinel vault code. Existing vaults keep their prior code. No fresh sentinel vault, key setup,
+or live drain/pause demo was run in this step; those remain for the owner and task B runner.
