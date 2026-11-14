@@ -1,0 +1,4 @@
+requests<3,>=2.31
+
+[judge]
+styx-near-ai-agent

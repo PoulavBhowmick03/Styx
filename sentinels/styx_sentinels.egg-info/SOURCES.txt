@@ -1,0 +1,11 @@
+pyproject.toml
+styx_sentinels/__init__.py
+styx_sentinels/events.py
+styx_sentinels/rules.py
+styx_sentinels.egg-info/PKG-INFO
+styx_sentinels.egg-info/SOURCES.txt
+styx_sentinels.egg-info/dependency_links.txt
+styx_sentinels.egg-info/entry_points.txt
+styx_sentinels.egg-info/requires.txt
+styx_sentinels.egg-info/top_level.txt
+tests/test_core.py

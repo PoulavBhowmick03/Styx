@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "styx-sentinels"
+version = "0.1.0"
+description = "Watcher agents for a Styx vault: each can only pause it. A parent scores, retires and respawns them."
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31,<3"]
+
+[project.optional-dependencies]
+judge = ["styx-near-ai-agent"]
+
+[project.scripts]
+styx-sentinels = "styx_sentinels.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.uv.sources]
+styx-near-ai-agent = { path = "../agent-near-ai", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["styx_sentinels*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,2 @@
+[console_scripts]
+styx-sentinels = styx_sentinels.cli:main
