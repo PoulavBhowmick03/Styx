@@ -21,7 +21,7 @@ from styx_mcp.config import ConfigError
 from styx_mcp.vault import VaultSettings
 
 ROOT = Path(__file__).resolve().parents[2]
-TOOLS = {"styx_propose_payment", "styx_request_owner_approval", "styx_submit_payment", "styx_payment_status"}
+TOOLS = {"styx_propose_payment", "styx_request_owner_approval", "styx_submit_payment", "styx_payment_status", "styx_pay_x402"}
 
 
 def scripted_binary(tmp_path: Path, responses: dict[str, tuple[dict, int]]) -> Path:
@@ -460,3 +460,101 @@ def test_an_unanswered_request_escalates_to_the_next_approver(tmp_path):
         assert "escalate_to" not in run_session(no_list, once)["result"]
     finally:
         relay.shutdown()
+
+
+def test_pay_x402_has_the_vault_sign_and_retries_with_the_payment_header(tmp_path):
+    """A 402 resource on localhost: the tool proposes to payTo, the vault (scripted) signs, the retry carries X-PAYMENT."""
+    import base64
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    pay_to = "0x" + "22" * 20
+    seen: dict = {}
+    terms = {"x402Version": 1, "accepts": [
+        {"scheme": "exact", "network": "ethereum", "asset": "0x" + "00" * 20, "maxAmountRequired": "1", "payTo": pay_to},
+        {"scheme": "exact", "network": "base-sepolia", "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+         "maxAmountRequired": "10000", "payTo": pay_to, "maxTimeoutSeconds": 120,
+         "extra": {"name": "USDC", "version": "2"}}]}
+
+    class Api(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            header = self.headers.get("X-PAYMENT")
+            if not header:
+                data, code = json.dumps(terms).encode(), 402
+                self.send_response(code)
+            else:
+                seen["payment"] = json.loads(base64.b64decode(header))
+                data = b'{"answer": 42}'
+                self.send_response(200)
+                self.send_header("X-PAYMENT-RESPONSE", base64.b64encode(b'{"success":true,"transaction":"0xabc"}').decode())
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    api = ThreadingHTTPServer(("127.0.0.1", 0), Api)
+    threading.Thread(target=api.serve_forever, daemon=True).start()
+    auth = {"status": "ok", "state": "signed", "payment_id": "p1", "chain_id": 84532,
+            "auth_token": "0x036cbd53842c5426634e7929541ec2318f3dcf7e", "auth_from": "0x" + "33" * 20, "auth_to": pay_to,
+            "auth_value": "10000", "auth_valid_after": "0", "auth_valid_before": "1900000000",
+            "auth_nonce": "0x" + "44" * 32, "auth_signature": "0x" + "55" * 65}
+    binary = scripted_binary(tmp_path, {
+        "propose": [{"status": "ok", "payment_id": "p1", "payment_hash": "h", "path": "ordinary"}, 0],
+        "submit_x402": [auth, 0],
+    })
+    try:
+        vault_dir = private_dir(tmp_path / "vault")
+        env = {"STYX_VAULT_DIR": str(vault_dir), "STYX_VAULT_CLI": str(binary)}
+
+        async def body(session):
+            return result(await session.call_tool("styx_pay_x402", {"url": f"http://127.0.0.1:{api.server_address[1]}/data"}))
+
+        reply = run_session(env, body)
+        assert reply["ok"] and reply["result"]["status"] == "paid", reply
+        assert reply["result"]["settlement"] == {"success": True, "transaction": "0xabc"}
+        assert reply["result"]["amount_usdc"] == "0.01" and '"answer": 42' in reply["result"]["body"]
+        payment = seen["payment"]
+        assert (payment["scheme"], payment["network"], payment["x402Version"]) == ("exact", "base-sepolia", 1)
+        assert payment["payload"]["authorization"] == {"from": "0x" + "33" * 20, "to": pay_to, "value": "10000",
+                                                       "validAfter": "0", "validBefore": "1900000000", "nonce": "0x" + "44" * 32}
+        assert payment["payload"]["signature"] == "0x" + "55" * 65
+        requests = [json.loads(line) for line in (tmp_path / "requests.log").read_text().splitlines()]
+        propose = next(r for r in requests if r["method"] == "propose")
+        assert propose["recipient"] == f"eip155:84532:{pay_to}" and propose["amount"] == "10000"
+        assert json.loads(Path(propose["invoice_file"]).read_text())["option"]["payTo"] == pay_to
+    finally:
+        api.shutdown()
+
+
+def test_pay_x402_refuses_terms_the_vault_cannot_pay(tmp_path):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Api(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(402)
+            self.end_headers()
+            self.wfile.write(json.dumps({"x402Version": 1, "accepts": [
+                {"scheme": "exact", "network": "solana", "asset": "x", "maxAmountRequired": "1", "payTo": "x"}]}).encode())
+
+        def log_message(self, *args):
+            pass
+
+    api = ThreadingHTTPServer(("127.0.0.1", 0), Api)
+    threading.Thread(target=api.serve_forever, daemon=True).start()
+    try:
+        vault_dir = private_dir(tmp_path / "vault")
+        env = {"STYX_VAULT_DIR": str(vault_dir), "STYX_VAULT_CLI": str(scripted_binary(tmp_path, {}))}
+
+        async def body(session):
+            return [result(await session.call_tool("styx_pay_x402", {"url": u})) for u in
+                    (f"http://127.0.0.1:{api.server_address[1]}/x", "http://example.com/x")]
+
+        unpayable, insecure = run_session(env, body)
+        assert not unpayable["ok"] and "exact USDC on base" in unpayable["error"]["message"]
+        assert not insecure["ok"] and "https" in insecure["error"]["message"]
+        log = tmp_path / "requests.log"
+        assert not log.exists() or all(json.loads(l)["method"] == "version" for l in log.read_text().splitlines())
+    finally:
+        api.shutdown()

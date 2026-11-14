@@ -7,6 +7,8 @@ an exception is possible only with a signature an approver produced elsewhere.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import os
 import re
@@ -14,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 import stat
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,6 +54,11 @@ _NEXT_FOR_MESSAGE = (
 )
 # Models do not know the current time, and a guessed deadline fails the payment.
 _DEFAULT_PAYMENT_SECONDS = 3600
+# x402: the payment option the vault can sign is "exact" USDC on Base (EIP-3009, signed by the vault).
+_X402_NETWORKS = {"base-sepolia": 84532, "base": 8453}
+_X402_USDC = {84532: "0x036cbd53842c5426634e7929541ec2318f3dcf7e", 8453: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"}
+_X402_MAX_BODY = 65536
+_EVM_ADDRESS = r"0x[0-9a-fA-F]{40}"
 # USDC has six decimals on every chain the vault pays on.
 _USDC_DECIMALS = 6
 _USDC_AMOUNT = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]{1,6})?")
@@ -379,6 +387,93 @@ def build_vault_server(settings: VaultSettings | None = None) -> MCPServer:
                 "Done: the payment settled on chain. Report tx_hash." if state == "settled" else
                 "Not a failure and not unpaid: retry styx_submit_payment with the same payment_id later.")
         return add_next(response)
+
+    def x402_fetch(url: str, header: str | None = None) -> tuple[int, dict[str, str], bytes]:
+        headers = {"accept": "application/json", **({"X-PAYMENT": header} if header else {})}
+        request = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=_RELAY_TIMEOUT_SECONDS) as reply:  # noqa: S310 (scheme checked)
+                return reply.status, {k.lower(): v for k, v in reply.headers.items()}, reply.read(_X402_MAX_BODY)
+        except urllib.error.HTTPError as error:
+            return error.code, {k.lower(): v for k, v in error.headers.items()}, error.read(_X402_MAX_BODY)
+
+    @server.tool()
+    async def styx_pay_x402(url: str) -> dict[str, Any]:
+        """Pay for an HTTP resource that answers 402 Payment Required (x402), in USDC on Base, then fetch it.
+
+        The vault signs the payment from its own EVM address within your limits: you never hold an EVM key
+        and pay no gas. The payee must be a recipient the owner allowed on that chain. Over the per-payment
+        limit it is refused: x402 has no approval path. Returns the resource once paid.
+        """
+        parsed = urllib.parse.urlparse(url)
+        local = parsed.hostname in ("127.0.0.1", "localhost")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and local):
+            return invalid(VaultError(_INVALID, "url must be https"))
+        try:
+            status, _, body = await asyncio.to_thread(x402_fetch, url)
+        except (OSError, ValueError):
+            return add_next({"ok": False, "error": {"code": _INVALID, "message": "the resource could not be reached"}})
+        if status != 402:
+            return {"ok": True, "result": {"status": "no_payment_required", "http_status": status,
+                                           "body": body.decode("utf-8", "replace")[:4000]}}
+        try:
+            terms = json.loads(body)
+            accepts = terms["accepts"]
+            option = next(a for a in accepts if a.get("scheme") == "exact" and a.get("network") in _X402_NETWORKS
+                          and str(a.get("asset", "")).lower() == _X402_USDC[_X402_NETWORKS[a["network"]]])
+            chain_id = _X402_NETWORKS[option["network"]]
+            amount = str(option["maxAmountRequired"])
+            pay_to = str(option["payTo"])
+            if not re.fullmatch(r"[1-9][0-9]{0,30}", amount) or not re.fullmatch(_EVM_ADDRESS, pay_to):
+                raise ValueError
+        except (ValueError, KeyError, TypeError, StopIteration):
+            return invalid(VaultError(_INVALID, "no x402 option this vault can pay: it pays exact USDC on base or base-sepolia"))
+        # The payment terms are this payment's evidence, journaled like an invoice.
+        name = f"x402-{hashlib.sha256(body).hexdigest()[:12]}.json"
+        try:
+            evidence = settings.artifact(name)
+        except VaultError as error:
+            return invalid(error)
+        Path(evidence).write_text(json.dumps({"url": url, "option": option}, sort_keys=True))
+        timeout = option.get("maxTimeoutSeconds") if isinstance(option.get("maxTimeoutSeconds"), int) else 300
+        proposed = await call("propose", recipient=f"eip155:{chain_id}:{pay_to.lower()}", amount=amount, invoice_file=evidence,
+                              invoice_reference=url[:256], valid_until=int(time.time()) + max(60, min(timeout, _DEFAULT_PAYMENT_SECONDS)))
+        if not proposed["ok"]:
+            return add_next(proposed)
+        payment_id = proposed["result"]["payment_id"]
+        if proposed["result"].get("path") == "exception_required":
+            return invalid(VaultError("POLICY_LIMIT", f"{int(amount) / 1_000_000} USDC is over the per-payment limit; x402 has no approval path"))
+        signed = await call("submit_x402", payment_id=payment_id)
+        if not signed["ok"]:
+            return add_next(signed)
+        r = signed["result"]
+        if r.get("state") != "signed":
+            r["next_action"] = "Not signed yet: call styx_pay_x402 again with the same url later; the vault will not sign twice."
+            return signed
+        header = base64.b64encode(json.dumps({
+            "x402Version": terms.get("x402Version", 1), "scheme": "exact", "network": option["network"],
+            "payload": {"signature": r["auth_signature"], "authorization": {
+                "from": r["auth_from"], "to": r["auth_to"], "value": str(r["auth_value"]),
+                "validAfter": str(r["auth_valid_after"]), "validBefore": str(r["auth_valid_before"]), "nonce": r["auth_nonce"]}},
+        }, separators=(",", ":")).encode()).decode()
+        try:
+            status, headers, body = await asyncio.to_thread(x402_fetch, url, header)
+        except (OSError, ValueError):
+            return add_next({"ok": False, "error": {"code": _INVALID, "message": "signed, but the resource could not be reached; retry"}})
+        settlement = None
+        if headers.get("x-payment-response"):
+            try:
+                settlement = json.loads(base64.b64decode(headers["x-payment-response"]))
+            except ValueError:
+                settlement = None
+        paid = status < 400
+        return {"ok": paid, "result": {
+            "status": "paid" if paid else "payment_rejected", "http_status": status, "payment_id": payment_id,
+            "amount_usdc": str(Decimal(amount) / Decimal(1_000_000)), "pay_to": pay_to, "network": option["network"],
+            "settlement": settlement, "body": body.decode("utf-8", "replace")[:4000],
+            "next_action": "Done: report what you received and the settlement transaction." if paid else
+            "The payee refused the signed payment. Do not retry blindly; tell your user what it answered.",
+        }}
 
     @server.tool()
     async def styx_payment_status(payment_id: str) -> dict[str, Any]:
