@@ -87,9 +87,9 @@ details" and "How sentinels learn" on the live page show the scores and generati
 
 **8. Cap the pace.** Vaults built from the current contract also take a velocity limit: at most N
 payments in any window, on every pay path. It is set in Set the rules (a preset fills it) or under
-Advanced, and refused payments fail with `VelocityLimit` before any money moves. The contract and
-console have it, unit- and browser-tested. Only vaults created after the factory is redeployed with
-this build get it.
+Advanced, and refused payments fail with `VelocityLimit` before any money moves. Vaults created since
+the factory update on 14 Nov 2026 have it. On testnet, with a limit of 4 payments in 5 minutes, the
+5th payment of a drain was refused ([`docs/near/TESTNET_RUN.md`](docs/near/TESTNET_RUN.md)).
 
 ## The problem
 
@@ -275,6 +275,10 @@ passing the reviewer; an approver linking Telegram and signing an exception in t
 phone, settled in [`Eauk4L8M…`](https://testnet.nearblocks.io/txns/Eauk4L8MRK13NccLXDcxQseA7uDWacFBhfa9SZXGQ195);
 a sentinel pausing a vault mid-drain, with its own pause-only key, 8.6 seconds after the fifth
 payment ([`5YxTgLtp…`](https://testnet.nearblocks.io/txns/5YxTgLtpndSXEwiNsu2bJNwTrQbNSu99xA5yrf89UR1J)).
+
+The velocity limit on `velocity.styx-vaults.testnet`: with 4 payments allowed in any 5 minutes, a
+drain's first 4 payments settled and the 5th was refused by the vault with `VelocityLimit`
+([`47D6Szb4…`](https://testnet.nearblocks.io/txns/47D6Szb4xDoL8LpeV4ancCisZyvVY8awgyLyjT9RWVEQ)).
 
 Sentinels off against on, the same drain of 8 payments of 1 tUSDC on `sentinels.styx-vaults.testnet`
 ([`docs/near/SENTINELS.md`](docs/near/SENTINELS.md)):

@@ -1,4 +1,4 @@
-# Velocity limit (contract, NEEDS POULAV'S REVIEW, not deployed)
+# Velocity limit (contract; reviewed by Poulav; in the factory since 14 Nov 2026)
 
 The vault can now refuse a drain of small payments before any sentinel has to act. The owner may set
 at most N payments in any W seconds. The limit counts every pay path together, vault-wide.
@@ -54,19 +54,18 @@ at most N payments in any W seconds. The limit counts every pay path together, v
 
 **Factory**
 - The factory embeds the vault's wasm at build time.
-- Rebuild and redeploy it with `scripts/near/deploy_v3.sh` after review. Only vaults created
-  afterwards get the limit; `sentinels.styx-vaults.testnet` keeps its code.
+- Redeployed with `scripts/near/deploy_v3.sh` on 14 Nov 2026, after review (DEPLOYMENTS.md). Only
+  vaults created since then have the limit; `sentinels.styx-vaults.testnet` keeps its code.
 
-**Console (separate commit, not made)**
-- In the Set the rules step and in Advanced, add "Payments per window" and "Window (seconds)" fields
-  that call `set_velocity_limit`. Show them only when `get_vault` has `max_payments_per_window`.
-- Show the setting in the vault overview.
-- `formPlan` and `describePlan` each need a case for `set_velocity_limit`.
+**Console (done)**
+- Set the rules has "Most payments in any 10 minutes", which the presets fill in; Advanced has both
+  fields. Both appear only when `get_vault` has `max_payments_per_window`.
+- The vault overview states the setting.
+- `formPlan` and `describePlan` handle `set_velocity_limit`, with unit tests and a browser smoke.
 
-**Agent CLI and MCP**
-- A refusal surfaces as the vault's named error `VelocityLimit`, like `DailyLimitExceeded`. The
-  CLI's refusal mapping should name it, so the agent tells the user to wait rather than retry in a
-  loop.
+**Agent CLI (done)**
+- The refusal `VelocityLimit` maps to `POLICY_LIMIT`, like `DailyLimitExceeded`, so the agent waits
+  rather than retrying in a loop.
 
 **Sentinels**
 - Still useful. The velocity limit is a fixed rule the owner sets once. Sentinels adapt (burst,
