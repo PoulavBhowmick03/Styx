@@ -1,6 +1,7 @@
 """styx-sentinels: run a sentinel swarm on a Styx vault.
 
   styx-sentinels init     --vault V [--no-judge]           spawn the swarm, write keys, print enable links
+  styx-sentinels quickstart --vault V [--cli PATH]         init, print the one link, wait for the keys, then run
   styx-sentinels run      --vault V --cli PATH [--dry-run] watch the vault block by block, pause it when a sentinel asks
   styx-sentinels rehearse                                  the whole lifecycle on simulated payments
   styx-sentinels status   --vault V                        members, scores, owner actions
@@ -59,14 +60,63 @@ def open_ui(swarm, port: int, lock, extra=None) -> None:
         webbrowser.open(url)
 
 
+def quickstart(a, swarm: Swarm, rpc_url: str, sleep=time.sleep) -> int:
+    """One command: create the swarm's keys, print the one link that installs them, wait until the vault
+    shows every key, then watch the vault and open the page."""
+    for kind, params in DEFAULT_SWARM:
+        if kind == "judge" and (a.no_judge or not os.environ.get("NEARAI_API_KEY")):
+            continue
+        if not any(m.kind == kind and m.status == "active" for m in swarm.members):
+            swarm.spawn(kind, params)
+    swarm.save()
+    rpc = RPC(rpc_url)
+    printed, last, deadline = False, None, time.time() + a.wait
+    while True:
+        try:
+            keys = rpc.view(a.vault, "get_sentinels")
+            swarm.sync_keys(keys if isinstance(keys, list) else [])
+        except Exception as error:  # noqa: BLE001
+            print(f"could not read get_sentinels yet: {error}")
+            if time.time() > deadline:
+                return 1
+            sleep(3)
+            continue
+        waiting = [m for m in swarm.active() if m.public_key not in (swarm.installed or set())]
+        if not waiting:
+            break
+        if not printed:
+            print(f"\n{len(swarm.active())} sentinel keys were created in ~/.styx-near/sentinels/. Open this link as the vault owner "
+                  f"and sign once; it installs all of them:\n\n  {swarm.sign_all_link()}\n")
+            printed = True
+        names = [m.id for m in waiting]
+        if names != last:
+            print(f"Waiting for the vault to show: {', '.join(names)}")
+            last = names
+        if time.time() > deadline:
+            print("Timed out waiting for the owner. Run the same command again once the link is signed.")
+            return 1
+        sleep(3)
+    print("Every sentinel key is on the vault. Starting the watch.")
+    argv = ["run", "--vault", a.vault, "--network", a.network, "--cli", a.cli, "--ui", str(a.ui)]
+    if a.rpc:
+        argv += ["--rpc", a.rpc]
+    return main(argv)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="styx-sentinels", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "run", "status", "label", "mark-attack"):
+    for name in ("init", "quickstart", "run", "status", "label", "mark-attack"):
         s = sub.add_parser(name)
         s.add_argument("--vault", required=True)
         s.add_argument("--network", default="testnet", choices=["testnet", "mainnet"])
-    sub.choices["init"].add_argument("--no-judge", action="store_true")
+    for name in ("init", "quickstart"):
+        sub.choices[name].add_argument("--no-judge", action="store_true")
+    q = sub.choices["quickstart"]
+    q.add_argument("--cli", default="styx-near-vault", help="the Styx agent CLI that signs sentinel_pause")
+    q.add_argument("--rpc")
+    q.add_argument("--ui", type=int, default=8790)
+    q.add_argument("--wait", type=float, default=900.0, help="seconds to wait for the owner to sign the link")
     r = sub.choices["run"]
     r.add_argument("--cli", default="styx-near-vault", help="the Styx agent CLI that signs sentinel_pause")
     r.add_argument("--rpc")
@@ -125,6 +175,8 @@ def main(argv=None) -> int:
     swarm = Swarm(a.vault, home(a.vault), pauser, keygen=keygen_for(a.vault),
                   completer=completer_or_none(a.cmd == "run"), network=a.network)
 
+    if a.cmd == "quickstart":
+        return quickstart(a, swarm, rpc_url)
     if a.cmd == "init":
         if swarm.members:
             print("This vault already has a swarm; see `status`.")

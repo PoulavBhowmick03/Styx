@@ -104,3 +104,51 @@ def test_the_page_serves_a_verdicts_full_evidence_and_nothing_outside_the_folder
                 assert e.code == 404
     finally:
         server.shutdown()
+
+
+def test_quickstart_prints_one_link_waits_for_the_keys_then_starts_the_watch(tmp_path, monkeypatch, capsys):
+    from styx_sentinels import cli
+    monkeypatch.setenv("STYX_SENTINEL_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("NEARAI_API_KEY", raising=False)
+    answers = iter([[], ["__burst__"], ["__burst__", "__conc__"]])
+    started = []
+
+    class FakeRPC:
+        def __init__(self, url):
+            pass
+
+        def view(self, account, method, args=None):
+            wanted = next(answers)
+            keys = {m.id: m.public_key for m in swarm_of[0].members}
+            return [keys["burst-g1"] if k == "__burst__" else keys["concentration-g1"] for k in wanted]
+
+    swarm_of = []
+    real_swarm = cli.Swarm
+
+    def spy(*args, **kwargs):
+        s = real_swarm(*args, **kwargs)
+        swarm_of.append(s)
+        return s
+
+    real_main = cli.main
+    monkeypatch.setattr(cli, "RPC", FakeRPC)
+    monkeypatch.setattr(cli, "Swarm", spy)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    monkeypatch.setattr(cli, "main", lambda argv=None: started.append(argv) or 0 if argv and argv[0] == "run" else real_main(argv))
+    assert real_main(["quickstart", "--vault", "acme.styx-vaults.testnet", "--cli", "/bin/cli", "--ui", "9999"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("https://styxco.xyz/console/?vault=acme.styx-vaults.testnet") == 1  # one link, printed once
+    assert "Waiting for the vault to show: burst-g1, concentration-g1" in out and "Waiting for the vault to show: concentration-g1" in out
+    assert "judge" not in out  # no NEARAI_API_KEY: no judge sentinel
+    assert started == [["run", "--vault", "acme.styx-vaults.testnet", "--network", "testnet", "--cli", "/bin/cli", "--ui", "9999"]]
+    keys = list((tmp_path / "home" / "keys" / "acme.styx-vaults.testnet").glob("*.json"))
+    assert len(keys) == 2 and all((k.stat().st_mode & 0o777) == 0o600 for k in keys)
+
+
+def test_quickstart_gives_up_with_a_clear_message_when_nobody_signs(tmp_path, monkeypatch, capsys):
+    from styx_sentinels import cli
+    monkeypatch.setenv("STYX_SENTINEL_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(cli, "RPC", lambda url: type("R", (), {"view": lambda self, a, m, args=None: []})())
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    assert cli.main(["quickstart", "--vault", "acme.styx-vaults.testnet", "--wait", "0"]) == 1
+    assert "Timed out waiting for the owner" in capsys.readouterr().out
