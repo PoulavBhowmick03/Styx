@@ -23,14 +23,14 @@ const GAS_FOR_FT_TRANSFER: Gas = Gas::from_tgas(20);
 const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(15);
 /// Gas allowance each agent key gets. Gas only: the key holds no tokens.
 const AGENT_KEY_ALLOWANCE: NearToken = NearToken::from_millinear(250);
-const AGENT_METHODS: &str = "pay,pay_with_exception,pay_evm,pay_evm_with_exception,post_record";
+const AGENT_METHODS: &str = "pay,pay_with_exception,pay_evm,pay_evm_with_exception,pay_x402,post_record";
 /// The MPC signer used when the constructor names none.
 const DEFAULT_MPC_SIGNER: &str = "v1.signer-prod.testnet";
 /// Derivation path for the vault's EVM key. The address depends on this vault's account id and it.
 const EVM_KEY_PATH: &str = "styx-evm";
 const GAS_FOR_MPC_SIGN: Gas = Gas::from_tgas(50);
 const GAS_FOR_EVM_CALLBACK: Gas = Gas::from_tgas(20);
-const CONTRACT_VERSION: u32 = 2;
+const CONTRACT_VERSION: u32 = 3;
 const EVENT_STANDARD: &str = "styx";
 const EVENT_VERSION: &str = "1.0.0";
 
@@ -49,6 +49,8 @@ enum StorageKey {
     EvmRecipients,
     EvmNonces,
     EvmSignedTxs,
+    X402Domains,
+    X402Signed,
 }
 
 /// An agent's policy. Keyed by the public key of the agent's function-call key.
@@ -139,6 +141,33 @@ pub struct EvmPayment {
     pub valid_until: U64,
 }
 
+/// The EIP-712 domain of a chain's USDC (its `name()` and `version()`), for x402 authorizations.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct X402Domain {
+    pub name: String,
+    pub version: String,
+}
+
+/// A signed EIP-3009 `transferWithAuthorization` from the vault's EVM address, ready for an x402
+/// payment header. Whoever submits it pays the gas; the token checks the signature and the nonce.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct X402Authorization {
+    pub payment_id: String,
+    pub chain_id: u64,
+    pub token: String,
+    pub from: String,
+    pub to: String,
+    pub value: U128,
+    pub valid_after: U64,
+    pub valid_before: U64,
+    /// `0x` + 64 hex: the payment's hash, so each payment has its own EIP-3009 nonce.
+    pub nonce: String,
+    /// `0x` + r, s, v (27 or 28): 65 bytes.
+    pub signature: String,
+}
+
 /// A signed EVM transaction, ready for anyone to broadcast.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,6 +212,8 @@ pub struct VaultInfo {
     pub contract_version: u32,
     pub mpc_signer: AccountId,
     pub evm_key_path: String,
+    /// The vault's derived EVM address, as set by the owner; x402 authorizations are signed from it.
+    pub evm_address: Option<String>,
 }
 
 #[near(contract_state)]
@@ -212,6 +243,11 @@ pub struct Contract {
     evm_signed: LookupMap<(u64, u64), SignedEvmTx>,
     /// The chain with a signature request in flight. One at a time keeps nonces sequential.
     evm_pending: Option<u64>,
+    /// The vault's own derived EVM address (set by the owner, checked against every x402 signature).
+    evm_address: Option<String>,
+    x402_domains: LookupMap<u64, X402Domain>,
+    /// payment id -> the signed x402 authorization.
+    x402_signed: LookupMap<String, X402Authorization>,
 }
 
 #[near]
@@ -237,6 +273,9 @@ impl Contract {
             evm_nonces: LookupMap::new(StorageKey::EvmNonces),
             evm_signed: LookupMap::new(StorageKey::EvmSignedTxs),
             evm_pending: None,
+            evm_address: None,
+            x402_domains: LookupMap::new(StorageKey::X402Domains),
+            x402_signed: LookupMap::new(StorageKey::X402Signed),
         }
     }
 
@@ -301,6 +340,25 @@ impl Contract {
         let state = RecipientState { version, allowed };
         self.recipients.insert(recipient.clone(), state.clone());
         emit("recipient_set", &near_sdk::serde_json::json!({ "recipient": recipient, "state": state }));
+    }
+
+    /// The vault's derived EVM address (MPC key at path `styx-evm` for this account). x402
+    /// authorizations name it as `from`; every signature is checked to recover to it.
+    pub fn set_evm_address(&mut self, address: String) {
+        self.assert_owner();
+        let parsed = evm::parse_address(&address).unwrap_or_else(|| env::panic_str("InvalidAddress"));
+        let lower = format!("0x{}", evm::hex(&parsed));
+        self.evm_address = Some(lower.clone());
+        emit("evm_address_set", &near_sdk::serde_json::json!({ "address": lower }));
+    }
+
+    /// Enables x402 on a configured chain: the EIP-712 domain of its USDC (`name()`, `version()`).
+    pub fn set_x402_domain(&mut self, chain_id: u64, name: String, version: String) {
+        self.assert_owner();
+        require!(self.evm_chains.get(&chain_id).is_some(), "ChainNotAllowed");
+        require!(!name.is_empty() && name.len() <= 64 && !version.is_empty() && version.len() <= 16, "BadDomain");
+        self.x402_domains.insert(chain_id, X402Domain { name: name.clone(), version: version.clone() });
+        emit("x402_domain_set", &near_sdk::serde_json::json!({ "chain_id": chain_id, "name": name, "version": version }));
     }
 
     pub fn set_vault_daily_limit(&mut self, limit: U128) {
@@ -408,6 +466,37 @@ impl Contract {
         let hash = hash_evm_payment(&payment, &self.evm_token(payment.chain_id));
         let digest = self.check_authorization(&hash, &authorization, &signature);
         self.execute_evm(payment, day, Some((authorization, digest)))
+    }
+
+    /// An x402 payment within every limit: the vault signs an EIP-3009 `transferWithAuthorization`
+    /// of the chain's USDC from its own EVM address to an allowed recipient, through the MPC signer.
+    /// The same checks and counters as `pay_evm`; no EVM nonce or gas, since the payee submits it.
+    /// Over the per-payment limit it is refused: there is no exception path for x402.
+    pub fn pay_x402(&mut self, payment: EvmPayment) -> Promise {
+        let (policy, day) = self.check_evm_payment(&payment, false);
+        require!(payment.amount.0 <= policy.per_payment_limit.0, "PerPaymentLimitExceeded");
+        let from = self.evm_address.clone().unwrap_or_else(|| env::panic_str("EvmAddressNotSet"));
+        let domain = self.x402_domains.get(&payment.chain_id).cloned().unwrap_or_else(|| env::panic_str("X402NotEnabled"));
+        let token = self.evm_token(payment.chain_id);
+        let nonce = hash_evm_payment(&payment, &token);
+        let digest = x402_digest(&domain, payment.chain_id, &token, &from, &payment.recipient, payment.amount.0, 0, payment.valid_until.0, &nonce);
+        self.consumed_payments.insert(payment.payment_id.clone(), nonce);
+        set_payer(&payment.payment_id, &payment.agent);
+        let key = (payment.agent.clone(), day);
+        let agent_spent = self.spent_by_agent_day.get(&key).copied().unwrap_or(0);
+        self.spent_by_agent_day.insert(key, agent_spent + payment.amount.0);
+        let vault_spent = self.spent_by_day.get(&day).copied().unwrap_or(0);
+        self.spent_by_day.insert(day, vault_spent + payment.amount.0);
+        let args = near_sdk::serde_json::json!({
+            "request": { "path": EVM_KEY_PATH, "payload_v2": { "Ecdsa": evm::hex(&digest) }, "domain_id": 0 }
+        });
+        Promise::new(self.mpc_signer.clone())
+            .function_call("sign".to_string(), near_sdk::serde_json::to_vec(&args).expect("json"), NearToken::from_yoctonear(1), GAS_FOR_MPC_SIGN)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_EVM_CALLBACK)
+                    .on_x402_signed(payment, day, from, token, evm::hex(&nonce), evm::hex(&digest)),
+            )
     }
 
     /// Posts a sealed record for a settled payment. Only the agent key that paid can post it,
@@ -588,7 +677,91 @@ impl Contract {
         }
     }
 
+    /// Keeps the x402 authorization only if the MPC signature recovers to the vault's EVM address;
+    /// otherwise rolls the payment back like a failed EVM payment.
+    #[private]
+    pub fn on_x402_signed(
+        &mut self,
+        payment: EvmPayment,
+        day: u64,
+        from: String,
+        token: String,
+        nonce: String,
+        digest: String,
+        #[callback_result] result: Result<MpcSignature, PromiseError>,
+    ) -> Option<X402Authorization> {
+        let digest_bytes = evm::unhex::<32>(&digest).expect("digest");
+        let signed = result.ok().and_then(|sig| {
+            let big_r = evm::unhex::<33>(&sig.big_r.affine_point)?;
+            let s = evm::unhex::<32>(&sig.s.scalar)?;
+            let (r, s, v) = evm::normalize(&big_r, &s, sig.recovery_id)?;
+            let mut rs = [0u8; 64];
+            rs[..32].copy_from_slice(&r);
+            rs[32..].copy_from_slice(&s);
+            let public = env::ecrecover(&digest_bytes, &rs, v, true)?;
+            let address = format!("0x{}", evm::hex(&env::keccak256_array(&public)[12..]));
+            (address == from).then(|| {
+                let mut sig65 = rs.to_vec();
+                sig65.push(27 + v);
+                X402Authorization {
+                    payment_id: payment.payment_id.clone(),
+                    chain_id: payment.chain_id,
+                    token: token.clone(),
+                    from: from.clone(),
+                    to: payment.recipient.clone(),
+                    value: payment.amount,
+                    valid_after: U64(0),
+                    valid_before: payment.valid_until,
+                    nonce: format!("0x{nonce}"),
+                    signature: format!("0x{}", evm::hex(&sig65)),
+                }
+            })
+        });
+        match signed {
+            Some(auth) => {
+                self.x402_signed.insert(payment.payment_id.clone(), auth.clone());
+                emit(
+                    "x402_authorization_signed",
+                    &near_sdk::serde_json::json!({
+                        "payment_id": payment.payment_id,
+                        "agent": payment.agent,
+                        "chain_id": payment.chain_id,
+                        "recipient": payment.recipient,
+                        "amount": payment.amount,
+                        "token": token,
+                        "nonce": auth.nonce,
+                        "evidence_commitment": payment.evidence_commitment,
+                        "day": day,
+                        "agent_day_spent_after": U128(self.spent_by_agent_day.get(&(payment.agent.clone(), day)).copied().unwrap_or(0)),
+                        "vault_day_spent_after": U128(self.spent_by_day.get(&day).copied().unwrap_or(0)),
+                    }),
+                );
+                Some(auth)
+            }
+            None => {
+                self.rollback(&payment.payment_id, &payment.agent, payment.amount.0, day, None);
+                emit(
+                    "payment_failed",
+                    &near_sdk::serde_json::json!({
+                        "payment_id": payment.payment_id, "agent": payment.agent, "chain_id": payment.chain_id,
+                        "recipient": payment.recipient, "amount": payment.amount,
+                        "reason": "x402 signature unavailable or not from the vault's EVM address",
+                    }),
+                );
+                None
+            }
+        }
+    }
+
     // ---- views ------------------------------------------------------------------------------
+
+    pub fn get_x402_authorization(&self, payment_id: String) -> Option<X402Authorization> {
+        self.x402_signed.get(&payment_id).cloned()
+    }
+
+    pub fn get_x402_domain(&self, chain_id: u64) -> Option<X402Domain> {
+        self.x402_domains.get(&chain_id).cloned()
+    }
 
     pub fn get_vault(&self) -> VaultInfo {
         VaultInfo {
@@ -599,6 +772,7 @@ impl Contract {
             contract_version: CONTRACT_VERSION,
             mpc_signer: self.mpc_signer.clone(),
             evm_key_path: EVM_KEY_PATH.to_string(),
+            evm_address: self.evm_address.clone(),
         }
     }
 
@@ -699,6 +873,11 @@ impl Contract {
 
     /// The same checks as `check_shared`, in the same order, for an EVM payment.
     fn check_evm(&self, p: &EvmPayment) -> (AgentPolicy, u64) {
+        self.check_evm_payment(p, true)
+    }
+
+    /// `needs_evm_nonce`: false for x402, which signs no EVM transaction and so takes no nonce lock.
+    fn check_evm_payment(&self, p: &EvmPayment, needs_evm_nonce: bool) -> (AgentPolicy, u64) {
         require!(env::predecessor_account_id() == env::current_account_id(), "NotAgent");
         let agent = env::signer_account_pk();
         let policy = self.agents.get(&agent).cloned().filter(|p| p.enabled);
@@ -717,7 +896,7 @@ impl Contract {
         let recipient = recipient.unwrap_or_else(|| env::panic_str("RecipientNotAllowed"));
         require!(p.recipient_version == recipient.version, "RecipientVersionMismatch");
         require!(!self.consumed_payments.contains_key(&p.payment_id), "PaymentAlreadyUsed");
-        require!(self.evm_pending.is_none(), "EvmRequestInFlight");
+        require!(!needs_evm_nonce || self.evm_pending.is_none(), "EvmRequestInFlight");
         let day = now / DAY_SECONDS;
         let spent = self.spent_by_agent_day.get(&(agent, day)).copied().unwrap_or(0);
         require!(
@@ -941,6 +1120,31 @@ fn hash_evm_payment(p: &EvmPayment, token: &str) -> [u8; 32] {
     p.serialize(&mut bytes).expect("borsh");
     token.to_string().serialize(&mut bytes).expect("borsh");
     env::sha256_array(&bytes)
+}
+
+/// The EIP-712 digest USDC verifies for `transferWithAuthorization` (EIP-3009):
+/// keccak256(0x1901 || domainSeparator || keccak256(typehash, from, to, value, validAfter, validBefore, nonce)).
+#[allow(clippy::too_many_arguments)]
+fn x402_digest(d: &X402Domain, chain_id: u64, token: &str, from: &str, to: &str, value: u128, valid_after: u64, valid_before: u64, nonce: &[u8; 32]) -> [u8; 32] {
+    let word_u = |v: u128| { let mut w = [0u8; 32]; w[16..].copy_from_slice(&v.to_be_bytes()); w };
+    let word_a = |a: &str| { let mut w = [0u8; 32]; w[12..].copy_from_slice(&evm::parse_address(a).expect("address checked")); w };
+    let k = |b: &[u8]| env::keccak256_array(b);
+    let mut domain = k(b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)").to_vec();
+    domain.extend_from_slice(&k(d.name.as_bytes()));
+    domain.extend_from_slice(&k(d.version.as_bytes()));
+    domain.extend_from_slice(&word_u(chain_id as u128));
+    domain.extend_from_slice(&word_a(token));
+    let mut message = k(b"TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)").to_vec();
+    message.extend_from_slice(&word_a(from));
+    message.extend_from_slice(&word_a(to));
+    message.extend_from_slice(&word_u(value));
+    message.extend_from_slice(&word_u(valid_after as u128));
+    message.extend_from_slice(&word_u(valid_before as u128));
+    message.extend_from_slice(nonce);
+    let mut out = vec![0x19, 0x01];
+    out.extend_from_slice(&k(&domain));
+    out.extend_from_slice(&k(&message));
+    k(&out)
 }
 
 fn hash_payment(p: &Payment) -> [u8; 32] {

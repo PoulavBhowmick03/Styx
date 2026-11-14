@@ -567,3 +567,157 @@ fn signer_failure_rolls_back_and_frees_the_chain() {
 fn hex_decode(text: &str) -> Vec<u8> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
+
+// ---- x402: EIP-3009 authorizations signed by the vault (contract version 3) ----
+
+const BASE_SEPOLIA: u64 = 84_532;
+const BASE_USDC: &str = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
+/// The address of the stand-in MPC key [9; 32], computed independently (coincurve + keccak).
+const MPC_ADDRESS: &str = "0x58da990a8f4a3a6ca7cb6315d68a140105917352";
+
+fn x402_setup() -> Contract {
+    let mut c = setup();
+    c.set_evm_chain(
+        BASE_SEPOLIA,
+        EvmChain { token: BASE_USDC.into(), max_fee_per_gas: U128(1), max_priority_fee_per_gas: U128(1), gas_limit: U64(100_000), enabled: true },
+    );
+    c.set_evm_recipient(BASE_SEPOLIA, EVM_VENDOR.into(), true);
+    c.set_evm_address(MPC_ADDRESS.into());
+    c.set_x402_domain(BASE_SEPOLIA, "USDC".into(), "2".into());
+    c
+}
+
+fn x402_payment(id: &str, amount: u128) -> EvmPayment {
+    EvmPayment { chain_id: BASE_SEPOLIA, ..evm_payment(id, amount) }
+}
+
+/// What the MPC signer would answer for `digest`, from the stand-in key.
+fn mpc_answer(digest: &[u8], seed: u8) -> MpcSignature {
+    use k256::ecdsa::SigningKey as K256Key;
+    let key = K256Key::from_slice(&[seed; 32]).unwrap();
+    let (sig, rid) = key.sign_prehash_recoverable(digest).unwrap();
+    let r: [u8; 32] = sig.r().to_bytes().into();
+    let s: [u8; 32] = sig.s().to_bytes().into();
+    let mut big_r = vec![if rid.is_y_odd() { 0x03 } else { 0x02 }];
+    big_r.extend_from_slice(&r);
+    MpcSignature { big_r: MpcPoint { affine_point: evm::hex(&big_r) }, s: MpcScalar { scalar: evm::hex(&s) }, recovery_id: rid.to_byte() }
+}
+
+#[test]
+fn x402_digest_matches_an_independent_eip712_computation() {
+    // USDC on Base Sepolia: name "USDC", version "2" (read from the chain), and its domain separator
+    // 0x71f17a3b…9818 also matches the chain. Expected value computed separately with pycryptodome.
+    let nonce: [u8; 32] = core::array::from_fn(|i| i as u8);
+    let d = x402_digest(&X402Domain { name: "USDC".into(), version: "2".into() }, BASE_SEPOLIA, BASE_USDC, MPC_ADDRESS, EVM_VENDOR, 60, 0, 864_000, &nonce);
+    assert_eq!(evm::hex(&d), "604df4702cd21f9217786116a4a3be46f885ecf68c6028cda222f950eeffca9a");
+}
+
+#[test]
+fn x402_payment_is_signed_from_the_vault_address_within_the_limits() {
+    use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+    let mut c = x402_setup();
+    as_agent(agent(), DAY_NS);
+    let p = x402_payment("x1", 60);
+    c.pay_x402(p.clone());
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 60);
+    assert_eq!(c.evm_pending(), None, "x402 takes no EVM nonce lock");
+    let nonce = hash_evm_payment(&p, BASE_USDC);
+    let digest = x402_digest(&X402Domain { name: "USDC".into(), version: "2".into() }, BASE_SEPOLIA, BASE_USDC, MPC_ADDRESS, EVM_VENDOR, 60, 0, p.valid_until.0, &nonce);
+    testing_env!(context(vault(), agent(), DAY_NS).build());
+    let auth = c
+        .on_x402_signed(p, 1, MPC_ADDRESS.into(), BASE_USDC.into(), evm::hex(&nonce), evm::hex(&digest), Ok(mpc_answer(&digest, 9)))
+        .expect("signed");
+    assert_eq!((auth.from.as_str(), auth.to.as_str(), auth.value.0, auth.token.as_str()), (MPC_ADDRESS, EVM_VENDOR, 60, BASE_USDC));
+    assert_eq!(auth.nonce, format!("0x{}", evm::hex(&nonce)));
+    // The 65-byte signature recovers to the vault's address over the EIP-712 digest.
+    let raw = hex_decode(&auth.signature[2..]);
+    assert!(raw[64] == 27 || raw[64] == 28);
+    let sig = Signature::from_slice(&raw[..64]).unwrap();
+    let recovered = VerifyingKey::recover_from_prehash(&digest, &sig, RecoveryId::from_byte(raw[64] - 27).unwrap()).unwrap();
+    use sha3::{Digest, Keccak256};
+    let addr = &Keccak256::digest(&recovered.to_encoded_point(false).as_bytes()[1..])[12..];
+    assert_eq!(format!("0x{}", evm::hex(addr)), MPC_ADDRESS);
+    assert_eq!(c.get_x402_authorization("x1".into()), Some(auth));
+    assert!(get_logs().iter().any(|l| l.contains("x402_authorization_signed")));
+}
+
+#[test]
+fn a_signature_from_any_other_key_rolls_the_payment_back() {
+    let mut c = x402_setup();
+    as_agent(agent(), DAY_NS);
+    let p = x402_payment("x1", 60);
+    c.pay_x402(p.clone());
+    let nonce = hash_evm_payment(&p, BASE_USDC);
+    let digest = x402_digest(&X402Domain { name: "USDC".into(), version: "2".into() }, BASE_SEPOLIA, BASE_USDC, MPC_ADDRESS, EVM_VENDOR, 60, 0, p.valid_until.0, &nonce);
+    testing_env!(context(vault(), agent(), DAY_NS).build());
+    assert!(c.on_x402_signed(p.clone(), 1, MPC_ADDRESS.into(), BASE_USDC.into(), evm::hex(&nonce), evm::hex(&digest), Ok(mpc_answer(&digest, 8))).is_none());
+    assert_eq!(c.spent_by_agent(agent(), 1).0, 0);
+    assert!(c.consumed_payment("x1".into()).is_none());
+    assert!(c.get_x402_authorization("x1".into()).is_none());
+    testing_env!(context(vault(), agent(), DAY_NS).build());
+    assert!(c.on_x402_signed(p, 1, MPC_ADDRESS.into(), BASE_USDC.into(), evm::hex(&nonce), evm::hex(&digest), Err(PromiseError::Failed)).is_none());
+}
+
+#[test]
+#[should_panic(expected = "PerPaymentLimitExceeded")]
+fn x402_over_the_per_payment_limit_is_refused() {
+    let mut c = x402_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay_x402(x402_payment("x1", 101));
+}
+
+#[test]
+#[should_panic(expected = "RecipientNotAllowed")]
+fn x402_only_pays_allowed_recipients() {
+    let mut c = x402_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay_x402(EvmPayment { recipient: "0x2222222222222222222222222222222222222222".into(), ..x402_payment("x1", 10) });
+}
+
+#[test]
+#[should_panic(expected = "DailyLimitExceeded")]
+fn x402_counts_against_the_agent_daily_limit() {
+    let mut c = x402_setup();
+    as_agent(agent(), DAY_NS);
+    c.pay_x402(x402_payment("x1", 100));
+    c.pay_x402(x402_payment("x2", 100));
+    c.pay_x402(x402_payment("x3", 100));
+}
+
+#[test]
+#[should_panic(expected = "X402NotEnabled")]
+fn x402_needs_the_owner_to_enable_the_chain_domain() {
+    let mut c = setup();
+    c.set_evm_chain(BASE_SEPOLIA, EvmChain { token: BASE_USDC.into(), max_fee_per_gas: U128(1), max_priority_fee_per_gas: U128(1), gas_limit: U64(100_000), enabled: true });
+    c.set_evm_recipient(BASE_SEPOLIA, EVM_VENDOR.into(), true);
+    c.set_evm_address(MPC_ADDRESS.into());
+    as_agent(agent(), DAY_NS);
+    c.pay_x402(x402_payment("x1", 10));
+}
+
+#[test]
+#[should_panic(expected = "EvmAddressNotSet")]
+fn x402_needs_the_vault_evm_address() {
+    let mut c = setup();
+    c.set_evm_chain(BASE_SEPOLIA, EvmChain { token: BASE_USDC.into(), max_fee_per_gas: U128(1), max_priority_fee_per_gas: U128(1), gas_limit: U64(100_000), enabled: true });
+    c.set_evm_recipient(BASE_SEPOLIA, EVM_VENDOR.into(), true);
+    c.set_x402_domain(BASE_SEPOLIA, "USDC".into(), "2".into());
+    as_agent(agent(), DAY_NS);
+    c.pay_x402(x402_payment("x1", 10));
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn only_the_owner_sets_the_vault_evm_address() {
+    let mut c = setup();
+    as_agent(agent(), DAY_NS);
+    c.set_evm_address(MPC_ADDRESS.into());
+}
+
+#[test]
+fn the_agent_key_may_call_pay_x402_and_the_vault_reports_version_3() {
+    assert!(AGENT_METHODS.split(',').any(|m| m == "pay_x402"));
+    let c = x402_setup();
+    assert_eq!(c.get_vault().contract_version, 3);
+    assert_eq!(c.get_vault().evm_address.as_deref(), Some(MPC_ADDRESS));
+}
