@@ -72,6 +72,13 @@ try{
  assert.match(await page.locator('#preview').textContent(),/"method": "unpause"/);
  const stored=await page.evaluate(()=>Object.entries(localStorage).find(([k])=>k.startsWith('styx-labels:'))?.[1]);
  assert.match(stored,/burst-g2/);
+ // Exact Telegram URL opens review without signing, once per visit.
+ await page.goto(`${base}/?vault=${encodeURIComponent(vault)}&network=testnet#sentinels`);
+ await page.locator('#review[open]').waitFor();
+ assert.match(await page.locator('#preview').textContent(),/"method": "unpause"/);
+ assert.equal(await page.evaluate(()=>window.__submitted),undefined);
+ await page.locator('#cancel').click();
+ await page.locator('#review[open]').waitFor({state:'hidden'});
  assert.deepEqual(errors,[]);
  console.log('PASS: v3 vault, parent link opens one review (remove + install), paused banner, reason as text, paste-to-install signs set_sentinel, unpause review, names kept; no browser errors.');
 }finally{await browser.close();await server?.close();}

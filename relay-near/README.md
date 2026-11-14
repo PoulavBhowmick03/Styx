@@ -34,7 +34,7 @@ listing API; each transaction is confirmed through NEAR_RPC_URL at FINAL, accept
 Styx receipt logs executed by that vault. Each sentinel_paused alert includes a short sentinel key,
 its reason truncated at a UTF-8 boundary to 280 bytes as plain text (no parse_mode), a NearBlocks
 transaction link, and https://styxco.xyz/console/?vault=<vault>&network=testnet#sentinels.
-The owner opens Review unpause and signs in the console. The bot cannot unpause.
+The link opens Review unpause once the owner connects in the console; the owner signs there. The bot cannot unpause.
 Recipients are linked chats for the current owner's full-access keys; merely watching a vault
 does not subscribe unrelated chats to pause alerts. All indexed history is scanned, including
 pauses during downtime. Dedupe IDs include vault, transaction, receipt, log, data index and chat,

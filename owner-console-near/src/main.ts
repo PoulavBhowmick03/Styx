@@ -45,6 +45,7 @@ function role(){
  const owner=canWrite();
  void maybeFreeze();
  void maybeSentinelLink();
+ queueMicrotask(maybeUnpauseLink);
  $('#role').textContent=connected?`${connected} · ${owner?(dao?`The owner is the DAO ${dao.account}: changes you make here are proposals its members vote on.`:'Owner controls available'):`Read-only: the vault owner is ${facts?.info.owner??'not yet known'}.`}`:'Read-only: connect the owner account to change rules.';
  document.querySelectorAll<HTMLButtonElement>('[data-write]').forEach(button=>button.disabled=!owner || busy);
  $('#disconnect').hidden=!connected;
@@ -96,6 +97,7 @@ const expiring=new Set<string>();let expiryWarned='';
 let freezeAsked:string|undefined=(()=>{try{const k=new URLSearchParams(location.search).get('freeze');return k?publicKey(k):undefined;}catch{return undefined;}})();
 // Sentinel state, declared before the first role() call reads it.
 let sentinels:string[]|null=null;
+let unpauseLinkHandled = false;
 let sentinelAsked:SentinelChange[]|undefined=(()=>{try{const c=readSentinelLink(new URLSearchParams(location.search));return c.length?c:undefined;}catch(e){setTimeout(()=>toast('error','Sentinel link is damaged',e instanceof Error?e.message:String(e)),0);return undefined;}})();
 async function maybeFreeze(){
  if(!freezeAsked || !context || !facts) return;
@@ -573,3 +575,12 @@ async function maybeSentinelLink(){
  try{const fresh=await c.rpc.view(c.vault,'get_sentinels');if(context!==c) return;if(Array.isArray(fresh)) sentinels=fresh;
   sentinelPreview(asked);$('#sentinels').scrollIntoView({behavior:'smooth'});}catch(e){toast('error','Cannot preview the sentinel change',e instanceof Error?e.message:String(e));}
 }
+
+// Telegram's #sentinels link opens a review only after the owner connects; never submits it.
+function maybeUnpauseLink(){
+ if(unpauseLinkHandled || location.hash!=='#sentinels' || !context || !facts?.info.paused || !canWrite() || busy) return;
+ unpauseLinkHandled=true;
+ try{previewPlan('unpause',{});$('#sentinels').scrollIntoView({behavior:'smooth'});}
+ catch(e){toast('error','Cannot review unpause',e instanceof Error?e.message:String(e));}
+}
+window.addEventListener('hashchange',maybeUnpauseLink);
