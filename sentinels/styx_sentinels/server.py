@@ -12,7 +12,24 @@ from .swarm import Swarm
 
 
 def serve(swarm: Swarm, port: int, lock: threading.Lock, extra: Callable[[], dict] | None = None) -> ThreadingHTTPServer:
-    page = resources.files("styx_sentinels").joinpath("ui/index.html").read_bytes()
+    root = resources.files("styx_sentinels").joinpath("ui")
+    kinds = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".png": "image/png",
+             ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".svg": "image/svg+xml"}
+
+    def static(path: str) -> tuple[bytes, str] | None:
+        """A file of the built page (sentinels-ui), never anything outside it."""
+        parts = [p for p in path.split("?")[0].split("/") if p]
+        if not parts:
+            parts = ["index.html"]
+        if any(p in ("..", ".") or p.startswith(".") for p in parts):
+            return None
+        node = root
+        for p in parts:
+            node = node.joinpath(p)
+        suffix = "." + parts[-1].rsplit(".", 1)[-1] if "." in parts[-1] else ""
+        if suffix not in kinds or not node.is_file():
+            return None
+        return node.read_bytes(), kinds[suffix]
 
     class Handler(BaseHTTPRequestHandler):
         def send(self, code: int, body: bytes, kind: str) -> None:
@@ -23,14 +40,15 @@ def serve(swarm: Swarm, port: int, lock: threading.Lock, extra: Callable[[], dic
             self.wfile.write(body)
 
         def do_GET(self):  # noqa: N802
-            if self.path in ("/", "/index.html"):
-                return self.send(200, page, "text/html; charset=utf-8")
             if self.path == "/api/state":
                 with lock:
                     state = json.loads(swarm.state_file.read_text()) if swarm.state_file.exists() else {}
                     state["lineage"] = swarm.lineage()[-200:]
                     state.update(extra() if extra else {})
                 return self.send(200, json.dumps(state).encode(), "application/json")
+            found = static(self.path)
+            if found:
+                return self.send(200, *found)
             self.send(404, b"not found", "text/plain")
 
         def do_POST(self):  # noqa: N802

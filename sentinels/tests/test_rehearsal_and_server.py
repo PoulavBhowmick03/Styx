@@ -40,7 +40,16 @@ def test_the_page_and_its_api(tmp_path):
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
         page = urllib.request.urlopen(base + "/").read().decode()
-        assert "Styx Sentinels" in page and "/api/state" in page
+        assert "<title>Styx: sentinels</title>" in page
+        script = page.split('src="./assets/')[1].split('"')[0]
+        assert "api/state" in urllib.request.urlopen(f"{base}/assets/{script}").read().decode()
+        assert urllib.request.urlopen(base + "/fonts/geist.woff2").headers["Content-Type"] == "font/woff2"
+        for bad in ("/../pyproject.toml", "/%2e%2e/swarm.py", "/.hidden", "/swarm.py"):
+            try:
+                urllib.request.urlopen(base + bad)
+                assert False, bad
+            except urllib.error.HTTPError as e:
+                assert e.code == 404
         state = json.loads(urllib.request.urlopen(base + "/api/state").read())
         assert state["rehearsal"] and {m["id"] for m in state["members"]} >= {"burst-g1", "burst-g2"}
         assert any(e["action"] == "retire" for e in state["lineage"])

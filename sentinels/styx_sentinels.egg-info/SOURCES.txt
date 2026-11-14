@@ -16,6 +16,14 @@ styx_sentinels.egg-info/entry_points.txt
 styx_sentinels.egg-info/requires.txt
 styx_sentinels.egg-info/top_level.txt
 styx_sentinels/ui/index.html
+styx_sentinels/ui/styx-logo.png
+styx_sentinels/ui/assets/index-Dyc4bMHo.css
+styx_sentinels/ui/assets/index-KBn7mD1v.js
+styx_sentinels/ui/fonts/OFL.txt
+styx_sentinels/ui/fonts/geist-mono.woff2
+styx_sentinels/ui/fonts/geist.woff2
+styx_sentinels/ui/fonts/instrument-serif-italic.woff2
+styx_sentinels/ui/fonts/instrument-serif.woff2
 tests/test_core.py
 tests/test_rehearsal_and_server.py
 tests/test_swarm.py

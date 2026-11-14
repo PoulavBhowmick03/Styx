@@ -1,0 +1,18 @@
+{
+  "name": "styx-sentinels-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite --host 127.0.0.1 --port 5176",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0",
+    "@types/node": "^22.18.0"
+  }
+}

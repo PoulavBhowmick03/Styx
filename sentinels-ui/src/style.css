@@ -1,0 +1,52 @@
+/* The swarm page, on top of the shared styx.css (tokens, fonts, header, buttons). */
+.sentinels main { padding-bottom: 4rem; }
+.sentinels .intro h1 { font: 400 clamp(2.4rem, 5vw, 3.6rem)/1.02 var(--serif); margin: 0.4rem 0 0.8rem; }
+.sentinels .intro h1 em { color: var(--ember); }
+.sentinels section { margin-top: 2.4rem; }
+.sentinels h2 { font: 400 1.75rem var(--serif); margin: 0 0 0.8rem; }
+.pill { font: 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 0.35rem 0.8rem; border-radius: 999px; border: 1px solid var(--rule-2); margin-left: auto; }
+.pill.live { color: var(--ok); }
+.pill.paused { background: var(--ember); color: var(--ground); border-color: var(--ember); animation: breathe 1.6s var(--ease) infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--ember) 18%, transparent); } }
+.caption { margin: 1.6rem 0 0; padding: 0.9rem 1.1rem; border-left: 3px solid var(--wait); background: var(--panel); font: 400 1.35rem var(--serif); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.9rem; }
+.card.sentinel { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); padding: 1rem 1.1rem; transition: transform 0.3s var(--ease), border-color 0.3s var(--ease); }
+.card.sentinel.fired { border-color: var(--ember); transform: translateY(-3px); }
+.card.sentinel.retired { opacity: 0.5; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+.kind { font: 0.72rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ember); }
+.gen { font: 0.72rem var(--mono); color: var(--fore-2); }
+.score { font: 400 2.8rem/1 var(--serif); margin-top: 0.6rem; }
+.score.pos { color: var(--ok); } .score.neg { color: var(--ember); }
+.meta { font: 0.72rem var(--mono); color: var(--fore-2); margin: 0.35rem 0 0; word-break: break-word; }
+.health { height: 0.3rem; background: var(--panel-2); border-radius: 2px; margin-top: 0.6rem; overflow: hidden; }
+.health i { display: block; height: 100%; background: var(--ok); transition: width 0.4s var(--ease); }
+.health i.neg { background: var(--ember); }
+.card blockquote { margin: 0.8rem 0 0; padding: 0.6rem 0.75rem; background: var(--panel-2); border-radius: var(--radius); font-size: 0.86rem; }
+.card blockquote .meta { display: block; }
+.actions-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.actions-row button { min-height: 0; padding: 0.3rem 0.6rem; font: 0.72rem var(--mono); background: transparent; color: var(--fore); border: 1px solid var(--rule-2); }
+.actions-row button.ok { color: var(--ok); }
+.timeline { position: relative; height: 8rem; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.timeline .bar { position: absolute; bottom: 1rem; width: 0.4rem; margin-left: -0.2rem; background: var(--fore-3); border-radius: 2px 2px 0 0; }
+.timeline .bar.hot { background: var(--ember); }
+.timeline .mark { position: absolute; top: 0.5rem; bottom: 0.5rem; width: 2px; }
+.timeline .mark span { position: absolute; top: 0; left: 0.4rem; font: 0.68rem var(--mono); white-space: nowrap; }
+.timeline .mark.pause { background: var(--ember); } .timeline .mark.pause span { color: var(--ember); }
+.timeline .mark.unpause { background: var(--ok); } .timeline .mark.unpause span { color: var(--ok); top: 1.2rem; }
+.timeline .band { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--ember) 9%, transparent); border-inline: 1px dashed var(--ember); }
+.cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.4rem; } @media (max-width: 52rem) { .cols { grid-template-columns: 1fr; } }
+.feed { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); max-height: 28rem; overflow: auto; }
+.feed li { display: grid; grid-template-columns: 4.6rem auto 1fr; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--rule); font-size: 0.86rem; }
+.feed time { font: 0.72rem var(--mono); color: var(--fore-2); }
+.tag { font: 0.66rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 0.1rem 0.4rem; border-radius: 3px; background: var(--panel-2); color: var(--fore-2); white-space: nowrap; }
+.tag.spawn { color: var(--ok); } .tag.retire, .tag.attack_marked { color: var(--ember); } .tag.pause { background: var(--ember); color: var(--ground); } .tag.settled, .tag.labelled { color: var(--wait); }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.9rem 1rem; }
+.cols .panel + h2 { margin-top: 1.4rem; }
+.family { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin: 0.4rem 0; }
+.node { font: 0.72rem var(--mono); padding: 0.3rem 0.55rem; border: 1px solid var(--rule-2); border-radius: var(--radius); }
+.node.active { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); } .node.retired { color: var(--fore-2); }
+.then { font: 0.66rem var(--mono); color: var(--fore-2); }
+.owner { margin: 0; padding-left: 1.1rem; font-size: 0.86rem; } .owner li { margin: 0.35rem 0; }
+.how h3 { font: 400 1.3rem var(--serif); margin: 0 0 0.4rem; } .how p { color: var(--fore-2); margin: 0; }
+.empty { color: var(--fore-2); padding: 0.8rem 1rem; margin: 0; }
