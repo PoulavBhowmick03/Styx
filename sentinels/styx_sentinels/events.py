@@ -117,20 +117,51 @@ class Watcher:
     """New vault events since the last call. The indexer only lists transactions; every event comes
     from a receipt confirmed through RPC, so the indexer cannot invent a payment or a pause."""
 
-    def __init__(self, rpc: RPC, vault: str, network: str = "testnet", get: Callable[..., Any] | None = None):
+    def __init__(self, rpc: RPC, vault: str, network: str = "testnet", get: Callable[..., Any] | None = None,
+                 post: Callable[..., Any] | None = None):
         import requests
         self.rpc, self.vault = rpc, vault
         self.host = "https://api-testnet.nearblocks.io" if network == "testnet" else "https://api.nearblocks.io"
+        self.fastnear = "https://tx.test.fastnear.com" if network == "testnet" else "https://tx.main.fastnear.com"
         self._get = get or (lambda url: requests.get(url, timeout=15))
+        self._post = post if post is not None else (None if get else (lambda url, body: requests.post(url, json=body, timeout=15)))
         self.seen: set[str] = set()
+        self.signers: dict[str, str] = {}
+        self.source = ""
 
     def listed(self) -> Iterable[tuple[str, str]]:
+        """(tx hash, signer), newest first. FastNEAR's transaction API lists a transaction within a block
+        or two; NearBlocks is the fallback. Either only names hashes: events come from RPC receipts."""
+        if self._post:
+            try:
+                yield from self._fastnear()
+                self.source = "fastnear"
+                return
+            except Exception:  # noqa: BLE001 (fall back to the other indexer)
+                pass
+        self.source = "nearblocks"
         data = self._get(f"{self.host}/v1/account/{self.vault}/txns?per_page=25").json()
         for t in data.get("txns", []):
             tx_hash = t.get("transaction_hash") or t.get("hash")
             sender = t.get("signer_account_id") or t.get("signer_id") or t.get("predecessor_account_id")
             if isinstance(tx_hash, str) and isinstance(sender, str):
                 yield tx_hash, sender
+
+    def _fastnear(self) -> list[tuple[str, str]]:
+        reply = self._post(f"{self.fastnear}/v0/account", {"account_id": self.vault, "max_block_height": None})
+        reply.raise_for_status()
+        rows = [t for t in reply.json()["account_txs"] if isinstance(t.get("transaction_hash"), str)]
+        rows.sort(key=lambda t: (t.get("tx_block_height", 0), t.get("tx_index", 0)), reverse=True)
+        hashes = [t["transaction_hash"] for t in rows[:50]]
+        unknown = [h for h in hashes if h not in self.seen and h not in self.signers]
+        if unknown:
+            got = self._post(f"{self.fastnear}/v0/transactions", {"tx_hashes": unknown[:20]})
+            got.raise_for_status()
+            for t in got.json().get("transactions", []):
+                tx = t.get("transaction") or {}
+                if isinstance(tx.get("hash"), str) and isinstance(tx.get("signer_id"), str):
+                    self.signers[tx["hash"]] = tx["signer_id"]
+        return [(h, self.signers[h]) for h in hashes if h in self.signers]
 
     def poll(self) -> Batch:
         out = Batch()

@@ -81,3 +81,38 @@ def test_concentration_pauses_one_recipient_taking_a_large_share():
     assert v.pause and "vendor-a.testnet took 24 (48% of the 50 daily limit)" in v.reason
     spread = [pay(i, amount=4_000_000, recipient=f"v{i}.testnet") for i in range(6)]
     assert not Concentration(share=0.4).judge(spread, now=spread[-1].time, daily_limit=None).pause
+
+
+def test_watcher_lists_through_fastnear_and_confirms_through_rpc():
+    from styx_sentinels.events import Watcher
+
+    class Reply:
+        def __init__(self, data): self.data = data
+        def json(self): return self.data
+        def raise_for_status(self): pass
+
+    calls = []
+
+    def post(url, body):
+        calls.append(url.rsplit("/", 1)[1])
+        if url.endswith("/v0/account"):
+            return Reply({"account_txs": [{"transaction_hash": "h1", "tx_block_height": 1, "tx_index": 0},
+                                          {"transaction_hash": "h2", "tx_block_height": 2, "tx_index": 0}]})
+        return Reply({"transactions": [{"transaction": {"hash": h, "signer_id": "owner.testnet" if h == "h2" else VAULT}} for h in body["tx_hashes"]]})
+
+    w = Watcher(None, VAULT, get=lambda url: (_ for _ in ()).throw(AssertionError("no fallback")), post=post)
+    assert list(w.listed()) == [("h2", "owner.testnet"), ("h1", VAULT)] and w.source == "fastnear"
+    assert list(w.listed()) == [("h2", "owner.testnet"), ("h1", VAULT)]
+    assert calls == ["account", "transactions", "account"]  # signers are looked up once
+
+
+def test_watcher_falls_back_to_nearblocks():
+    from styx_sentinels.events import Watcher
+
+    class Reply:
+        def json(self): return {"txns": [{"transaction_hash": "h9", "signer_account_id": VAULT}]}
+
+    def post(url, body): raise ConnectionError("down")
+
+    w = Watcher(None, VAULT, get=lambda url: Reply(), post=post)
+    assert list(w.listed()) == [("h9", VAULT)] and w.source == "nearblocks"
