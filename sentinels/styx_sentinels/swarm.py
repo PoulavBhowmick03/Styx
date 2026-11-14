@@ -99,6 +99,8 @@ class Swarm:
         self.attack_windows: list[tuple[float, float, str]] = []
         self.owner_actions: list[dict] = []  # links the owner needs to sign (enable / remove keys)
         self.detectors: dict[str, Any] = {}
+        # Payments up to the owner's last unpause were reviewed by the owner; sentinels judge only newer ones.
+        self.reviewed_until = 0.0
         self.load()
 
     # ---- persistence ----------------------------------------------------------------------
@@ -122,11 +124,12 @@ class Swarm:
         self.daily_limit = s.get("daily_limit")
         self.attack_windows = [tuple(w) for w in s.get("attack_windows", [])]
         self.owner_actions = s.get("owner_actions", [])
+        self.reviewed_until = s.get("reviewed_until", 0.0)
 
     def save(self) -> None:
         state = {
             "vault": self.vault, "network": self.network, "updated": self.now(), "paused": self.paused,
-            "daily_limit": self.daily_limit, "attack_windows": self.attack_windows, "owner_actions": self.owner_actions,
+            "daily_limit": self.daily_limit, "reviewed_until": self.reviewed_until, "attack_windows": self.attack_windows, "owner_actions": self.owner_actions,
             "members": [{**asdict(m), "score": m.score, "catches": m.catches, "false_alarms": m.false_alarms} for m in self.members],
             "history": [asdict(p) for p in self.history[-200:]], "events": self.events[-300:],
         }
@@ -201,6 +204,7 @@ class Swarm:
                 self.paused = True
             elif e.kind == "unpaused":
                 self.paused = False
+                self.reviewed_until = max(self.reviewed_until, e.time)
                 self.owner_unpaused(e)
         self.history.sort(key=lambda p: p.time)
 
@@ -219,8 +223,13 @@ class Swarm:
         if self.paused:
             return fired
         now = self.now()
+        unreviewed = [p for p in self.history if p.time > self.reviewed_until]
         for m in self.active():
-            verdict = self.detector(m).judge(self.history, now, self.daily_limit)
+            try:
+                detector = self.detector(m)
+            except ValueError:
+                continue  # e.g. a judge with no model configured: it waits, it is not removed
+            verdict = detector.judge(unreviewed, now, self.daily_limit)
             if not verdict.pause:
                 continue
             try:

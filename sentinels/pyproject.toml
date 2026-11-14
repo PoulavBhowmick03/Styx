@@ -24,5 +24,8 @@ styx-near-ai-agent = { path = "../agent-near-ai", editable = true }
 [tool.setuptools.packages.find]
 include = ["styx_sentinels*"]
 
+[tool.setuptools.package-data]
+styx_sentinels = ["ui/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

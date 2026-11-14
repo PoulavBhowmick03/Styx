@@ -59,7 +59,7 @@ def test_false_alarms_retire_a_sentinel_and_respawn_it_with_a_higher_threshold_a
         s.cycle(Batch(pauses=[PauseEvent("unpaused", t, f"U{round_}")]))
         t += 400
     old, new = s.members
-    assert (old.status, old.false_alarms, old.score) == ("retired", 2, -4)
+    assert (old.status, old.false_alarms, old.score) == ("retired", 1, -2)  # retired after one; the second burst passes
     assert (new.id, new.generation, new.params["max_payments"], new.status) == ("burst-g2", 2, 6, "active")
     assert "Raised the burst threshold to 6" in new.notes[0]
     actions = [a["action"] for a in s.owner_actions]
@@ -111,3 +111,15 @@ def test_key_files_are_private_and_in_near_format(tmp_path):
     data = json.loads(path.read_text())
     assert data["public_key"] == pk and data["account_id"] == VAULT and data["private_key"].startswith("ed25519:")
     assert b58(b"\0\x01") == "12"
+
+
+def test_after_the_owner_unpauses_the_same_payments_do_not_pause_again(tmp_path):
+    clock = Clock()
+    s = swarm(tmp_path, clock, kinds=(("burst", {"max_payments": 4, "window_seconds": 300}), ))
+    for i in range(5):
+        clock.t = 1000 + 10 * i
+        s.cycle(Batch(payments=[pay(i, clock.t)]))
+    assert s.paused and len(s.pauser.calls) == 1
+    clock.t = 1060
+    s.cycle(Batch(pauses=[PauseEvent("unpaused", 1060, "U")]))
+    assert not s.paused and len(s.pauser.calls) == 1  # no instant re-pause on what the owner reviewed

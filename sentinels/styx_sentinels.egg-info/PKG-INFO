@@ -4,5 +4,6 @@ Version: 0.1.0
 Summary: Watcher agents for a Styx vault: each can only pause it. A parent scores, retires and respawns them.
 Requires-Python: >=3.11
 Requires-Dist: requests<3,>=2.31
+Requires-Dist: cryptography>=42
 Provides-Extra: judge
 Requires-Dist: styx-near-ai-agent; extra == "judge"

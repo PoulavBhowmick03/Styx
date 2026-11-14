@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Styx Sentinels</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500;600&family=Geist+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0a09;--panel:#141210;--panel2:#1b1815;--rule:#2a2622;--fore:#f2ede6;--dim:#9b938a;--ember:#fb4020;--ok:#5ec38b;--warn:#f0b13e;--serif:"Instrument Serif",Georgia,serif;--sans:Geist,system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fore);font:15px/1.5 var(--sans)}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:1px solid var(--rule);padding-bottom:18px}
+.kicker{font:12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ember)}
+h1{font:400 44px/1.05 var(--serif);margin:6px 0 4px}h1 em{color:var(--ember)}
+.sub{color:var(--dim);max-width:640px}
+.status{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{font:12px var(--mono);letter-spacing:.06em;padding:6px 12px;border-radius:999px;border:1px solid var(--rule);text-transform:uppercase}
+.pill.live{color:var(--ok);border-color:#2f5f45}.pill.paused{color:#fff;background:var(--ember);border-color:var(--ember);animation:pulse 1.6s infinite}
+.pill.rehearsal{color:var(--warn);border-color:#6b5320}
+@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(251,64,32,.15)}}
+.caption{margin:18px 0 0;padding:12px 16px;border-left:3px solid var(--warn);background:var(--panel);font:400 20px var(--serif);min-height:48px}
+section{margin-top:30px}h2{font:400 26px var(--serif);margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;position:relative;transition:transform .25s,border-color .25s}
+.card.fired{border-color:var(--ember);transform:translateY(-2px)}.card.retired{opacity:.45}
+.card h3{margin:0;font:500 16px var(--sans);display:flex;justify-content:space-between;align-items:center}
+.gen{font:12px var(--mono);color:var(--dim)}.kind{font:12px var(--mono);color:var(--ember);text-transform:uppercase;letter-spacing:.1em}
+.score{font:400 40px var(--serif);margin:8px 0 0}.score.neg{color:var(--ember)}.score.pos{color:var(--ok)}
+.meta{font:12px var(--mono);color:var(--dim);margin-top:6px;word-break:break-all}
+.bar{height:6px;border-radius:3px;background:var(--panel2);margin-top:10px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
+.last{margin-top:10px;font-size:13px;color:var(--fore);background:var(--panel2);padding:8px 10px;border-radius:6px}
+.btns{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+button{font:12px var(--mono);background:transparent;color:var(--fore);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--ember)}button.ok{border-color:#2f5f45;color:var(--ok)}
+.timeline{position:relative;height:120px;background:var(--panel);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.timeline .p{position:absolute;bottom:18px;width:6px;border-radius:2px 2px 0 0;background:#5f5a54}
+.timeline .p.drain{background:#c0583f}
+.timeline .x{position:absolute;top:8px;bottom:8px;width:2px;background:var(--ember)}.timeline .x span{position:absolute;top:-2px;left:6px;font:11px var(--mono);color:var(--ember);white-space:nowrap}
+.timeline .u{position:absolute;top:8px;bottom:8px;width:2px;background:var(--ok)}
+.timeline .atk{position:absolute;top:0;bottom:0;background:rgba(251,64,32,.08);border-left:1px dashed var(--ember);border-right:1px dashed var(--ember)}
+.legend{font:12px var(--mono);color:var(--dim);margin-top:6px}
+.cols{display:grid;grid-template-columns:1.3fr 1fr;gap:18px}@media(max-width:820px){.cols{grid-template-columns:1fr}}
+.feed{background:var(--panel);border:1px solid var(--rule);border-radius:10px;max-height:420px;overflow:auto}
+.row{display:grid;grid-template-columns:76px 1fr;gap:10px;padding:10px 14px;border-bottom:1px solid var(--rule);font-size:13px}
+.row time{font:12px var(--mono);color:var(--dim)}.row b{font-weight:600}.tag{font:11px var(--mono);padding:2px 6px;border-radius:4px;margin-right:6px;text-transform:uppercase}
+.t-spawn{background:#1f3329;color:var(--ok)}.t-retire{background:#3a1e17;color:var(--ember)}.t-pause{background:var(--ember);color:#fff}.t-settled,.t-labelled{background:#2b2620;color:var(--warn)}.t-attack_marked{background:#3a1e17;color:#ffb39f}
+.tree{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px}
+.lineage{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.node{font:12px var(--mono);padding:6px 10px;border-radius:6px;border:1px solid var(--rule)}.node.active{border-color:var(--ok);color:var(--ok)}.node.retired{color:var(--dim);text-decoration:line-through}
+.arrow{color:var(--dim)}
+.actions a{color:var(--fore);font:12px var(--mono)}.actions li{margin:6px 0}
+.why{margin-top:30px;padding:16px;border:1px solid var(--rule);border-radius:10px;color:var(--dim);font-size:14px}.why b{color:var(--fore)}
+.empty{color:var(--dim);padding:14px}
+</style></head><body><div class="wrap">
+<header><div><div class="kicker">Styx · Sentinels</div><h1>Watchers that can only <em>hit the brakes.</em></h1>
+<div class="sub" id="sub">Each sentinel reads the vault's payments and may pause it. NEAR lets its key do nothing else: no paying, no unpausing, no changing rules.</div></div>
+<div class="status"><span class="pill" id="mode"></span><span class="pill" id="state">…</span></div></header>
+<div class="caption" id="caption" hidden></div>
+<section><h2>The swarm</h2><div class="grid" id="cards"></div></section>
+<section><h2>Payments and pauses</h2><div class="timeline" id="timeline"></div>
+<div class="legend">grey bars: payments (height = amount) · red bars: to a recipient a sentinel flagged · red line: a sentinel paused · green line: the owner unpaused · shaded: a marked attack</div></section>
+<section class="cols"><div><h2>Lineage</h2><div class="feed" id="feed"></div></div>
+<div><h2>Generations</h2><div class="tree" id="tree"></div><h2 style="margin-top:22px">Owner actions</h2><div class="tree actions" id="actions"></div></div></section>
+<div class="why"><b>How it is scored.</b> A pause during a marked attack is a catch. A pause the owner reverses with no attack is a false alarm. Score = catches − 2 × false alarms. At −2 the parent retires the sentinel, asks the owner to remove its key, and spawns the next generation with what it learned.</div>
+</div>
+<script>
+const $=s=>document.querySelector(s);const fmt=t=>new Date(t*1000).toISOString().slice(11,19);
+const usd=u=>(u/1e6).toLocaleString(undefined,{maximumFractionDigits:2});
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let lastFired='';
+async function post(path,body){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});tick();}
+window.label=(m,t,o)=>post('/api/label',{member:m,time:t,outcome:o});
+function render(s){
+ const members=s.members||[],lineage=s.lineage||[],events=s.events||[];
+ $('#mode').textContent=s.rehearsal?'rehearsal · simulated payments':s.dry_run?'dry run · pauses not sent':(s.network||'testnet');
+ $('#mode').className='pill '+(s.rehearsal||s.dry_run?'rehearsal':'');
+ $('#state').textContent=s.paused?'vault paused':'vault live';$('#state').className='pill '+(s.paused?'paused':'live');
+ $('#sub').innerHTML=`Vault <b>${esc(s.vault||'')}</b>. Each sentinel reads its payments and may pause it. NEAR lets a sentinel's key do nothing else: no paying, no unpausing, no changing rules.`;
+ const cap=$('#caption');cap.hidden=!s.caption;cap.textContent=s.caption||'';
+ const fired=(lineage.filter(e=>e.action==='pause').pop()||{}).member||'';
+ $('#cards').innerHTML=members.map(m=>{
+  const open=(m.pauses||[]).filter(p=>p.outcome==='open'),last=(m.pauses||[]).slice(-1)[0];
+  const health=Math.max(0,Math.min(100,50+m.score*15));
+  return `<div class="card ${m.status} ${m.id===fired&&s.paused?'fired':''}"><h3><span class="kind">${esc(m.kind)}</span><span class="gen">generation ${m.generation} · ${m.status}</span></h3>
+  <div class="score ${m.score<0?'neg':m.score>0?'pos':''}">${m.score>0?'+':''}${m.score}</div>
+  <div class="meta">${m.catches} caught · ${m.false_alarms} false alarms · ${esc(Object.entries(m.params).map(([k,v])=>k.replace(/_/g,' ')+' '+v).join(' · '))}</div>
+  <div class="bar"><i style="width:${health}%;background:${m.score<0?'var(--ember)':'var(--ok)'}"></i></div>
+  ${last?`<div class="last">“${esc(last.reason)}”<div class="meta">${fmt(last.time)} · ${esc(last.outcome.replace('_',' '))}</div>
+   ${open.length&&m.status==='active'?`<div class="btns"><button class="ok" onclick="label('${m.id}',${last.time},'catch')">It was an attack</button><button onclick="label('${m.id}',${last.time},'false_alarm')">False alarm</button></div>`:''}</div>`:'<div class="meta" style="margin-top:10px">No pauses yet. Watching.</div>'}
+  ${m.notes&&m.notes.length?`<div class="meta">notes: ${esc(m.notes.slice(-1)[0])}</div>`:''}
+  <div class="meta">key ${esc(m.public_key.slice(0,22))}…</div></div>`;}).join('')||'<div class="empty">No sentinels yet. Run <code>styx-sentinels init</code>.</div>';
+ // timeline
+ const tl=$('#timeline'),pts=events.filter(e=>e.time);if(!pts.length){tl.innerHTML='<div class="empty">No payments yet.</div>';}else{
+  const t0=Math.min(...pts.map(e=>e.time)),t1=Math.max(...pts.map(e=>e.time))+1,x=t=>((t-t0)/(t1-t0))*96+2+'%';
+  const flagged=new Set(lineage.filter(e=>e.action==='pause'&&e.evidence&&e.evidence.recipient).map(e=>e.evidence.recipient));
+  const max=Math.max(...pts.filter(e=>e.type==='payment').map(e=>e.amount),1);
+  let html=(s.attack_windows||[]).map(([a,b])=>`<div class="atk" style="left:${x(a)};width:calc(${x(b)} - ${x(a)})"></div>`).join('');
+  html+=pts.map(e=>e.type==='payment'?`<div class="p ${flagged.has(e.recipient)||/drain/.test(e.recipient)?'drain':''}" title="${usd(e.amount)} to ${esc(e.recipient)}" style="left:${x(e.time)};height:${10+70*e.amount/max}px"></div>`:
+   e.type==='sentinel_pause_sent'||e.type==='sentinel_paused'?`<div class="x" style="left:${x(e.time)}"><span>${esc(e.sentinel||'sentinel')} paused</span></div>`:e.type==='unpaused'?`<div class="u" style="left:${x(e.time)}"></div>`:'').join('');
+  tl.innerHTML=html;}
+ // lineage feed
+ const say=e=>({spawn:`<b>${esc(e.member)}</b> spawned${e.parent?` from ${esc(e.parent)}`:''}${e.notes&&e.notes.length?` · “${esc(e.notes.slice(-1)[0])}”`:''}`,
+  pause:`<b>${esc(e.member)}</b> paused the vault: “${esc(e.reason)}”`,retire:`<b>${esc(e.member)}</b> retired at score ${e.score} (${e.false_alarms} false alarms)`,
+  settled:`<b>${esc(e.member)}</b>'s pause settled as <b>${esc(e.outcome.replace('_',' '))}</b>: ${esc(e.why||'')}`,labelled:`<b>${esc(e.member)}</b>'s pause marked <b>${esc(e.outcome.replace('_',' '))}</b> by the owner`,
+  attack_marked:`attack marked: ${esc(e.label)}`,pause_failed:`<b>${esc(e.member)}</b> tried to pause and failed: ${esc(e.error)}`}[e.action]||esc(e.action));
+ $('#feed').innerHTML=lineage.slice().reverse().map(e=>`<div class="row"><time>${fmt(e.time)}</time><div><span class="tag t-${e.action}">${esc(e.action.replace('_',' '))}</span>${say(e)}</div></div>`).join('')||'<div class="empty">Nothing yet.</div>';
+ // generations
+ const kinds=[...new Set(members.map(m=>m.kind))];
+ $('#tree').innerHTML=kinds.map(k=>`<div class="lineage"><span class="kind">${esc(k)}</span>${members.filter(m=>m.kind===k).map(m=>`<span class="node ${m.status}">g${m.generation} ${m.score>0?'+':''}${m.score}</span>`).join('<span class="arrow">→</span>')}</div>`).join('')||'<div class="empty">—</div>';
+ const acts=(s.owner_actions||[]);
+ $('#actions').innerHTML=acts.length?`<ul style="padding-left:18px;margin:0">${acts.slice(-8).reverse().map(a=>`<li>${a.action==='enable'?'Install':'Remove'} <b>${esc(a.member)}</b>'s key · ${s.rehearsal?'<span class="meta">(rehearsal)</span>':`<a href="${esc(a.link)}" target="_blank" rel="noopener">review and sign</a>`}</li>`).join('')}</ul>`:'<div class="empty">Nothing to sign.</div>';
+}
+async function tick(){try{render(await (await fetch('/api/state',{cache:'no-store'})).json());}catch(e){}}
+tick();setInterval(tick,1500);
+</script></body></html>
