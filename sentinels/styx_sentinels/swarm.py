@@ -86,10 +86,28 @@ def build(member: Member, completer: Callable | None, background: bool = False):
         if completer is None:
             raise ValueError("the judge needs a model (NEARAI_API_KEY)")
         return Judge(complete=completer, name=member.id, notes=list(member.notes), background=background, **member.params)
-    raise ValueError(member.kind)
+    from . import plugins
+    module = plugins.registry().get(member.kind)
+    if module is None:
+        raise ValueError(f"no built-in or plug-in sentinel named {member.kind}")
+    return plugins.PluginSentinel(member.kind, module, member.id, dict(member.params), list(member.notes))
+
+
+BUILT_IN = ("burst", "concentration", "judge")
 
 
 def adjust(kind: str, params: dict, reason: str, direction: str = "looser") -> tuple[dict, str]:
+    if kind not in BUILT_IN:
+        from . import plugins
+        try:
+            child, note = plugins.mutate(kind, params, direction)
+            return child, note or f"The {kind} plug-in mutated its params ({direction}) after {reason}."
+        except plugins.PluginError as error:
+            return dict(params), f"The {kind} plug-in could not mutate ({error}); the child keeps its parent's params."
+    return _adjust_built_in(kind, params, reason, direction)
+
+
+def _adjust_built_in(kind: str, params: dict, reason: str, direction: str = "looser") -> tuple[dict, str]:
     """The one mutation a child inherits, and the note it carries. `looser` after false alarms (the
     parent paused on normal traffic), `stricter` after misses (an attack went by)."""
     p = dict(params)
@@ -372,10 +390,10 @@ class Swarm:
                 continue  # e.g. a judge with no model configured: it waits, it is not removed
             verdict = detector.judge(unreviewed, now, self.daily_limit)
             error = getattr(detector, "error", None)
-            if m.kind == "judge" and error != self.judge_errors.get(m.id):
+            if error != self.judge_errors.get(m.id):
                 self.judge_errors[m.id] = error
                 if error:
-                    self.log("judge_error", member=m.id, error=error)
+                    self.log("judge_error" if m.kind == "judge" else "plugin_error", member=m.id, error=error)
             entry = self.record_verdict(m, verdict, now) if m.kind == "judge" and getattr(detector, "fresh", False) else None
             if not verdict.pause:
                 continue
