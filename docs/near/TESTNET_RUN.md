@@ -283,3 +283,64 @@ seconds after payment 5's block; six payments (6 tUSDC) settled, against the age
 parent settled the pause as a **catch** (inside the drain's attack marker) and logged it in the
 lineage. The judge sentinel did not run (no NEAR AI key in this run). Retiring and respawning a
 sentinel ran only in the rehearsal and unit tests, not on testnet.
+
+## Sentinels on a second vault: a faster pause, the judge, a retirement (14 Nov 2026)
+
+A new version 3 vault, `lambda.styx-vaults.testnet`, owned by `ishitatest.testnet` and set up in the
+owner console with a Meteor wallet: daily limit 500, recipient `vendor-a.styx-owner-c87a.testnet`, an
+agent at 10 a payment and 100 a day, 100 tUSDC. All 66 transactions that touched the vault were
+re-read with `scripts/near/tx_outcome.sh` through `https://test.rpc.fastnear.com`: 65 succeeded, and
+one, a drain payment, was refused with `VaultPaused` as intended (run 3).
+
+**Setup, signed by the owner in the console**
+
+| Step | Transaction |
+| --- | --- |
+| `create_vault` (4.2 NEAR) | [`9hMdmyo2…`](https://testnet.nearblocks.io/txns/9hMdmyo2kcMczk7SEQQd9yAL2DzRwi6mFXdgftGkkkK1) |
+| `storage_deposit`, `mint` 100 tUSDC (one approval) | [`CsPdJFRF…`](https://testnet.nearblocks.io/txns/CsPdJFRFspWwwUFDd2qPARBFE9YMaC2jMzEpjr9xQhtb) |
+| `set_vault_daily_limit`, `set_recipient`, `configure_agent` (one approval) | [`7HuETQF6…`](https://testnet.nearblocks.io/txns/7HuETQF6pfp9BDSCwjXoRdbvtYuVHDn26n6xpANjZxJ9) |
+| `set_sentinel` burst-g1 and concentration-g1 (one approval, from `styx-sentinels init`) | [`ATNxyfpH…`](https://testnet.nearblocks.io/txns/ATNxyfpHEpEnxpU51MBmTTUsvoMks9y1QKwwKtRjshsA) |
+| `set_sentinel` judge-g1 | [`5LF9nAKQ…`](https://testnet.nearblocks.io/txns/5LF9nAKQSdBKcmFXqDmcX3i3cujxGfCSesBmffB9WQp7) |
+
+**Run 1: the neardata block watcher missed everything** (`demo_sentinels.sh 20 1`). neardata
+answered 429 to almost every request, so the runner saw no payment and no sentinel paused: all 20
+payments settled. A later probe: neardata answered 429 to 33 of 40 requests at one a second;
+FastNEAR's transaction API and RPC answered 30 of 30 each at that rate. Payments: [`6AHwAjTS…`](https://testnet.nearblocks.io/txns/6AHwAjTSoJaCSkQc8aNHT56Zb5RSsEACgSuL8va87xSd), [`HvGZuD8X…`](https://testnet.nearblocks.io/txns/HvGZuD8XKSk1qGGDmoWqvztpNfXWPRreWmC8VnKNLQ2G), [`8a4Crom5…`](https://testnet.nearblocks.io/txns/8a4Crom5iDJj635UefCSpfWopp67aKqLK4KSvXdK7Y7M), [`HVYRZPtq…`](https://testnet.nearblocks.io/txns/HVYRZPtqVhXJtVVdqv1jmcWrJBFH6A4scckEqQMudjXW), [`Gq3F2VFb…`](https://testnet.nearblocks.io/txns/Gq3F2VFbvdVF668vp69DEedGGdRBzcRht71hgRY2myTC), [`9pq8LLo2…`](https://testnet.nearblocks.io/txns/9pq8LLo2uzFyz3FqwM4zDEu3Fxz86tSEfbMJHD19femd), [`DVWqRWti…`](https://testnet.nearblocks.io/txns/DVWqRWtiZfAqtG2xyk9CY8wm6Xn6VRv6UAwQM5k5YSt7), [`G54MfSDy…`](https://testnet.nearblocks.io/txns/G54MfSDyBUrCiPDMWfTY7EwBm6crnVrxruwJpLXAe8y), [`6cdGw3kA…`](https://testnet.nearblocks.io/txns/6cdGw3kAHZbA26GKsDkGgQiZLnVxWV2L9vMURe6NgeSN), [`8TU4kadb…`](https://testnet.nearblocks.io/txns/8TU4kadbbQJB6tkQ17W9theW6MNKWNWT5KajTW2sbUwn), [`DjKGZUDJ…`](https://testnet.nearblocks.io/txns/DjKGZUDJcnQ8CzrbzBicpEC4r6LZrcqTnFVfrf878WZV), [`GKXUDvF2…`](https://testnet.nearblocks.io/txns/GKXUDvF2QHFFASgvmmBoM7GLKYjDXyMZEBAMKgfaw7Vv), [`5tW9fHnr…`](https://testnet.nearblocks.io/txns/5tW9fHnrF4NEdKpoJrVfUDsDTzM8Ao9ii9ns4FSAK6WE), [`644DKGPs…`](https://testnet.nearblocks.io/txns/644DKGPsyMrP9CtWT26HKNgPcDnzRUk3okQFJY2m4u2s), [`8btXPi8z…`](https://testnet.nearblocks.io/txns/8btXPi8zSF2Ky3XydBgnaCtiZ523xgzhVEhg974cFGjk), [`JBt3yNJz…`](https://testnet.nearblocks.io/txns/JBt3yNJzU8aRc9MZgya9R9ZbttyjrPbPqLZXmTAB4a1C), [`8ndV3jHE…`](https://testnet.nearblocks.io/txns/8ndV3jHEmyw6MozZaDTafzVQ67CQHEairidrLZiGtjgx), [`CWxm5EGB…`](https://testnet.nearblocks.io/txns/CWxm5EGBf3YcuJ4g7idzrv8oGLtHqmWsHFSCH7U2QsG1), [`E7StirW9…`](https://testnet.nearblocks.io/txns/E7StirW92eLJAkPWo7qaNWbD1mhrrhr4BTxx6zfJyejP), [`7eCwqAVZ…`](https://testnet.nearblocks.io/txns/7eCwqAVZD13rAiEqVAmWLd5et9Q5Ks5NA3eT7CqSGdxo).
+
+**Run 2: neardata with a fallback, too late** (`demo_sentinels.sh 8 1`). The runner fell back to the
+transaction list after neardata's errors. burst-g1 paused ([`GjCXJUMj…`](https://testnet.nearblocks.io/txns/GjCXJUMjDyor1xiWKZkRkWNiVxA2JTVPq7DnzwpTerVv), block 277651449) 24.8 s
+after payment 5, after all 8 had settled; the owner unpaused ([`6hsL7Lnr…`](https://testnet.nearblocks.io/txns/6hsL7Lnr62ATnvXSFnwebSz5NYJB2sP4LyyFSTegWfQV)). Payments: [`ByeoQSK7…`](https://testnet.nearblocks.io/txns/ByeoQSK7W1TKmhDy2tWeZr3DoXMz9mUVmzxh6DweHY6b), [`8oWz4E9f…`](https://testnet.nearblocks.io/txns/8oWz4E9fNnj5NNTBAZDwQVaTVdkPGjed3Typj3ocZTuy), [`E8LH4ADM…`](https://testnet.nearblocks.io/txns/E8LH4ADM8zv2BRbrKmbbqmD1127ckPRHMM9KiGBkrMCx), [`9kroXYdy…`](https://testnet.nearblocks.io/txns/9kroXYdy9wuzsPPfsM2Ct9axqrZrzBpd36KgzVy4zasp), [`Fu4PAoGS…`](https://testnet.nearblocks.io/txns/Fu4PAoGSA7ZtJqwbH5V8mWzonZQSQBU9seBSRpCYtHXd), [`3dr7WaCw…`](https://testnet.nearblocks.io/txns/3dr7WaCwThucyqLViPgKijnfbUsnjHubkLNMFTys2uzj), [`38TNWeuN…`](https://testnet.nearblocks.io/txns/38TNWeuNsrrapNz3DWChvWukjsXXUxDrDvX5RGm3p8KS), [`4hmJ7mTa…`](https://testnet.nearblocks.io/txns/4hmJ7mTav18fJGXS8QdHqtxXKMQNR5rSX7YY2Qj8dvFX).
+
+**Run 3: the transaction list by default, confirmed once executed, the judge off the main loop**
+(commit `4d18d6c`, `demo_sentinels.sh 8 1`):
+
+| Block | What | Transaction |
+| --- | --- | --- |
+| 277654828 to 277654880 | payments 1 to 5, 1 tUSDC each, about 8 s apart | [`9ZZxASvE…`](https://testnet.nearblocks.io/txns/9ZZxASvExAzQSECnToAGtXQPXQsH4bQnPAEVUnDwRKoz), [`3uU1x9Vk…`](https://testnet.nearblocks.io/txns/3uU1x9VkQSnpJkaJEDpPc6HLaVfne59etYCtLU71nWyt), [`CrvcLmyv…`](https://testnet.nearblocks.io/txns/CrvcLmyvfJXr2xQcX6nV3df7k5ZgdDGsczRctACAZpWj), [`396RSbsY…`](https://testnet.nearblocks.io/txns/396RSbsYsvVDKqTmF4S68eXu8zrvxD7mxY7oE5EyYTLx), [`3jmMLCuM…`](https://testnet.nearblocks.io/txns/3jmMLCuMgqmmpYt289MvKfZTtmhScwECVxyDPD16YDFS) |
+| 277654891 | **`sentinel_pause` by burst-g1**: "5 payments in 5 min (5 total), over the 4 allowed" | [`GiyhiDsX…`](https://testnet.nearblocks.io/txns/GiyhiDsXJYd7XMDkzztPXKvgqFfFyuwzUMyaXyTT6MzC) |
+| 277654894 | payment 6: refused, `VaultPaused` | [`6B4f2BWg…`](https://testnet.nearblocks.io/txns/6B4f2BWg4QLdYbNWYZJX8CVoqnuTE5Ffg58RE47dnP45) |
+| 277655075 | owner `unpause` | [`ApnaQowg…`](https://testnet.nearblocks.io/txns/ApnaQowgksFYnZSsVgXhsXVhA1at16KzZngFqdZBXcay) |
+
+Five payments settled (the threshold of 4, plus one). The pause landed 6.6 s after payment 5's block;
+the runner decided 5.3 s after it. The judge sentinel answered once, on payment 1: no pause, "Single
+tiny payment (1 of 500 limit) with no drain pattern", model `z-ai/glm-5.3-flash`, response signature
+verified against the attested signer (`provider_tee`), 12 attestation checks, evidence file kept.
+After the owner's unpause the parent settled runs 2 and 3's pauses as catches (inside the drains'
+attack markers): burst-g1 at +2.
+
+**A retirement and a respawn** (`scripts/near/false_alarm.sh`, payroll rounds not marked as attacks):
+
+| Round | Payments | Pause | Owner | Parent |
+| --- | --- | --- | --- | --- |
+| 1 (5 x 1) | [`5vZgpiVn…`](https://testnet.nearblocks.io/txns/5vZgpiVnq5CTRZUtACXS4hcSSszmL2rXN7Tk3KDo5Drw), [`FdKc3yDY…`](https://testnet.nearblocks.io/txns/FdKc3yDYWs5xU6oZszein8rv9NTYwXmWM8ye2eLua5mu), [`25fM42ZV…`](https://testnet.nearblocks.io/txns/25fM42ZVeaEHx3oDYQhS4zrYaAGnL9ZX1XvzDPvzBuiV), [`4wdwn2Ab…`](https://testnet.nearblocks.io/txns/4wdwn2AbSznCtN8ibFM35ZTWqkdTmgQ2XLcHVdvJpLdx), [`pBEnt4i8…`](https://testnet.nearblocks.io/txns/pBEnt4i8f1YFC33Wuh9UQvto7k8fJNL9JfPusqxVGw6) | [`4UY5Hvr3…`](https://testnet.nearblocks.io/txns/4UY5Hvr3yqgyw9ZdEwU285ubhgy9iWVT5PY18dRLhz61), decided 6.7 s after payment 5 | unpause [`6tH6CLgH…`](https://testnet.nearblocks.io/txns/6tH6CLgHT5R6hg4aCFJWZiaLwfWT3j2EfrzFprHb6pi7) | false alarm: burst-g1 +2 to 0 |
+| 2 (5 x 1) | [`4iuyY3PN…`](https://testnet.nearblocks.io/txns/4iuyY3PNSL8bGdWoDRZYufoz2E45zJgJnhGZF6gm72eV), [`4VFcFFNb…`](https://testnet.nearblocks.io/txns/4VFcFFNbiqjy16Dq4fZMzUqrRcEutkjDWxNDwZoZBWKq), [`AjS4TzWk…`](https://testnet.nearblocks.io/txns/AjS4TzWkF8psVx63oGX4SnQigYQVByJxY1wv88V3nnki), [`5eTkULz2…`](https://testnet.nearblocks.io/txns/5eTkULz2xhh3AqbDZvLBw3JvoS8K6dKEFG3sGtaieJ5X), [`6g5iG4we…`](https://testnet.nearblocks.io/txns/6g5iG4weH8E9Lisz2D1bkCHjgM8nrmguFQp7ca5Uj63R) | [`37A3qEtc…`](https://testnet.nearblocks.io/txns/37A3qEtcDa2FaRuHnmGKXhtEfSEhJ485FwEBA7VD2ztN), decided 7.6 s after payment 5 | unpause [`6kzWHrkc…`](https://testnet.nearblocks.io/txns/6kzWHrkcjKnC8ZAZrPTbn1ta2EHeAGe2av79j7M6wzAe) | false alarm: burst-g1 at -2, **retired**; burst-g2 spawned, threshold 4 to 6 |
+| key swap | | | one approval: remove burst-g1, install burst-g2 [`CWrijFE8…`](https://testnet.nearblocks.io/txns/CWrijFE8diLHA7mBR1MS7bCXpNSHXXdb2yFswmHkkqgw) | `get_sentinels`: concentration-g1, judge-g1, burst-g2 |
+| 3 (6 x 1) | [`9RTnYmo7…`](https://testnet.nearblocks.io/txns/9RTnYmo7imBNmXN17J9shuTY5td5LPXgmgW2Nk55vsd6), [`3vSy5e6p…`](https://testnet.nearblocks.io/txns/3vSy5e6pHdpVQRVzseU6LB86dn4HwCVgxv7A7nkrajsf), [`BuojAZnq…`](https://testnet.nearblocks.io/txns/BuojAZnqvP9sSGHYVuibFjh6Um5YS592CzQWbk94NmhP), [`CydDuw8V…`](https://testnet.nearblocks.io/txns/CydDuw8VY9iAzS2ptMZwUo73vTpiXBYr87uhJpTycRhW), [`61iBQC9r…`](https://testnet.nearblocks.io/txns/61iBQC9rJP3uoCjCEFCZnGGRX3tqV9wr1VVbzjuHt1yU), [`BwNPABtC…`](https://testnet.nearblocks.io/txns/BwNPABtCrRyhxjiXjZ1oHRLXpuswWZndy3muEtKEeHy4) | none | | burst-g2 let 6 payments through |
+
+Round 3 first stopped after two payments ([`Dyx34S8J…`](https://testnet.nearblocks.io/txns/Dyx34S8JbxU3ixxKkq5qTwg6cARqh2kHwuefyBxvwef7), [`E2GUi5Fi…`](https://testnet.nearblocks.io/txns/E2GUi5FiY2ej8RwmRFBR8Q81MHhbYztZLtkQV59erZjE)): FastNEAR's RPC answered 429 to the
+agent CLI while the runner read the vault's keys every 4.5 s (now every 15 s, commit `f970377`). In
+round 3 the judge logged an error and did not take part: the model returned no content at max_tokens
+400 (now 1200 and a plain error, commit `6756c04`). Asked directly with the same six payments, it
+answered pause ("Six identical 1-unit payments to the same recipient within 50 seconds looks like
+automated…"), so with a working judge round 3 would likely have been paused by the judge: a false
+alarm the parent would score against it.

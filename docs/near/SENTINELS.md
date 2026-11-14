@@ -25,15 +25,21 @@ Contract unit tests cover each of these rules: 70 pass in `contracts/near/styx-v
 
 ## The swarm (`sentinels/`, the `styx-sentinels` command)
 
-- **Watcher.** It lists the vault's transactions through FastNEAR's transaction API (NearBlocks as
-  fallback), confirms each one with RPC, and reads the vault's own receipt logs: payments (NEAR, EVM and x402), pauses and unpauses.
+- **Watcher.** Every 1.5 s it lists the vault's transactions through FastNEAR's transaction API
+  (NearBlocks as fallback), confirms each new one with RPC once it has executed, and reads the vault's
+  own receipt logs: payments (NEAR, EVM and x402), pauses and unpauses. `--source blocks` reads
+  neardata block by block instead; neardata answered 429 to 33 of 40 anonymous requests at one a
+  second, so it is not the default.
 - **Three sentinels, each with its own key** (kept in `~/.styx-near/sentinels/keys/<vault>/`, mode 600):
   - `burst`: more than N payments in M minutes (starts at 4 in 5 minutes);
   - `concentration`: one recipient takes more than X% of the vault's daily limit within an hour
     (starts at 40%);
   - `judge`: a model on NEAR AI Cloud, through `agent-near-ai`'s attested client. It reads the last
-    20 payments and answers `{pause, reason}`. The attestation evidence is kept with each verdict.
-    It runs only when `NEARAI_API_KEY` is set.
+    20 payments and answers `{pause, reason}`. It asks on its own thread, once per new payment and at
+    most 12 times a run (`STYX_JUDGE_MAX_CALLS`), so a slow answer never holds up the rules. Each
+    verdict keeps a summary in the state (model, whether the response signature verified, the
+    attestation checks) and the full evidence in `<home>/evidence/`, shown on the live page. It runs
+    only when `NEARAI_API_KEY` is set.
 - **Pausing.** A sentinel pauses through the agent CLI's `sentinel_pause` request, signed with its own
   key at 20 Tgas, inside the key's 0.05 NEAR allowance. A sentinel whose key is not yet on the vault does not try. After the owner unpauses, sentinels
   judge only newer payments.
@@ -41,8 +47,10 @@ Contract unit tests cover each of these rules: 70 pass in `contracts/near/styx-v
   - A pause during a marked attack is a **catch**. `drain_attack.sh` marks its run in
     `$STYX_NEAR_STATE_ROOT/sentinel-attack.json`; `styx-sentinels mark-attack` marks one by hand.
   - A pause the owner reverses with no attack marked is a **false alarm**.
-  - Score = catches − 2 × false alarms. At −2 the parent retires the sentinel and spawns the next
-    generation with a note: a rule's threshold goes up, and the judge is told what it got wrong.
+  - An attack window that closes with no pause from any sentinel is a **miss** for every active one.
+  - Fitness = catches − 2 × false alarms − misses. At −2 the parent retires the sentinel and spawns
+    the next generation with one change: looser after false alarms (a rule's threshold goes up, the
+    judge is told what it got wrong), stricter after misses.
   - It asks the owner to remove the old key and install the new one. One console link signs both in
     one approval.
   - Every decision is a line in `~/.styx-near/sentinels/<vault>/lineage.jsonl`: spawn, pause, settled,
@@ -53,9 +61,15 @@ Contract unit tests cover each of these rules: 70 pass in `contracts/near/styx-v
   - the lineage and the generations;
   - the key changes waiting for the owner.
 
-Tests: 25 runner tests cover the detectors on fixture streams, scoring, and the retire/respawn
-decision. They also cover a mocked judge, the attack marker, the CLI request, owner links and key
-sync. The page has 5 unit tests. None of these tests use the network.
+Tests: 51 runner tests cover the detectors on fixture streams, scoring, misses and the retire/respawn
+decision. They also cover the watchers (fixture blocks, rate limits, fallback), a mocked judge (on its
+thread, its call cap, its evidence), the attack marker, the CLI request, owner links, key sync,
+`quickstart` and `names`. The page has 7 unit tests. None of these tests use the network.
+
+One command for a vault: `uv run --project sentinels styx-sentinels quickstart --vault <vault> --cli
+sdk/near/target/release/styx-near-vault` makes the keys, prints the one console link, waits until the
+vault shows every key, then watches. `styx-sentinels names --vault <vault>` writes a file for the
+console's Import names.
 
 ## The owner console
 
@@ -68,7 +82,7 @@ The **Sentinels** panel, for version 3 vaults:
 The parent's links (`?sentinel_enable=…&sentinel_label=…&sentinel_remove=…`) open that review
 prefilled, once the owner is connected. Before it opens, the console rereads `get_sentinels`.
 
-Tests: 76 console unit tests, plus `npm run smoke:sentinels`. That smoke runs in a browser with a
+Tests: 78 console unit tests, plus `npm run smoke:sentinels`. That smoke runs in a browser with a
 stand-in wallet: the parent's link opens one review with two calls, the pause reason renders as
 text, and pasting a key signs one `set_sentinel`. The existing smokes still pass.
 
@@ -121,6 +135,19 @@ On `sentinels.styx-vaults.testnet` ([TESTNET_RUN.md](TESTNET_RUN.md#sentinels-on
 The same sentinel key, used to call `unpause`, `withdraw`, `set_vault_daily_limit` or `pay`, was
 refused by NEAR before any block.
 
-Not yet on testnet:
-- the judge sentinel, which needs a NEAR AI Cloud key;
-- a retirement and respawn, which ran only in the rehearsal and the unit tests.
+On a second vault, `lambda.styx-vaults.testnet`, owned through a Meteor wallet ([TESTNET_RUN.md](TESTNET_RUN.md#sentinels-on-a-second-vault-a-faster-pause-the-judge-a-retirement-14-nov-2026)):
+1. **A faster pause.** With the transaction-list watcher (every 1.5 s, confirmed once executed),
+   burst-g1 paused a drain after 5 payments, the threshold plus one. The pause landed 6.6 s after the
+   fifth payment's block, and the sixth payment was refused with `VaultPaused`. Two earlier runs that
+   read neardata were rate-limited: one missed all 20 payments, the other paused after 8.
+2. **The judge on NEAR AI Cloud.** In the same run the judge answered on the first payment (no pause),
+   with model `z-ai/glm-5.3-flash` and its response signature verified against the attested signer.
+3. **A retirement and a respawn.** Two payroll rounds, not marked as attacks, were each paused by
+   burst-g1 (decided 6.7 s and 7.6 s after the fifth payment) and unpaused by the owner. The parent
+   scored two false alarms, burst-g1 reached −2 and was retired, and burst-g2 was spawned with a
+   threshold of 6. The owner signed one approval that removed burst-g1's key and installed burst-g2's.
+   A third round of six payroll payments then went through without a pause.
+
+In that third round the judge returned no answer (the model's reasoning used its 400-token budget,
+now 1200). Asked directly about the same six payments, it said to pause. The judge's false alarms on
+payroll, and its scoring by the parent, have not run on testnet.
