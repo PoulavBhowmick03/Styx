@@ -86,7 +86,9 @@ def test_a_registered_vault_is_watched_and_paused_only_once_its_keys_are_install
     s, feeds, pausers, clock = service(tmp_path, rpc=rpc)
     s.register(V3)
     drain = [Payment(payment_id=f"p{i}", agent="a", recipient="v.testnet", amount=1_000_000, time=1000 + 8 * i, tx=f"T{i}") for i in range(6)]
+    s.ticks = 3  # not a sync round, but a new vault's keys are read on its first round anyway
     s.tick()  # creates the watcher; keys not installed yet
+    assert s.state(V3)["keys_known"] is True
     feeds[V3].batches.append(Batch(payments=drain))
     clock["t"] = 1050
     assert s.tick() == [] and not pausers[V3].calls  # no key on the vault: no pause

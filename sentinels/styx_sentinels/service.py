@@ -134,7 +134,7 @@ class Service:
                 batch = watcher.poll()
             except Exception:  # noqa: BLE001 (one vault's bad round must not stop the others)
                 continue
-            if self.ticks % sync_every == 0:
+            if self.ticks % sync_every == 0 or swarm.installed is None:  # a new vault syncs on its first round
                 try:
                     keys = self.rpc.view(vault, "get_sentinels")
                     with self.lock:
