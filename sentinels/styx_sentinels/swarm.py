@@ -98,6 +98,7 @@ class Swarm:
         self.daily_limit: int | None = None
         self.attack_windows: list[tuple[float, float, str]] = []
         self.owner_actions: list[dict] = []  # links the owner needs to sign (enable / remove keys)
+        self.installed: set[str] | None = None  # keys get_sentinels reports; None when unknown (rehearsal)
         self.detectors: dict[str, Any] = {}
         # Payments up to the owner's last unpause were reviewed by the owner; sentinels judge only newer ones.
         self.reviewed_until = 0.0
@@ -129,7 +130,7 @@ class Swarm:
     def save(self) -> None:
         state = {
             "vault": self.vault, "network": self.network, "updated": self.now(), "paused": self.paused,
-            "daily_limit": self.daily_limit, "reviewed_until": self.reviewed_until, "attack_windows": self.attack_windows, "owner_actions": self.owner_actions,
+            "daily_limit": self.daily_limit, "reviewed_until": self.reviewed_until, "attack_windows": self.attack_windows, "owner_actions": self.owner_actions, "sign_all": self.sign_all_link(),
             "members": [{**asdict(m), "score": m.score, "catches": m.catches, "false_alarms": m.false_alarms} for m in self.members],
             "history": [asdict(p) for p in self.history[-200:]], "events": self.events[-300:],
         }
@@ -154,10 +155,41 @@ class Swarm:
                    key_file=str(key_file), notes=list(notes or []), born=self.now())
         self.members.append(m)
         self.owner_actions.append({"action": "enable", "member": m.id, "public_key": public_key,
-                                   "link": f"{self.console_url}?vault={self.vault}&network={self.network}&sentinel_enable={public_key}"})
+                                   "link": self.link([("sentinel_enable", public_key), ("sentinel_label", m.id)])})
         self.log("spawn", member=m.id, kind=kind, generation=generation, params=params, notes=m.notes,
                  parent=parent, public_key=public_key)
         return m
+
+    def link(self, changes: list[tuple[str, str]]) -> str:
+        """A console link that opens these key changes as one review (owner-console-near readSentinelLink)."""
+        from urllib.parse import urlencode
+        return f"{self.console_url}?{urlencode([('vault', self.vault), ('network', self.network), *changes], safe=':')}"
+
+    def pending(self) -> list[dict]:
+        return [x for x in self.owner_actions if not x.get("done")]
+
+    def sign_all_link(self) -> str | None:
+        """One link, one approval, for every key change the owner has not signed yet."""
+        changes: list[tuple[str, str]] = []
+        for x in self.pending():
+            if x["action"] == "enable":
+                changes += [("sentinel_enable", x["public_key"]), ("sentinel_label", x["member"])]
+            else:
+                changes.append(("sentinel_remove", x["public_key"]))
+        return self.link(changes) if changes else None
+
+    def sync_keys(self, enabled: list[str]) -> None:
+        """The vault's get_sentinels answer: ticks off signed key changes. Until a key is installed its
+        sentinel does not try to pause (the vault would refuse it with NotSentinel)."""
+        self.installed = set(enabled)
+        changed = False
+        for x in self.pending():
+            if (x["action"] == "enable") == (x["public_key"] in self.installed):
+                x["done"] = True
+                changed = True
+                self.log("key_confirmed", member=x["member"], change=x["action"], public_key=x["public_key"])
+        if changed:
+            self.save()
 
     def active(self) -> list[Member]:
         return [m for m in self.members if m.status == "active"]
@@ -233,6 +265,8 @@ class Swarm:
         now = self.now()
         unreviewed = [p for p in self.history if p.time > self.reviewed_until]
         for m in self.active():
+            if self.installed is not None and m.public_key not in self.installed:
+                continue  # its key is not on the vault yet
             try:
                 detector = self.detector(m)
             except ValueError:
@@ -261,8 +295,11 @@ class Swarm:
                 continue
             m.status, m.retired = "retired", self.now()
             self.detectors.pop(m.id, None)
+            for x in self.pending():
+                if x["member"] == m.id and x["action"] == "enable":
+                    x["done"], x["cancelled"] = True, True  # never installed: nothing to enable now
             self.owner_actions.append({"action": "remove", "member": m.id, "public_key": m.public_key,
-                                       "link": f"{self.console_url}?vault={self.vault}&network={self.network}&sentinel_remove={m.public_key}"})
+                                       "link": self.link([("sentinel_remove", m.public_key)])})
             last = next((p.reason for p in reversed(m.pauses) if p.outcome == "false_alarm"), "")
             params, note = adjust(m.kind, m.params, last)
             self.log("retire", member=m.id, score=m.score, catches=m.catches, false_alarms=m.false_alarms)

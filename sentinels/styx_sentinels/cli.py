@@ -135,11 +135,12 @@ def main(argv=None) -> int:
     if a.cmd in ("init", "status", "label", "mark-attack"):
         for m in swarm.members:
             print(f"{m.id:18} {m.status:8} score {m.score:+d} ({m.catches} caught, {m.false_alarms} false)  {m.public_key}")
-        pending = [x for x in swarm.owner_actions if not x.get("done")]
+        pending = swarm.pending()
         if pending:
-            print("\nThe owner signs these in the console (each opens a review):")
+            print("\nThe owner signs these key changes in the console:")
             for x in pending:
-                print(f"  {x['action']:7} {x['member']:18} {x['link']}")
+                print(f"  {x['action']:7} {x['member']:18} {x['public_key']}")
+            print(f"\nAll of them in one review and one approval:\n  {swarm.sign_all_link()}")
         return 0
 
     # run
@@ -154,6 +155,8 @@ def main(argv=None) -> int:
     if marker:
         print(f"Reading attack markers from {marker_path}")
     print(f"Watching {a.vault} every {a.interval:g}s. Ctrl+C to stop.")
+    rpc = RPC(rpc_url)
+    rounds = 0
     try:
         while True:
             try:
@@ -161,6 +164,18 @@ def main(argv=None) -> int:
             except Exception as error:  # noqa: BLE001
                 print(f"watch failed this round: {error}")
                 batch = Batch()
+            if not isinstance(pauser, DryRunPauser) and rounds % 5 == 0:
+                try:
+                    keys = rpc.view(a.vault, "get_sentinels")
+                    with lock:
+                        before = swarm.installed
+                        swarm.sync_keys(keys if isinstance(keys, list) else [])
+                    if before != swarm.installed:
+                        waiting = [m.id for m in swarm.active() if m.public_key not in swarm.installed]
+                        print(f"Sentinel keys on the vault: {len(swarm.installed)}." + (f" Waiting for the owner to install: {', '.join(waiting)}." if waiting else ""))
+                except Exception as error:  # noqa: BLE001
+                    print(f"could not read get_sentinels: {error}")
+            rounds += 1
             with lock:
                 window = marker.check(time.time()) if marker else None
                 if window:

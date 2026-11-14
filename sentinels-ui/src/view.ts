@@ -64,7 +64,10 @@ export function generations(members:Member[]):string{
 }
 
 export function ownerActions(s:State):string{
- const acts=(s.owner_actions??[]).slice(-8).reverse();
- if(!acts.length) return '<p class="empty">Nothing to sign.</p>';
- return `<ul class="owner">${acts.map(a=>`<li>${a.action==='enable'?'Install':'Remove'} <b>${esc(a.member)}</b>'s key${s.rehearsal?' <span class="meta">(rehearsal)</span>':` · <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Review and sign</a>`}</li>`).join('')}</ul>`;
+ const all=s.owner_actions??[],pending=all.filter(a=>!a.done),done=all.filter(a=>a.done && !a.cancelled).length;
+ const signed=done?`<p class="meta">${done} key change${done===1?'':'s'} confirmed on the vault.</p>`:'';
+ if(!pending.length) return `<p class="empty">Nothing to sign.</p>${signed}`;
+ const items=pending.slice(-8).reverse().map(a=>`<li>${a.action==='enable'?'Install':'Remove'} <b>${esc(a.member)}</b>'s key${s.rehearsal?' <span class="meta">(rehearsal)</span>':` <span class="meta">· <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">this one</a></span>`}</li>`).join('');
+ const all_=!s.rehearsal && s.sign_all?`<a class="sign-all" href="${esc(s.sign_all)}" target="_blank" rel="noopener noreferrer">Review and sign ${pending.length===1?'it':`all ${pending.length}`} in one approval</a>`:'';
+ return `<ul class="owner">${items}</ul>${all_}${signed}<p class="meta">Only the vault owner can install or remove a sentinel key. A new sentinel waits until its key is on the vault.</p>`;
 }

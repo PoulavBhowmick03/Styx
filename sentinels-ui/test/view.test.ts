@@ -27,6 +27,10 @@ describe('swarm page',()=>{
   const actions=[{action:'enable' as const,member:'burst-g2',public_key:'k',link:'https://styxco.xyz/console/?sentinel_enable=k'}];
   expect(ownerActions({owner_actions:actions})).toContain('href="https://styxco.xyz/console/?sentinel_enable=k"');
   expect(ownerActions({rehearsal:true,owner_actions:actions})).not.toContain('href=');
+  const many={owner_actions:[...actions,{action:'remove' as const,member:'burst-g1',public_key:'j',link:'l'},{action:'enable' as const,member:'judge-g1',public_key:'m',link:'l',done:true}],sign_all:'https://styxco.xyz/console/?all=1'};
+  const html=ownerActions(many);
+  expect(html).toContain('Review and sign all 2 in one approval');expect(html).toContain('1 key change confirmed');expect(html).not.toContain('judge-g1');
+  expect(ownerActions({owner_actions:[{...actions[0],done:true}]})).toContain('Nothing to sign.');
  });
  it('draws payments, pauses, unpauses and attack bands on the timeline, and families as words',()=>{
   const html=timeline({events:[{type:'payment',time:10,tx:'a',recipient:'v.testnet',amount:2e6},{type:'sentinel_pause_sent',time:20,tx:'b',sentinel:'burst-g2'},{type:'unpaused',time:30,tx:'c'}],attack_windows:[[15,25,'drill']]});
