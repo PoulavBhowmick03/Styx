@@ -4,7 +4,7 @@
 its own cap.**
 
 [Try the agent's key, no wallet needed](https://styxco.xyz/try/) · [Open the app](https://styxco.xyz) · [Approval page](https://styxco.xyz/approval/) ·
-[Owner console](https://styxco.xyz/console/) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
+[Owner console](https://styxco.xyz/console/) · [Demo video](https://x.com/ishitaaaaw/status/2121588328910975470) · [Everything that ran on testnet](docs/near/TESTNET_RUN.md)
 
 Built for the NEAR Hackathon (tracks: AI Security & Defense, Agent Economy, Autonomous Business).
 Styx began at ETHGlobal Mumbai (5 to 7 Nov 2026) on another chain. That code was removed from this
