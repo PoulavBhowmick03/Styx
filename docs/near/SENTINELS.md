@@ -25,8 +25,8 @@ Contract unit tests cover each of these rules: 70 pass in `contracts/near/styx-v
 
 ## The swarm (`sentinels/`, the `styx-sentinels` command)
 
-- **Watcher.** It lists the vault's transactions from the NearBlocks indexer, confirms each one with
-  RPC, and reads the vault's own receipt logs: payments (NEAR, EVM and x402), pauses and unpauses.
+- **Watcher.** It lists the vault's transactions through FastNEAR's transaction API (NearBlocks as
+  fallback), confirms each one with RPC, and reads the vault's own receipt logs: payments (NEAR, EVM and x402), pauses and unpauses.
 - **Three sentinels, each with its own key** (kept in `~/.styx-near/sentinels/keys/<vault>/`, mode 600):
   - `burst`: more than N payments in M minutes (starts at 4 in 5 minutes);
   - `concentration`: one recipient takes more than X% of the vault's daily limit within an hour
@@ -35,7 +35,7 @@ Contract unit tests cover each of these rules: 70 pass in `contracts/near/styx-v
     20 payments and answers `{pause, reason}`. The attestation evidence is kept with each verdict.
     It runs only when `NEARAI_API_KEY` is set.
 - **Pausing.** A sentinel pauses through the agent CLI's `sentinel_pause` request, signed with its own
-  key. A sentinel whose key is not yet on the vault does not try. After the owner unpauses, sentinels
+  key at 20 Tgas, inside the key's 0.05 NEAR allowance. A sentinel whose key is not yet on the vault does not try. After the owner unpauses, sentinels
   judge only newer payments.
 - **The parent** keeps score:
   - A pause during a marked attack is a **catch**. `drain_attack.sh` marks its run in
