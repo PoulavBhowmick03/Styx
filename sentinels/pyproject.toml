@@ -7,7 +7,7 @@ name = "styx-sentinels"
 version = "0.1.0"
 description = "Watcher agents for a Styx vault: each can only pause it. A parent scores, retires and respawns them."
 requires-python = ">=3.11"
-dependencies = ["requests>=2.31,<3"]
+dependencies = ["requests>=2.31,<3", "cryptography>=42"]
 
 [project.optional-dependencies]
 judge = ["styx-near-ai-agent"]
