@@ -73,6 +73,7 @@ try{
    await agentPanel.locator('.name-row input').fill('Billing bot');
    await agentPanel.getByRole('button',{name:'Save'}).click();
    await agentPanel.locator('.name-row strong',{hasText:'Billing bot'}).waitFor();
+   await page.locator('#people-tools').evaluate(d=>{d.open=true;});
    const [names]=await Promise.all([page.waitForEvent('download'),page.locator('#labels-export').click()]);
    assert.deepEqual(JSON.parse(readFileSync(await names.path(),'utf8')),{vault:fixture.vault,labels:{[fixture.known.agent]:'Billing bot'}});
    await page.reload();
@@ -86,8 +87,8 @@ try{
    const submitted=await page.evaluate(()=>window.__submitted);
    assert.equal(submitted.signerId,accountId);assert.equal(submitted.receiverId,fixture.vault);
    assert.deepEqual(submitted.actions,[{type:'FunctionCall',params:{methodName:'pause',args:{},gas:'100000000000000',deposit:'0'}}]);
-   const card=page.locator('#overview-data article').filter({has:page.getByText('Paused',{exact:true})});
-   assert.match(await card.textContent(),/true/);
+   const card=page.locator('#overview-data article').filter({has:page.getByText('Status',{exact:true})});
+   assert.match(await card.textContent(),/Paused/);
    // Guided setup: the rules step sends several vault calls as one transaction, one approval.
    await page.locator('#setup-steps button',{hasText:'Set the rules'}).click();
    const setup=page.locator('#setup-form');
@@ -106,6 +107,7 @@ try{
    assert.deepEqual(batch.actions.map(a=>[a.params.methodName,a.params.args.recipient??null,a.params.gas]),[['set_vault_daily_limit',null,'30000000000000'],['set_recipient','vendor-a.styx-owner-c87a.testnet','30000000000000'],['set_recipient','vendor-b.testnet','30000000000000']]);
    assert.match(await page.locator('#setup-form').textContent(),/Styx_pvt_bot/);
    // With the indexer down, name the approver by hand; then every rule is done and the ready screen shows the hand-off.
+   await page.locator('#people-tools').evaluate(d=>{d.open=true;});
    await page.locator('#lookup select').selectOption('approver');
    await page.locator('#lookup input').fill(fixture.known.approver);
    await page.locator('#lookup button').click();

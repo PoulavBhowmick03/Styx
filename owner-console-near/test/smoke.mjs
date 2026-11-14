@@ -41,6 +41,7 @@ try{
  // Manual lookups remain usable during an indexer outage.
  indexerDown=true;await page.locator('#history').click();
  await page.getByText(/Lists unavailable/).waitFor();
+ await page.locator('#people-tools').evaluate(d=>{d.open=true;});
  await page.locator('#lookup select').selectOption('approver');
  await page.locator('#lookup input').fill(fixture.known.approver);
  await page.locator('#lookup button').click();

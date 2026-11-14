@@ -51,14 +51,20 @@ function role(){
  renderSetup();
 }
 const el=(tag:string,text:string)=>{const node=document.createElement(tag);node.textContent=text;return node;};
+// Amounts in tokens without trailing zeros: 34, not 34.000000.
+const tok=(base:string)=>amount(base).replace(/\.?0+$/,'');
+const nearShort=(yocto:string)=>{const n=Number(BigInt(yocto)/10n**18n)/1e6;return n.toFixed(n>=1?2:4).replace(/\.?0+$/,'')||'0';};
+const fold=(title:string,...children:Node[])=>{const d=document.createElement('details');d.className='tools';d.append(el('summary',title),...children);return d;};
 function card(label:string,value:string){const node=el('article','');node.className='card';node.append(el('small',label),el('strong',value));return node;}
 function render(){
  if(!facts || !context) return;
  const {info,day,spent,balance,storage}=facts;
+ const unit=info.token===TEST_TOKEN?' tUSDC':'';
  const area=$('#overview-data');area.replaceChildren(...[
-  ['Owner',info.owner],['Token',info.token],['Paused',String(info.paused)],['Vault daily limit',amount(info.vault_daily_limit)],
-  ["Today's vault spend",amount(spent)],['Vault token balance',amount(balance)],['UTC day',String(day)],['Network',context.network]
+  ['Status',info.paused?'Paused':'Live'],['Balance',tok(balance)+unit],['Spent today',`${tok(spent)} of ${tok(info.vault_daily_limit)}`],['Owner',info.owner]
  ].map(([k,v])=>card(k,v)));
+ area.querySelector('article')!.classList.add(info.paused?'paused':'live');
+ $('#overview-extra').replaceChildren(...[['Token',info.token],['Vault daily limit',amount(info.vault_daily_limit)],["Today's spend",amount(spent)],['Token balance',amount(balance)],['UTC day',String(day)],['Network',context.network],['Contract version',String(info.contract_version)]].map(([k,v])=>card(k,v)));
  // Anyone can watch spend: it is public on chain. The bot messages at 80% and 100% of the daily limit.
  const link=watchLink(BOT,context.vault);
  if(link){const a=el('a','Get spend alerts on Telegram') as HTMLAnchorElement;a.href=link;a.target='_blank';a.rel='noopener noreferrer';a.className='watch-link';a.title='The Styx bot messages you when today\'s spend passes 80% and 100% of the vault daily limit.';area.append(a);}
@@ -149,17 +155,18 @@ async function refreshKnown(){
     const state=await c.rpc.view(c.vault,'get_'+field,{[field]:key});
     if(context!==c) return;
     if(!state){panel.append(el('p','No current entry'));continue;}
-    if(kind==='approvers') panel.append(telegramBadge(key));
-    panel.append(el('pre',JSON.stringify(state,null,2)));
+    if(kind==='approvers'){panel.append(el('p',state.enabled?'Approves payments over the per-payment limit.':'Disabled: cannot approve.'),telegramBadge(key));}
+    if(kind==='recipients') panel.append(el('p',state.allowed?'The agent may pay this account.':'Blocked: the agent may not pay it.'));
+    if(kind==='agents') panel.append(el('p',state.enabled?`Pays up to ${tok(state.per_payment_limit)} per payment and ${tok(state.daily_limit)} a day.`:'Disabled: this agent cannot pay.'));
+    panel.append(fold('Technical details',el('pre',JSON.stringify(state,null,2)),...(kind==='recipients'?[]:[el('p',allowance(key))])));
     if(kind==='agents'){
      const now=Math.floor(Date.now()/1000),ex=expiry(String(state.valid_until),now);
      const line=el('p',ex.text);line.className=`expiry ${ex.state}`;panel.append(line);
      if(ex.state!=='ok'){expiring.add(key);
       if(canWrite()){const b=el('button',ex.state==='expired'?'Renew for 30 days':'Extend 30 days') as HTMLButtonElement;b.type='button';b.className='secondary';b.dataset.write='';b.disabled=busy;
        b.onclick=()=>{try{const v=extendValues(key,state,Math.floor(Date.now()/1000));previewPlan('configure_agent',v);}catch(e){toast('error','Cannot preview',e instanceof Error?e.message:String(e));}};panel.append(b);}}
-     panel.append(el('p',allowance(key)));
      const spent=await c.rpc.view(c.vault,'spent_by_agent',{agent:key,day});
-     panel.append(el('p',`${amount(spent)} / ${amount(state.daily_limit)} tokens spent today`));
+     panel.append(el('p',`${tok(spent)} of ${tok(state.daily_limit)} spent today`));
      const bar=document.createElement('progress');bar.max=10000;bar.value=BigInt(state.daily_limit)>0n?Number(BigInt(spent)*10000n/BigInt(state.daily_limit)):0;panel.append(bar);
     }
    }catch(e){panel.append(el('p',`Current state unavailable: ${e instanceof Error?e.message:'RPC failure'}`));}
@@ -184,9 +191,10 @@ function renderPayments(){
  }));
 }
 async function loadHistory(){
- if(!context) return;const c=context;$('#history-status').textContent='Reading the indexer and confirming receipt logs with RPC…';
+ if(!context) return;const c=context;$('#history-status').textContent='Loading recent activity…';
  const result=await readHistory(c.rpc,c.vault,c.network);if(context!==c) return;
- rows=result.rows;$('#history-status').textContent=result.notice;
+ rows=result.rows;const hs=$('#history-status');hs.title=result.notice;
+ hs.textContent=result.notice.startsWith('Lists unavailable')?result.notice:`Recent activity loaded (${rows.filter(r=>r.event==='payment_executed').length} payments). Hover for what was checked.`;
  const found=discoveries(rows);for(const kind of ['agents','approvers','recipients'] as const) for(const key of found[kind]) known[kind].add(key);
  renderPayments();renderSentinels();await refreshKnown();renderSetup();
 }
@@ -314,6 +322,7 @@ async function load(){
   known={agents:new Set(),approvers:new Set(),recipients:new Set()};rows=[];
   say('Reading finalized vault state…');await context.rpc.assertNetwork(context.network);await refresh();
   await walletSetup(context.network,context.vault);say('Vault state read from the chain.');
+  document.body.classList.add('has-vault');$('#vault-bar').hidden=false;$('#vault-name').textContent=context.vault;
   const loadedUrl=new URL(location.href);loadedUrl.searchParams.set('vault',context.vault);loadedUrl.searchParams.set('rpc',context.rpc.url);loadedUrl.searchParams.set('network',context.network);window.history.replaceState(null,'',loadedUrl);
   const hashes=new URLSearchParams(location.search).get('transactionHashes');
   if(hashes){const clean=new URL(location.href);clean.searchParams.delete('transactionHashes');window.history.replaceState(null,'',clean);for(const hash of hashes.split(',')) await context.rpc.transaction(hash,facts!.info.owner);await refresh();say('Wallet return: transaction finalized and state read back.');}
@@ -321,6 +330,8 @@ async function load(){
  }catch(e){facts=undefined;role();fail(e);}
 }
 loadForm.onsubmit=e=>{e.preventDefault();void load();};
+$('#switch-vault').onclick=()=>{document.body.classList.remove('has-vault');$('#vault-bar').hidden=true;window.scrollTo({top:0,behavior:'smooth'});};
+$<HTMLDetailsElement>('#sentinel-more').addEventListener('toggle',e=>{(e.currentTarget as HTMLElement).dataset.touched='1';});
 // Before a vault is read there is no wallet selector yet: Connect reads the vault in the form first,
 // then opens the wallet list, instead of doing nothing.
 $('#connect').onclick=async()=>{try{if(!selector) await load();if(selector && context) setupModal(selector,{contractId:context.vault}).show();}catch(e){fail(e);}};
@@ -538,18 +549,21 @@ function renderSentinels(){
  $('#sentinel-hosted').hidden=!SENTINEL_SERVICE;
  $('#sentinel-get').hidden=false;$('#sentinel-get-cmd').textContent=sentinelQuickstart(context.vault);
  $('#sentinel-count').textContent=`${sentinels.length} of ${MAX_SENTINELS}`;
- status.textContent=sentinels.length?'Each key below may only pause this vault.':'No sentinels yet. Install keys from styx-sentinels init, or paste them below.';
+ status.textContent=sentinels.length?'':'No sentinels yet. Add them below.';
  if(facts.info.paused){
   const box=document.createElement('div');box.className='panel paused-banner';box.append(el('strong','The vault is paused.'),el('p','The agent cannot pay until you unpause. Read the reason below; if it was a false alarm, unpause.'));
   const b=el('button','Review unpause') as HTMLButtonElement;b.type='button';b.dataset.write='';b.disabled=!canWrite()||busy;b.onclick=()=>{try{previewPlan('unpause',{});}catch(e){fail(e);}};box.append(b);pausedBox.append(box);
  }
  for(const key of sentinels){
-  const panel=el('article','');panel.className='panel sentinel';panel.append(nameRow(key),el('code',key));
-  panel.append(el('p',onChain.has(key)?allowance(key):'Access key not found on the vault yet: check the transaction outcome.'));
+  const panel=el('article','');panel.className='panel sentinel';panel.append(nameRow(key));
+  const left=facts.keys.keys.find((k:any)=>k.public_key===key)?.access_key.permission?.FunctionCall?.allowance;
+  panel.append(el('p',onChain.has(key)?`Can only pause this vault.${left?` Gas left: ${nearShort(left)} NEAR.`:''}`:'Not on the vault yet: check the transaction.'));
+  panel.append(fold('Technical details',el('p',onChain.has(key)?allowance(key):'No access key installed')));
   const b=el('button','Remove') as HTMLButtonElement;b.type='button';b.className='secondary';b.dataset.write='';b.disabled=!canWrite()||busy;
   b.onclick=()=>{try{sentinelPreview([{key,enabled:false}]);}catch(e){toast('error','Cannot preview',e instanceof Error?e.message:String(e));}};panel.append(b);list.append(panel);
  }
  add.hidden=!canWrite();
+ const more=$<HTMLDetailsElement>('#sentinel-more');if(!sentinels.length && !more.dataset.touched) more.open=true;
  const pauses=sentinelPauses(rows),box=$('#sentinel-pauses');
  if(!rows.length){box.replaceChildren(el('p','Load the event lists to see pauses and their reasons.'));box.firstElementChild!.className='note';}
  else if(!pauses.length) box.replaceChildren(el('p','No sentinel has paused this vault in the indexed window.'));

@@ -59,6 +59,7 @@ try{
  assert.equal(await page.locator('#sentinel-pauses .pause p').first().textContent(),reason);
  assert.equal(await page.locator('#sentinel-pauses b').count(),0);
  // Install by pasting a key with a name, then sign: one set_sentinel to the vault.
+ await page.locator('#sentinel-more').evaluate(d=>{d.open=true;});
  await page.locator('#sentinel-add textarea').fill(`${NEW}, Judge watcher`);
  await page.locator('#sentinel-add button').click();
  await page.locator('#review[open]').waitFor();
