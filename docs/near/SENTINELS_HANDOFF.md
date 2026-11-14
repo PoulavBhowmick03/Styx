@@ -144,3 +144,94 @@ On top of both branches:
 | +4 h | help with fixes | rebase on A, B5 demo script | deploy v3 to testnet |
 | +6 h | — | C console and docs | run the demo, record |
 | by 20:00 | — | — | decide: Sentinels or Styx as is, submit |
+
+## Interface (from task A)
+
+Implemented on `sentinels`, from `76dcbb0`. Contract and signing code **NEEDS POULAV'S REVIEW**.
+Version stays 3. This changes the unreleased guardian state layout; create a fresh vault.
+`set_guardian`, `guardian_pause` and `get_vault().guardian` are removed; there are no aliases.
+
+### Contract calls
+
+| Method | JSON args | Authorization / result |
+| --- | --- | --- |
+| `set_sentinel` | `{"key":"ed25519:<public key>","enabled":true}` (or false) | Owner predecessor only; at most 8 enabled; returns the access-key action promise. |
+| `sentinel_pause` | `{"reason":"burst: 12 payments in 60 seconds"}` | Predecessor must be the vault; signer public key must be enabled. Returns null. |
+| `get_sentinels` | `{}` | View; JSON array of enabled public-key strings, in enable order. |
+| `get_vault` | `{}` | Existing view, including `paused` and `contract_version: 3`. |
+| `unpause` | `{}` | Owner predecessor only; returns null and emits `unpaused`. |
+
+Enabling adds an ed25519 function-call access key on the vault, receiver = vault,
+method names = **only** `sentinel_pause`, allowance = **0.05 NEAR**. Disabling removes that key.
+Repeating the current enabled/disabled state makes no key action and emits no event.
+An enabled agent cannot become a sentinel; an enabled sentinel cannot become an agent (`RoleConflict`).
+Key installation/removal uses asynchronous NEAR actions: inspect the final outcome and account keys,
+not just `get_sentinels`, when confirming owner setup.
+
+Reasons are UTF-8 strings of at most **280 bytes** (empty allowed). An authorized pause while paused
+is a no-op with no event; authorization and reason length are still checked. Unpause remains owner only.
+Refusals: `NotOwner`, `SentinelMustBeEd25519`, `RoleConflict`, `TooManySentinels`, `NotSentinel`, `ReasonTooLong`.
+
+### Events
+
+All logs use `EVENT_JSON:` followed by the existing envelope:
+`{"standard":"styx","version":"1.0.0","event":"<name>","data":[{...}]}`.
+
+- `sentinel_set`: `{"sentinel":"ed25519:<public key>","enabled":true}` (or false), on a role change.
+- `sentinel_paused`: `{"sentinel":"ed25519:<public key>","reason":"...","day":1,"vault_day_spent":"6000000"}`.
+  `day` is a JSON number, UTC Unix seconds / 86400. Spend is a decimal-string U128 in token base units,
+  from the vault's current day counter at pause time (including reserved in-flight payments).
+- `unpaused`: `{}`, from the existing owner method. Owner `pause` continues to emit `paused` with `{}`.
+  A sentinel emits `sentinel_paused`, without an additional `paused` event.
+
+### CLI and Python seam
+
+Send one JSON request on stdin to `styx-near-vault`:
+
+```json
+{"method":"sentinel_pause","reason":"burst: 12 payments in 60 seconds"}
+```
+
+Successful final outcome: `{"status":"ok","tx_hash":"<NEAR transaction hash>"}`.
+Errors retain the existing `{status:"error",code,message}` response and nonzero exit.
+The request rejects missing or extra fields. It signs as the **vault account**, using only
+`STYX_NEAR_SENTINEL_KEY_FILE`; it never falls back to the agent key.
+
+Required settings: `STYX_NEAR_VAULT`, `STYX_NEAR_SENTINEL_KEY_FILE`, `STYX_NEAR_STATE_ROOT`.
+Use `STYX_NEAR_NETWORK=testnet` (the default); the vault must end in `.testnet` and report version 3.
+`STYX_NEAR_RPC_URL` defaults to `https://rpc.testnet.near.org`. Key JSON must hold `private_key`
+or `secret_key`, with owner-only permissions (`chmod 600`). Keep keys under `~/.styx-near/sentinels/`
+and all state outside the repository. The sentinel path does not open the payment journal.
+Python: `VaultSeam(binary=...).call("sentinel_pause", reason="...")`; it forwards the same request.
+
+CLI vault checking now accepts versions 1–3. Proposing against a paused vault returns the named
+`VaultPaused` refusal (`POLICY_LIMIT`), matching a transaction-time refusal.
+
+### Scripts and runner marker
+
+- `scripts/near/deploy_v3.sh`: reads `~/.styx-near/v3.env` (override `STYX_NEAR_DEMO_ENV`, still under
+  `~/.styx-near/*.env`). Builds vault first, rebuilds factory with that embedded wasm, then deploys
+  the existing testnet factory using its external legacy keychain. `FACTORY` defaults to
+  `styx-vaults.testnet`; `NETWORK` must be `testnet`. Prints fresh-vault setup steps.
+- `scripts/near/drain_attack.sh <n> <amount>`: same settings file; requires agent CLI settings and
+  `VENDOR`, one allowed NEAR testnet recipient. Amount is token units with 6 decimals maximum
+  (example: `20 0.25` attempts twenty 250000-base-unit payments). Pins the public testnet RPC.
+  Sequential propose/submit calls have no sleeps or retries. Each result prints, including tx hashes.
+  The first refusal stops the loop; `VaultPaused` prints a stop message and exits 0.
+  Unknown or reverted outcomes stop with nonzero exit, for reconciliation before another run.
+- Marker: `$STYX_NEAR_STATE_ROOT/sentinel-attack.json`, atomically replaced with
+  `{"attack_id":"drain-<uuid>","active":true,"time":<Unix seconds>,"vault":"<account>"}`.
+  Normal exit, refusal, or a Python exception writes the same attack id with `active:false` and
+  the ending time. A killed process can leave an active marker; runners should check liveness
+  or expire stale markers. Each run writes unique invoice references outside the repo.
+
+### Validation
+
+- Contract `cargo test --lib`: **70 passed**, including x402 regressions and sentinel authorization,
+  role conflicts, capacity, UTF-8 byte limit, event fields, idempotency, and access-key receipt actions.
+- Contract `cargo check --target wasm32-unknown-unknown`: passed without warnings.
+- `sdk/near` `cargo test`: **9 passed**, including strict sentinel request parsing.
+- Root `uv run pytest` after `uv sync --all-packages`: **27 passed** (includes Python seam forwarding).
+- `bash -n` passed for both scripts. Mock CLI runs checked settled payments, pause refusal,
+  unknown/reverted outcomes, marker cleanup, and mainnet rejection.
+- No testnet deployment or drain was run. Deployment and the live sentinel demo remain for human review and task B.
