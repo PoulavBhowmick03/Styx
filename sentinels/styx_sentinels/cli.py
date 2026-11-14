@@ -5,6 +5,7 @@
   styx-sentinels run      --vault V --cli PATH [--dry-run] watch the vault block by block, pause it when a sentinel asks
   styx-sentinels rehearse                                  the whole lifecycle on simulated payments
   styx-sentinels status   --vault V                        members, scores, owner actions
+  styx-sentinels names    --vault V [--out FILE]           a names file for the console's Import names
   styx-sentinels label    --vault V MEMBER TIME catch|false_alarm
   styx-sentinels mark-attack --vault V START END [LABEL]
 
@@ -106,7 +107,7 @@ def quickstart(a, swarm: Swarm, rpc_url: str, sleep=time.sleep) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="styx-sentinels", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "quickstart", "run", "status", "label", "mark-attack"):
+    for name in ("init", "quickstart", "run", "status", "names", "label", "mark-attack"):
         s = sub.add_parser(name)
         s.add_argument("--vault", required=True)
         s.add_argument("--network", default="testnet", choices=["testnet", "mainnet"])
@@ -126,6 +127,7 @@ def main(argv=None) -> int:
     r.add_argument("--dry-run", action="store_true", help="record pauses instead of sending them")
     r.add_argument("--ui", type=int, default=8790)
     r.add_argument("--attack-marker", help="drain_attack.sh's marker (default $STYX_NEAR_STATE_ROOT/sentinel-attack.json)")
+    sub.choices["names"].add_argument("--out", help="where to write it (default: styx-names-<vault>.json here)")
     sub.choices["label"].add_argument("member")
     sub.choices["label"].add_argument("time", type=float)
     sub.choices["label"].add_argument("outcome", choices=["catch", "false_alarm"])
@@ -177,6 +179,14 @@ def main(argv=None) -> int:
 
     if a.cmd == "quickstart":
         return quickstart(a, swarm, rpc_url)
+    if a.cmd == "names":
+        if not swarm.members:
+            print("This vault has no swarm yet; run `quickstart` or `init` first.")
+            return 1
+        out = Path(a.out or f"styx-names-{a.vault}.json")
+        out.write_text(swarm.names_file())
+        print(f"Wrote {len(swarm.members)} names to {out}. In the console, Sentinels panel: Import names.")
+        return 0
     if a.cmd == "init":
         if swarm.members:
             print("This vault already has a swarm; see `status`.")

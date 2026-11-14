@@ -152,3 +152,16 @@ def test_quickstart_gives_up_with_a_clear_message_when_nobody_signs(tmp_path, mo
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
     assert cli.main(["quickstart", "--vault", "acme.styx-vaults.testnet", "--wait", "0"]) == 1
     assert "Timed out waiting for the owner" in capsys.readouterr().out
+
+
+def test_names_exports_the_console_names_file_with_every_member_and_no_secret(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("STYX_SENTINEL_HOME", str(tmp_path / "home"))
+    vault = "acme.styx-vaults.testnet"
+    assert main(["names", "--vault", vault, "--out", str(tmp_path / "n.json")]) == 1  # no swarm yet
+    assert main(["init", "--vault", vault, "--no-judge"]) == 0
+    capsys.readouterr()
+    assert main(["names", "--vault", vault, "--out", str(tmp_path / "n.json")]) == 0
+    data = json.loads((tmp_path / "n.json").read_text())
+    assert data["vault"] == vault and sorted(data["labels"].values()) == ["burst-g1", "concentration-g1"]
+    assert all(k.startswith("ed25519:") for k in data["labels"])
+    assert "secret" not in (tmp_path / "n.json").read_text().lower()

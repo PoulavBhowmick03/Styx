@@ -193,6 +193,12 @@ class Swarm:
         if changed:
             self.save()
 
+    def names_file(self) -> str:
+        """The console's names format: {"vault": ..., "labels": {public key: name}}. Public keys and the
+        members' ids only; every sentinel the swarm ever made, so a retired key still has its name."""
+        labels = {m.public_key: m.id for m in self.members}
+        return json.dumps({"vault": self.vault, "labels": labels}, indent=2) + "\n"
+
     def active(self) -> list[Member]:
         return [m for m in self.members if m.status == "active"]
 
