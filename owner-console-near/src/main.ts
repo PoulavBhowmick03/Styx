@@ -7,7 +7,7 @@ import { setupMeteorWalletApp } from '@near-wallet-selector/meteor-wallet-app';
 import '@near-wallet-selector/modal-ui/styles.css';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
+import { RPC, TEST_TOKEN, account, publicKey, amount, formPlan, overview, history as readHistory, discoveries, FACTORIES, createPlan, createdVault, amountNear, describePlan, batchPlan, describeBatch, batchDeposit, fundsProblem, agentEnv, agentEnvName, agentSetupCommands, PRESETS, inviteMessage, inviteNonceBytes, newInviteNonce, joinUrl, returnUrl, readInvite, inviteValid, expiry, extendValues, agentKeys, parseLabels, labelsFile, cleanLabel, named, parseRecipients, telegramLinked, DEFAULT_RELAY, watchLink, daoProposal, isDaoPolicy, freezeValues, paymentsCsv, sentinelKeys, sentinelPauses, readSentinelLink, parseSentinelKeys, sentinelChanges, SENTINEL_VERSION, MAX_SENTINELS, type SentinelChange, type Invite, type Labels, type EventRow, type Plan, type Batch } from './core';
 import '../../site/styx.css';
 import './style.css';
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -44,6 +44,7 @@ function toast(kind:'ok'|'error',title:string,detail='',href?:string){
 function role(){
  const owner=canWrite();
  void maybeFreeze();
+ void maybeSentinelLink();
  $('#role').textContent=connected?`${connected} · ${owner?(dao?`The owner is the DAO ${dao.account}: changes you make here are proposals its members vote on.`:'Owner controls available'):`Read-only: the vault owner is ${facts?.info.owner??'not yet known'}.`}`:'Read-only: connect the owner account to change rules.';
  document.querySelectorAll<HTMLButtonElement>('[data-write]').forEach(button=>button.disabled=!owner || busy);
  $('#disconnect').hidden=!connected;
@@ -78,7 +79,8 @@ async function refresh(){
  if(!context) return;const current=context;
  const next=await overview(current.rpc,current.vault);if(context!==current) return;
  try{const policy=await current.rpc.view(next.info.owner,'get_policy');dao=isDaoPolicy(policy)?{account:next.info.owner,bond:policy.proposal_bond}:undefined;}catch{dao=undefined;}
- facts=next;for(const k of agentKeys(next.keys)) known.agents.add(k);render();role();await refreshKnown();
+ sentinels=next.info.contract_version>=SENTINEL_VERSION?await current.rpc.view(current.vault,'get_sentinels').catch(()=>null):null;if(context!==current) return;
+ facts=next;for(const k of agentKeys(next.keys)) known.agents.add(k);render();role();renderSentinels();await refreshKnown();
 }
 function allowance(key:string){
  const entry=facts?.keys.keys.find((k:any)=>k.public_key===key);
@@ -92,6 +94,9 @@ function near(value:string){const n=BigInt(value);return `${n/10n**24n}.${(n%10n
 const expiring=new Set<string>();let expiryWarned='';
 // ---- ?freeze=<agent key>, from a Telegram alert: once the owner is connected, open the disable review ----
 let freezeAsked:string|undefined=(()=>{try{const k=new URLSearchParams(location.search).get('freeze');return k?publicKey(k):undefined;}catch{return undefined;}})();
+// Sentinel state, declared before the first role() call reads it.
+let sentinels:string[]|null=null;
+let sentinelAsked:SentinelChange[]|undefined=(()=>{try{const c=readSentinelLink(new URLSearchParams(location.search));return c.length?c:undefined;}catch(e){setTimeout(()=>toast('error','Sentinel link is damaged',e instanceof Error?e.message:String(e)),0);return undefined;}})();
 async function maybeFreeze(){
  if(!freezeAsked || !context || !facts) return;
  if(!canWrite()){say(`To freeze agent ${freezeAsked}, connect the vault owner's wallet. You will review the change before signing.`);return;}
@@ -181,7 +186,7 @@ async function loadHistory(){
  const result=await readHistory(c.rpc,c.vault,c.network);if(context!==c) return;
  rows=result.rows;$('#history-status').textContent=result.notice;
  const found=discoveries(rows);for(const kind of ['agents','approvers','recipients'] as const) for(const key of found[kind]) known[kind].add(key);
- renderPayments();await refreshKnown();renderSetup();
+ renderPayments();renderSentinels();await refreshKnown();renderSetup();
 }
 const definitions:[string,string,string[]][]=[
  ['configure_agent','Configure an agent',['agent','per_payment_limit','daily_limit','valid_until','enabled']],
@@ -504,3 +509,61 @@ if(!query.has('join')){
 function openAdvancedFor(hash:string){if(['#rules','#fund'].includes(hash)) $<HTMLDetailsElement>('#advanced').open=true;}
 openAdvancedFor(location.hash);window.addEventListener('hashchange',()=>openAdvancedFor(location.hash));
 document.querySelectorAll<HTMLAnchorElement>('nav a').forEach(a=>a.addEventListener('click',()=>openAdvancedFor(a.getAttribute('href')??'')));
+
+// ---- Sentinels: list the keys, show pauses with reasons, install and remove keys in one approval ----
+function sentinelPreview(changes:SentinelChange[]){
+ if(!context || !facts) throw Error('Read a vault first');
+ if(facts.info.contract_version<SENTINEL_VERSION) throw Error(`This vault is contract version ${facts.info.contract_version}; sentinels need version ${SENTINEL_VERSION}. Create a new vault.`);
+ const {todo,already}=sentinelChanges(changes,sentinels??[]);
+ let named=false;for(const c of changes) if(c.name && !names[c.key]){names[c.key]=c.name;named=true;}
+ if(named) saveLabels();
+ if(!todo.length){toast('ok','Nothing to sign',already.map(c=>`${named_(c.key)} is already ${c.enabled?'installed':'removed'}.`).join(' '));return;}
+ const values={};previewBatch(todo.map(c=>formPlan('set_sentinel',{key:c.key,enabled:String(c.enabled)},context!.vault,facts!.info.token,context!.network)),values);
+}
+const named_=(k:string)=>named(k,names);
+function renderSentinels(){
+ const list=$('#sentinel-list'),status=$('#sentinel-status'),add=$<HTMLFormElement>('#sentinel-add'),pausedBox=$('#sentinel-paused');
+ list.replaceChildren();pausedBox.replaceChildren();add.hidden=true;$('#sentinel-count').textContent='';
+ if(!context || !facts){status.textContent='Read a vault to see its sentinels.';return;}
+ if(facts.info.contract_version<SENTINEL_VERSION){status.textContent=`This vault runs contract version ${facts.info.contract_version}. Sentinels need version ${SENTINEL_VERSION}: create a new vault to use them.`;return;}
+ if(sentinels===null){status.textContent='The sentinel list is unavailable from this RPC right now.';return;}
+ // Keys on chain allowed only sentinel_pause; the contract's list is the authority, the access keys confirm it.
+ const onChain=new Set(sentinelKeys(facts.keys));
+ $('#sentinel-count').textContent=`${sentinels.length} of ${MAX_SENTINELS}`;
+ status.textContent=sentinels.length?'Each key below may only pause this vault.':'No sentinels yet. Install keys from styx-sentinels init, or paste them below.';
+ if(facts.info.paused){
+  const box=document.createElement('div');box.className='panel paused-banner';box.append(el('strong','The vault is paused.'),el('p','The agent cannot pay until you unpause. Read the reason below; if it was a false alarm, unpause.'));
+  const b=el('button','Review unpause') as HTMLButtonElement;b.type='button';b.dataset.write='';b.disabled=!canWrite()||busy;b.onclick=()=>{try{previewPlan('unpause',{});}catch(e){fail(e);}};box.append(b);pausedBox.append(box);
+ }
+ for(const key of sentinels){
+  const panel=el('article','');panel.className='panel sentinel';panel.append(nameRow(key),el('code',key));
+  panel.append(el('p',onChain.has(key)?allowance(key):'Access key not found on the vault yet: check the transaction outcome.'));
+  const b=el('button','Remove') as HTMLButtonElement;b.type='button';b.className='secondary';b.dataset.write='';b.disabled=!canWrite()||busy;
+  b.onclick=()=>{try{sentinelPreview([{key,enabled:false}]);}catch(e){toast('error','Cannot preview',e instanceof Error?e.message:String(e));}};panel.append(b);list.append(panel);
+ }
+ add.hidden=!canWrite();
+ const pauses=sentinelPauses(rows),box=$('#sentinel-pauses');
+ if(!rows.length){box.replaceChildren(el('p','Load the event lists to see pauses and their reasons.'));box.firstElementChild!.className='note';}
+ else if(!pauses.length) box.replaceChildren(el('p','No sentinel has paused this vault in the indexed window.'));
+ else box.replaceChildren(...pauses.slice(0,12).map(p=>{
+  const item=document.createElement('article');item.className='panel pause';
+  item.append(el('small',`${p.time} · ${named_(p.sentinel)}`),el('p',p.reason||'(no reason given)'));
+  const link=el('a','View transaction') as HTMLAnchorElement;link.href=txLink(context!.network,p.tx);link.target='_blank';link.rel='noopener noreferrer';item.append(link);return item;
+ }));
+ document.querySelectorAll<HTMLButtonElement>('#sentinels [data-write]').forEach(button=>button.disabled=!canWrite()||busy);
+}
+$<HTMLFormElement>('#sentinel-add').onsubmit=e=>{e.preventDefault();try{
+ const keys=parseSentinelKeys(readForm($<HTMLFormElement>('#sentinel-add')).keys??'');
+ if(!keys.length) throw Error('Paste at least one sentinel public key');
+ sentinelPreview(keys.map(k=>k.name?{key:k.key,enabled:true,name:k.name}:{key:k.key,enabled:true}));
+}catch(err){toast('error','Cannot preview',err instanceof Error?err.message:String(err));}};
+// ?sentinel_enable=…&sentinel_remove=… from the sentinel parent: once the owner is connected, open the review.
+async function maybeSentinelLink(){
+ if(!sentinelAsked || !context || !facts || sentinels===null && facts.info.contract_version>=SENTINEL_VERSION) return;
+ const n=sentinelAsked.length;
+ if(!canWrite()){say(`The sentinel parent asks you to ${n===1?(sentinelAsked[0].enabled?'install a sentinel key':'remove a sentinel key'):`make ${n} sentinel changes`}. Connect the vault owner's wallet; you review before signing.`);return;}
+ const asked=sentinelAsked,c=context;sentinelAsked=undefined;
+ // Read the list fresh: the link may be old, and the review must reflect the chain as it is now.
+ try{const fresh=await c.rpc.view(c.vault,'get_sentinels');if(context!==c) return;if(Array.isArray(fresh)) sentinels=fresh;
+  sentinelPreview(asked);$('#sentinels').scrollIntoView({behavior:'smooth'});}catch(e){toast('error','Cannot preview the sentinel change',e instanceof Error?e.message:String(e));}
+}

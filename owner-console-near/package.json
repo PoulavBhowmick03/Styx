@@ -10,7 +10,8 @@
     "build": "vite build",
     "smoke": "node test/smoke.mjs",
     "smoke:wallet": "node test/wallet-smoke.mjs",
-    "smoke:invite": "node test/invite-smoke.mjs"
+    "smoke:invite": "node test/invite-smoke.mjs",
+    "smoke:sentinels": "node test/sentinel-smoke.mjs"
   },
   "dependencies": {
     "@near-wallet-selector/core": "^8.10.0",

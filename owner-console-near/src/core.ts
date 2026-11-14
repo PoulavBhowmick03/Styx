@@ -25,6 +25,7 @@ export function formPlan(method:string,v:Record<string,string>,vault:string,toke
   args={agent:publicKey(v.agent),per_payment_limit:units(v.per_payment_limit),daily_limit:units(v.daily_limit),valid_until:v.valid_until,enabled:enabled()};break;
  }
  case 'set_approver':args={approver:publicKey(v.approver),enabled:enabled()};break;
+ case 'set_sentinel':args={key:publicKey(v.key),enabled:enabled()};break;
  case 'set_recipient':if(!['true','false'].includes(v.allowed)) throw Error('Choose allowed or denied');args={recipient:account(v.recipient),allowed:v.allowed==='true'};break;
  case 'set_vault_daily_limit':args={limit:units(v.limit)};break;
  case 'pause':case 'unpause':break;
@@ -37,7 +38,7 @@ export function formPlan(method:string,v:Record<string,string>,vault:string,toke
  return {receiverId,method,args,deposit,gas:GAS};
 }
 export type EventRow={event:string;data:Record<string,any>;tx:string;time:string};
-const eventNames=new Set(['agent_configured','approver_set','recipient_set','payment_executed','payment_failed','record_sealed']);
+const eventNames=new Set(['agent_configured','approver_set','recipient_set','payment_executed','payment_failed','record_sealed','sentinel_set','sentinel_paused','paused','unpaused']);
 export function parseEvents(tx:any,vault:string,time='Unavailable'):EventRow[]{
  const rows:EventRow[]=[];
  for(const receipt of tx.receipts_outcome??[]){
@@ -110,7 +111,7 @@ export async function history(rpc:RPC,vault:string,network:string,get:typeof fet
  return {rows,notice:`Event window: ${seen.size} indexed transactions checked; ${failed} unavailable or failed. ${stopped?`Stopped early: ${stopped}.`:complete?'Indexer list exhausted.':'Limited to the latest 75 indexer entries.'} Older keys or events may be absent. Use manual lookups.`};
 }
 export async function overview(rpc:RPC,vault:string){
- const info=await rpc.view(vault,'get_vault');if(![1,2].includes(info.contract_version)) throw Error('Unsupported vault contract version');
+ const info=await rpc.view(vault,'get_vault');if(![1,2,3].includes(info.contract_version)) throw Error('Unsupported vault contract version');
  const day=await rpc.view(vault,'current_day');
  const [spent,balance,storage,keys]=await Promise.all([
   rpc.view(vault,'spent_by_vault',{day}),rpc.view(info.token,'ft_balance_of',{account_id:vault}),
@@ -149,6 +150,7 @@ export function describePlan(p:Plan):string{
   case 'configure_agent':return a.enabled?`Agent configured: ${tokens(a.per_payment_limit)} per payment, ${tokens(a.daily_limit)} a day`:'Agent disabled';
   case 'set_recipient':return `${a.allowed?'Recipient allowed':'Recipient blocked'}: ${a.recipient}`;
   case 'set_approver':return `${a.enabled?'Approver set':'Approver disabled'}: ${String(a.approver).slice(0,18)}…`;
+  case 'set_sentinel':return `${a.enabled?'Sentinel installed':'Sentinel removed'}: ${String(a.key).slice(0,18)}…`;
   case 'set_vault_daily_limit':return `Vault daily limit set to ${tokens(a.limit)}`;
   case 'pause':return 'Vault paused';
   case 'unpause':return 'Vault unpaused';
@@ -346,4 +348,48 @@ export function paymentsCsv(rows:EventRow[],names:Labels):string{
  const head=['time_utc','agent','agent_name','recipient','recipient_name','amount','exception','signer','signer_name','payment_id','transaction'];
  const lines=rows.filter(r=>r.event==='payment_executed').map(r=>{const d=r.data;return [r.time,d.agent,names[d.agent]??'',d.recipient,names[d.recipient]??'',amount(String(d.amount)),d.exception?'yes':'no',d.signer??'',d.signer?names[d.signer]??'':'',d.payment_id??'',r.tx];});
  return [head,...lines].map(l=>l.map(csvCell).join(',')).join('\r\n')+'\r\n';
+}
+
+// ---- Sentinels (contract version 3): watcher keys that may only call sentinel_pause ----
+// set_sentinel installs a function-call key on the vault allowed only sentinel_pause (0.05 NEAR
+// allowance), or deletes it. A sentinel cannot pay, unpause or change a rule; only the owner unpauses.
+export const SENTINEL_VERSION=3;
+export const MAX_SENTINELS=8;
+export function sentinelKeys(keys:{keys:{public_key:string;access_key:{permission:any}}[]}):string[]{
+ return keys.keys.filter(k=>{const m=typeof k.access_key.permission==='object'?k.access_key.permission.FunctionCall?.method_names:undefined;return Array.isArray(m) && m.length===1 && m[0]==='sentinel_pause';}).map(k=>k.public_key);
+}
+export type SentinelPause={time:string;sentinel:string;reason:string;tx:string};
+// Newest first. A reason is the sentinel's own words, at most 280 bytes on chain: render it as text only.
+export function sentinelPauses(rows:EventRow[]):SentinelPause[]{
+ return rows.filter(r=>r.event==='sentinel_paused' && typeof r.data.sentinel==='string')
+  .map(r=>({time:r.time,sentinel:r.data.sentinel,reason:typeof r.data.reason==='string'?r.data.reason:'',tx:r.tx}))
+  .sort((a,b)=>b.time.localeCompare(a.time));
+}
+// A link from the sentinel parent (styx-sentinels): ?sentinel_enable=<key>&sentinel_label=<name>&sentinel_remove=<key>.
+// Each parameter may repeat; labels pair with enables in order. Everything goes in one reviewed transaction.
+export type SentinelChange={key:string;enabled:boolean;name?:string};
+export function readSentinelLink(q:URLSearchParams):SentinelChange[]{
+ const enable=q.getAll('sentinel_enable'),remove=q.getAll('sentinel_remove'),label=q.getAll('sentinel_label');
+ const out:SentinelChange[]=[],seen=new Set<string>();
+ const add=(raw:string,enabled:boolean,name?:string)=>{const key=publicKey(raw.trim());if(seen.has(key)) throw Error(`Sentinel key appears twice in the link: ${key}`);seen.add(key);
+  let clean:string|undefined;try{clean=name?cleanLabel(name):undefined;}catch{clean=undefined;}out.push(clean?{key,enabled,name:clean}:{key,enabled});};
+ remove.forEach(k=>add(k,false));enable.forEach((k,i)=>add(k,true,label[i]));
+ if(out.length>BATCH_MAX) throw Error(`At most ${BATCH_MAX} sentinel changes in one link`);
+ return out;
+}
+// Keys to add, one per line, an optional name after a comma (the same shape as the recipient list).
+export function parseSentinelKeys(text:string):{key:string;name?:string}[]{
+ const out:{key:string;name?:string}[]=[],seen=new Set<string>();
+ for(const line of text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean)){
+  const m=/^([^,\s]+)\s*(?:,\s*(.+))?$/.exec(line);if(!m) throw Error(`Not a key line: ${line}`);
+  const key=publicKey(m[1]);if(seen.has(key)) continue;seen.add(key);out.push(m[2]?{key,name:cleanLabel(m[2])}:{key});
+ }
+ return out;
+}
+// Which requested changes still need a transaction, given the keys enabled now; and whether the cap holds.
+export function sentinelChanges(wanted:SentinelChange[],enabled:string[]):{todo:SentinelChange[];already:SentinelChange[]}{
+ const now=new Set(enabled),todo=wanted.filter(c=>c.enabled!==now.has(c.key)),already=wanted.filter(c=>c.enabled===now.has(c.key));
+ const after=new Set(now);for(const c of todo) c.enabled?after.add(c.key):after.delete(c.key);
+ if(after.size>MAX_SENTINELS) throw Error(`A vault holds at most ${MAX_SENTINELS} sentinels; this would make ${after.size}. Remove one first.`);
+ return {todo,already};
 }

@@ -1,6 +1,6 @@
 import { describe,it,expect,vi } from 'vitest';
 import fs from 'node:fs';
-import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan } from '../src/core';
+import { units,amount,formPlan,parseEvents,discoveries,indexerRows,RPC,overview,history,LIVE_VAULT,TEST_TOKEN,STORAGE_DEPOSIT,createPlan,vaultName,nearToYocto,createdVault,describePlan,sentinelKeys,sentinelPauses,readSentinelLink,parseSentinelKeys,sentinelChanges,type EventRow } from '../src/core';
 const live=JSON.parse(fs.readFileSync(new URL('./live-testnet.json',import.meta.url),'utf8'));
 const tx=Object.values(live.transactions)[0] as any;
 const plan=(method:string,values:Record<string,string>={})=>formPlan(method,values,LIVE_VAULT,TEST_TOKEN,'testnet');
@@ -18,9 +18,9 @@ describe('events and chain reads from the live vault snapshot',()=>{
  it('ignores foreign executors, failed receipts, malformed logs and other standards',()=>{const copy=structuredClone(tx);for(const r of copy.receipts_outcome)r.outcome.executor_id='fake.testnet';expect(parseEvents(copy,LIVE_VAULT)).toEqual([]);for(const r of copy.receipts_outcome){r.outcome.executor_id=LIVE_VAULT;r.outcome.status={Failure:{}};}expect(parseEvents(copy,LIVE_VAULT)).toEqual([]);copy.receipts_outcome=[{outcome:{executor_id:LIVE_VAULT,status:{SuccessValue:''},logs:['EVENT_JSON:{','EVENT_JSON:{"standard":"fake","event":"agent_configured","data":[]}']}}];expect(parseEvents(copy,LIVE_VAULT)).toEqual([]);});
  it('recognizes each configuration and lifecycle event shape (synthetic using live keys)',()=>{const data=[['agent_configured',{agent:live.known.agent}],['approver_set',{approver:live.known.approver}],['recipient_set',{recipient:live.known.recipient}],['payment_failed',{agent:live.known.agent,payment_id:'synthetic'}],['record_sealed',{agent:live.known.agent,payment_id:'synthetic'}]];const copy=structuredClone(tx);copy.receipts_outcome=[{outcome:{executor_id:LIVE_VAULT,status:{SuccessValue:''},logs:data.map(([event,d])=>'EVENT_JSON:'+JSON.stringify({standard:'styx',version:'1.0.0',event,data:[d]}))}}];expect(parseEvents(copy,LIVE_VAULT)).toHaveLength(5);expect(discoveries(parseEvents(copy,LIVE_VAULT)).agents.size).toBe(1);});
  it('accepts indexed live transaction IDs and refuses missing senders',()=>{expect(indexerRows({txns:[{transaction_hash:tx.transaction.hash,signer_account_id:LIVE_VAULT}]})).toEqual([{hash:tx.transaction.hash,sender:LIVE_VAULT}]);expect(()=>indexerRows({txns:[{hash:'x'}]})).toThrow();expect(()=>indexerRows({error:'offline'})).toThrow();});
- for(const [version,ok] of [[2,true],[3,false]] as const) it(`${ok?'opens':'refuses'} a version ${version} vault`,async()=>{
+ for(const [version,ok] of [[2,true],[3,true],[4,false]] as const) it(`${ok?'opens':'refuses'} a version ${version} vault`,async()=>{
   const rpc=new RPC('https://example.com');vi.spyOn(rpc,'view').mockImplementation(async(account,method,args={})=>{const sorted=JSON.stringify(args,Object.keys(args).sort());const v=JSON.parse(Buffer.from(live.views[account+':'+method+':'+sorted].result).toString());return method==='get_vault'?{...v,contract_version:version}:v;});vi.spyOn(rpc,'call').mockResolvedValue(live.accessKeys);
-  if(ok) expect((await overview(rpc,LIVE_VAULT)).info.contract_version).toBe(2); else await expect(overview(rpc,LIVE_VAULT)).rejects.toThrow('Unsupported');
+  if(ok) expect((await overview(rpc,LIVE_VAULT)).info.contract_version).toBe(version); else await expect(overview(rpc,LIVE_VAULT)).rejects.toThrow('Unsupported');
  });
  it('renders core overview data from captured RPC responses',async()=>{
   const rpc=new RPC('https://example.com');vi.spyOn(rpc,'view').mockImplementation(async(account,method,args={})=>{const sorted=JSON.stringify(args,Object.keys(args).sort());return JSON.parse(Buffer.from(live.views[account+':'+method+':'+sorted].result).toString());});vi.spyOn(rpc,'call').mockResolvedValue(live.accessKeys);
@@ -236,5 +236,45 @@ describe('payments CSV',()=>{
   const csv=paymentsCsv([row({exception:true,signer:'ed25519:S'})],{'ed25519:A':'=HYPERLINK("x")','ed25519:S':'Ann, CFO'});
   const line=csv.split('\r\n')[1];
   expect(line).toContain(`"'=HYPERLINK(""x"")"`);expect(line).toContain('"Ann, CFO"');expect(line).toContain(',yes,ed25519:S,');
+ });
+});
+
+describe('sentinels',()=>{
+ const K=live.known.agent,A=live.known.approver;
+ it('maps set_sentinel to the contract JSON and words',()=>{
+  const p=plan('set_sentinel',{key:K,enabled:'true'});
+  expect(p).toMatchObject({receiverId:LIVE_VAULT,method:'set_sentinel',args:{key:K,enabled:true},deposit:'0'});
+  expect(describePlan(p)).toMatch(/^Sentinel installed: /);expect(describePlan(plan('set_sentinel',{key:K,enabled:'false'}))).toMatch(/^Sentinel removed: /);
+  expect(()=>plan('set_sentinel',{key:'ed25519:short',enabled:'true'})).toThrow();
+ });
+ it('finds only keys limited to sentinel_pause',()=>{
+  const fc=(m:string[])=>({FunctionCall:{allowance:'50000000000000000000000',receiver_id:LIVE_VAULT,method_names:m}});
+  expect(sentinelKeys({keys:[{public_key:'S',access_key:{permission:fc(['sentinel_pause'])}},{public_key:'P',access_key:{permission:fc(['pay','pay_with_exception'])}},
+   {public_key:'X',access_key:{permission:fc(['sentinel_pause','pay'])}},{public_key:'F',access_key:{permission:'FullAccess'}}]})).toEqual(['S']);
+ });
+ it('reads sentinel_paused events with their reasons, newest first',()=>{
+  const copy=structuredClone(tx);const log=(event:string,d:object)=>'EVENT_JSON:'+JSON.stringify({standard:'styx',version:'1.0.0',event,data:[d]});
+  copy.receipts_outcome=[{outcome:{executor_id:LIVE_VAULT,status:{SuccessValue:''},logs:[log('sentinel_paused',{sentinel:K,reason:'6 payments in 5 min',day:1,vault_day_spent:'6000000'}),log('unpaused',{}),log('sentinel_set',{sentinel:K,enabled:true})]}}];
+  const rows=parseEvents(copy,LIVE_VAULT,'2026-11-14T10:00:00.000Z');expect(rows.map(r=>r.event)).toEqual(['sentinel_paused','unpaused','sentinel_set']);
+  const later:EventRow={...rows[0],time:'2026-11-14T11:00:00.000Z',data:{sentinel:A,reason:'<b>x</b>'}};
+  expect(sentinelPauses([...rows,later])).toEqual([{time:later.time,sentinel:A,reason:'<b>x</b>',tx:later.tx},{time:'2026-11-14T10:00:00.000Z',sentinel:K,reason:'6 payments in 5 min',tx:rows[0].tx}]);
+ });
+ it('reads the parent link: removes first, enables with their names, repeated parameters',()=>{
+  const q=new URLSearchParams();q.append('sentinel_enable',K);q.append('sentinel_label','burst-g2');q.append('sentinel_remove',A);
+  expect(readSentinelLink(q)).toEqual([{key:A,enabled:false},{key:K,enabled:true,name:'burst-g2'}]);
+  expect(readSentinelLink(new URLSearchParams('vault=x'))).toEqual([]);
+  const twice=new URLSearchParams();twice.append('sentinel_enable',K);twice.append('sentinel_remove',K);expect(()=>readSentinelLink(twice)).toThrow('twice');
+  expect(()=>readSentinelLink(new URLSearchParams('sentinel_enable=ed25519:bad'))).toThrow();
+ });
+ it('parses pasted keys with names',()=>{
+  expect(parseSentinelKeys(`${K}, Burst watcher\n\n${A}\n${K}`)).toEqual([{key:K,name:'Burst watcher'},{key:A}]);
+  expect(()=>parseSentinelKeys('vendor.testnet')).toThrow();
+ });
+ it('skips changes already on chain and keeps the cap of 8',()=>{
+  expect(sentinelChanges([{key:K,enabled:true},{key:A,enabled:false}],[K])).toEqual({todo:[],already:[{key:K,enabled:true},{key:A,enabled:false}]});
+  expect(sentinelChanges([{key:K,enabled:false}],[K]).todo).toEqual([{key:K,enabled:false}]);
+  const eight=Array.from({length:8},(_,i)=>`k${i}`);
+  expect(()=>sentinelChanges([{key:K,enabled:true}],eight)).toThrow('at most 8');
+  expect(sentinelChanges([{key:'k0',enabled:false},{key:K,enabled:true}],eight).todo).toHaveLength(2);
  });
 });
