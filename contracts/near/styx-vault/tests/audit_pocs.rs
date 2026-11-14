@@ -747,3 +747,177 @@ fn vm_payment_id_cannot_be_reused_across_near_and_evm() {
     let e = evm_payment(&w, "cross-domain-id", 1);
     drop(w.c.pay_evm(e));
 }
+
+// Mainnet-readiness review, 14 November 2026. These assert observed hazards, not fixes.
+#[test]
+fn vm_factory_style_initialization_on_mainnet_keeps_testnet_signer() {
+    let pk = random_key().1;
+    let mut ctx = VMContextBuilder::new();
+    ctx.current_account_id(id("vault.factory.near"))
+        .predecessor_account_id(id("factory.near"))
+        .signer_account_pk(pk);
+    testing_env!(ctx.build());
+    let c = Contract::new(id("owner.near"), id("usdc.near"), None);
+    assert_eq!(c.get_vault().mpc_signer.as_str(), "v1.signer-prod.testnet");
+}
+
+#[test]
+fn vm_pause_and_recipient_revocation_do_not_cancel_pending_evm_signature() {
+    let mut w = setup();
+    let p = evm_payment(&w, "pending-at-pause", 60);
+    context(vault(), w.agent.clone(), DAY);
+    drop(w.c.pay_evm(p.clone()));
+    let digest = requested_digest();
+    let (signature, _) = sign_digest(&digest);
+    context(id("owner.test"), w.approver.1.clone(), DAY);
+    w.c.pause();
+    w.c.set_evm_recipient(ARC, VENDOR.into(), false);
+    context(vault(), w.agent.clone(), DAY + 1);
+    let output =
+        w.c.on_evm_signed(p, 1, 0, fields(), None, None, Ok(signature));
+    assert!(w.c.get_vault().paused);
+    assert!(output.is_some(), "pause only stops new admissions");
+    assert_eq!(w.c.evm_nonce(ARC), 1);
+    assert_eq!(w.c.spent_by_vault(1).0, 60);
+}
+
+#[tokio::test]
+async fn sandbox_failed_sentinel_install_leaves_enabled_role_and_full_access_key() {
+    use near_workspaces::types::AccessKeyPermission;
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let owner = worker.dev_create_account().await.unwrap();
+    let vault = worker.dev_deploy(&wasm()).await.unwrap();
+    vault
+        .call("new")
+        .args_json(json!({"owner":owner.id(),"token":"token.test"}))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    let key = vault.as_account().secret_key().public_key();
+    let args = json!({"key":key,"enabled":true});
+    let result = owner
+        .call(vault.id(), "set_sentinel")
+        .args_json(args.clone())
+        .transact()
+        .await
+        .unwrap();
+    assert!(result.is_failure());
+    let enabled: Vec<String> = vault.view("get_sentinels").await.unwrap().json().unwrap();
+    assert!(enabled.contains(&key.to_string()));
+    assert!(matches!(
+        vault.view_access_key(&key).await.unwrap().permission,
+        AccessKeyPermission::FullAccess
+    ));
+    owner
+        .call(vault.id(), "set_sentinel")
+        .args_json(args)
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    assert!(matches!(
+        vault.view_access_key(&key).await.unwrap().permission,
+        AccessKeyPermission::FullAccess
+    ));
+    // Existing full access is a setup precondition, not an escalation from a restricted key.
+    owner
+        .call(vault.id(), "set_sentinel")
+        .args_json(json!({"key":key,"enabled":false}))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    let enabled: Vec<String> = vault.view("get_sentinels").await.unwrap().json().unwrap();
+    assert!(enabled.is_empty());
+    assert!(vault.view_access_key(&key).await.is_err());
+}
+
+#[test]
+fn vm_one_base_unit_payment_can_charge_disproportionate_payment_id_storage() {
+    let mut w = setup();
+    let p = payment(&w, &"x".repeat(1024), 1);
+    context(vault(), w.agent.clone(), DAY);
+    let before = near_sdk::env::storage_usage();
+    drop(w.c.pay(p));
+    let after = near_sdk::env::storage_usage();
+    assert!(
+        after - before >= 1024,
+        "raw payer key alone stores the user-selected id"
+    );
+    assert_eq!(w.c.spent_by_vault(1).0, 1);
+    assert_eq!(
+        near_sdk::env::attached_deposit(),
+        NearToken::from_yoctonear(0)
+    );
+}
+
+#[tokio::test]
+async fn sandbox_sentinel_permission_is_pause_only_and_owner_can_unpause() {
+    use near_workspaces::types::{AccessKeyPermission, KeyType, SecretKey};
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let owner = worker.dev_create_account().await.unwrap();
+    let vault = worker.dev_deploy(&wasm()).await.unwrap();
+    vault
+        .call("new")
+        .args_json(json!({"owner":owner.id(),"token":"token.test"}))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    let secret = SecretKey::from_random(KeyType::ED25519);
+    let key = secret.public_key();
+    owner
+        .call(vault.id(), "set_sentinel")
+        .args_json(json!({"key":key,"enabled":true}))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    match vault.view_access_key(&key).await.unwrap().permission {
+        AccessKeyPermission::FunctionCall(permission) => {
+            assert_eq!(permission.receiver_id, vault.id().as_str());
+            assert_eq!(permission.method_names, vec!["sentinel_pause"]);
+        }
+        _ => panic!("sentinel installed with wrong permission"),
+    }
+    let sentinel = near_workspaces::Account::from_secret_key(vault.id().clone(), secret, &worker);
+    sentinel
+        .call(vault.id(), "sentinel_pause")
+        .args_json(json!({"reason":"audit"}))
+        .gas(near_workspaces::types::Gas::from_tgas(30))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    let info: Value = vault.view("get_vault").await.unwrap().json().unwrap();
+    assert_eq!(info["paused"], true);
+    for method in ["unpause", "pay", "set_vault_daily_limit", "on_x402_signed"] {
+        let result = sentinel
+            .call(vault.id(), method)
+            .args_json(json!({}))
+            .gas(near_workspaces::types::Gas::from_tgas(30))
+            .transact()
+            .await;
+        assert!(
+            result.is_err() || result.unwrap().is_failure(),
+            "unexpected permitted method: {method}"
+        );
+    }
+    owner
+        .call(vault.id(), "unpause")
+        .args_json(json!({}))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap();
+    let info: Value = vault.view("get_vault").await.unwrap().json().unwrap();
+    assert_eq!(info["paused"], false);
+}
